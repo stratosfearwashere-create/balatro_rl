@@ -1,0 +1,12 @@
+# trained models and training logs (large, change constantly)
+checkpoints/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# compiled scorer: rebuild with  cythonize -i -3 balatro_rl/sim/_fastscore.pyx
+balatro_rl/sim/_fastscore.c
+*.pyd
+*.so
+build/
