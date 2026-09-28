@@ -339,7 +339,7 @@ def distill(init, data_dir, out, epochs=4, lr=1e-4, batch=256, kl_weight=1.0, v_
     tac = D["act"] >= 0
     overruled = tac & (D["act"] != D["logp"].argmax(-1))
     D["w"] = np.where(overruled, override_weight, 1.0).astype(np.float32)
-    print(f"{N} positions, {int(tac.sum())} card decisions, {int(overruled.sum())} where the search overruled")
+    print(f"{N} positions, {int(tac.sum())} labelled decisions, {int(overruled.sum())} where the label differs from the old policy")
     model = load_model(init, device)
     model.train()
     opt = torch.optim.Adam(model.parameters(), lr=lr)
@@ -373,7 +373,7 @@ def distill(init, data_dir, out, epochs=4, lr=1e-4, batch=256, kl_weight=1.0, v_
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
-        print(f"epoch {ep + 1}: card-play loss {np.mean(tot['ce']):.4f}, matches search {100 * np.mean(tot['acc']):.1f}%, "
+        print(f"epoch {ep + 1}: label loss {np.mean(tot['ce']):.4f}, matches labels {100 * np.mean(tot['acc']):.1f}%, "
               f"drift elsewhere (KL) {np.mean(tot['kl']):.4f}, value drift {np.mean(tot['v']):.4f}", flush=True)
     save_model(model, out, {"mode": "distill", "from": init, "data": data_dir})
     print("saved", out)

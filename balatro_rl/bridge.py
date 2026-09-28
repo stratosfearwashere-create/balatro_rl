@@ -13,6 +13,7 @@ to the closest supported representation.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import time
@@ -272,7 +273,24 @@ def game_from_state(gs: dict, deck="RED", stake="GOLD", memory: dict | None = No
 
 
 # ------------------------------------------------------------------ action -> API call
-def to_rpc(g: Game, a: int, hand_map: list[int], obs: dict):
+def choose_targets(g: Game, a: int, cnt: Counters, policy) -> list[int] | None:
+    """For using or picking a consumable that needs target cards: the cards the policy targets, as
+    positions in the hand (or pack hand). Found by stepping a copy of the game into its targeting step."""
+    g2 = copy.deepcopy(g)
+    if A_USE_C <= a < A_PICK:
+        g2.use_consumable(a - A_USE_C, choose_targets=True)
+    elif A_PICK <= a < A_PSKIP:
+        g2.pack_pick(a - A_PICK, choose_targets=True)
+    if g2.targeting is None:
+        return None
+    obs2 = encode(g2, cnt)
+    scores = np.where(obs2["mask"], policy(g2, obs2), -np.inf)
+    return subset_of(obs2, int(np.argmax(scores)))
+
+
+def to_rpc(g: Game, a: int, hand_map: list[int], obs: dict, targets: list[int] | None = None):
+    """The BalatroBot call for action a. `targets` are the chosen target cards (positions) when the
+    action uses or picks a consumable that needs them; without them the fixed rule picks the cards."""
     if a < A_SELECT:
         play = a < A_DISC
         sub = subset_of(obs, a)
@@ -303,18 +321,20 @@ def to_rpc(g: Game, a: int, hand_map: list[int], obs: dict):
     if A_USE_C <= a < A_PICK:
         c = g.consumables[a - A_USE_C]
         params = {"consumable": a - A_USE_C}
-        targets = g.auto_targets(c.name, g.hand) if (TAROTS.get(c.name) or SPECTRALS.get(c.name)) else []
+        if targets is None and (TAROTS.get(c.name) or SPECTRALS.get(c.name)):
+            targets = [g.hand.index(t) for t in g.auto_targets(c.name, g.hand)]
         if targets:
-            params["cards"] = [hand_map[g.hand.index(t)] for t in targets]
+            params["cards"] = [hand_map[i] for i in targets]
         return "use", params
     if A_PICK <= a < A_PSKIP:
         i = a - A_PICK
         params = {"card": i}
         x = g.pack_cards[i]
         if isinstance(x, Consumable) and (TAROTS.get(x.name) or SPECTRALS.get(x.name)):
-            targets = g.auto_targets(x.name, g.pack_hand)
+            if targets is None:
+                targets = [g.pack_hand.index(t) for t in g.auto_targets(x.name, g.pack_hand)]
             if targets:
-                params["targets"] = [hand_map[g.pack_hand.index(t)] for t in targets]
+                params["targets"] = [hand_map[i] for i in targets]
         return "pack", params
     return "pack", {"skip": True}
 
@@ -366,7 +386,8 @@ def play(args):
             for a in np.argsort(-scores)[:6]:
                 if not np.isfinite(scores[a]):
                     break
-                method, params = to_rpc(g, int(a), hmap, obs)
+                targets = choose_targets(g, int(a), cnt, policy) if A_USE_C <= a < A_PSKIP else None
+                method, params = to_rpc(g, int(a), hmap, obs, targets)
                 if args.verbose:
                     print(f"ante {g.ante} {g.state:15s} ${g.money:<4} {describe_action(g, int(a), obs)}")
                 try:

@@ -279,9 +279,29 @@ def candidates(g: Game, plan: Optional[Plan] = None):
     return plays, discs, preds
 
 
+def target_candidates(g: Game) -> list:
+    """Card subsets a consumable waiting for targets may take, laid out on the play slots (None = unused).
+    With up to 8 cards every subset keeps its usual slot; with more, 3-card consumables choose among 10
+    cards that include the fixed rule's choice (auto_targets), so the slots can always express it."""
+    cards = g.target_cards()
+    lo, hi = g.target_range(g.targeting["cons"])
+    n = len(cards)
+    if n <= BASE_HAND:
+        return [s if s[-1] < n and lo <= len(s) <= hi else None for s in SUBSETS]
+    auto = {c.uid for c in g.auto_targets(g.targeting["cons"].name, cards)}
+    order = sorted(range(n), key=lambda i: (cards[i].uid not in auto, -g.card_value(cards[i])))
+    pool = sorted(order[:n if hi <= 2 else MAX_ENUM_CARDS])
+    subs = [s for r in range(lo, hi + 1) for s in combinations(pool, r)]
+    return subs[:N_SUB] + [None] * (N_SUB - min(N_SUB, len(subs)))
+
+
 # ------------------------------------------------------------------ legality
 def legal_mask(g: Game, cnt: Counters, plays=None, discs=None) -> np.ndarray:
     m = np.zeros(N_ACTIONS, dtype=bool)
+    if g.targeting is not None:                       # only the target choice, nothing else
+        for i in range(N_SUB):
+            m[A_PLAY + i] = plays[i] is not None
+        return m
     st = g.state
     if st == "SELECTING_HAND":
         for i in range(N_SUB):
@@ -356,6 +376,18 @@ def action_features(g: Game, mask: np.ndarray, plays, discs, preds):
     off_disc = off_play + 1 + N_HANDS + 5
     off_item = off_disc + 6
 
+    if g.targeting is not None:
+        # each play slot is a set of target cards: tagged with the consumable being applied, so the
+        # network knows what the cards are for (the model adds the chosen cards' embeddings itself)
+        cons = g.targeting["cons"]
+        cid, cf = item_id(cons.key), _item_feats(g, cons, 0)
+        for i, sub in enumerate(plays):
+            if sub is not None:
+                ids[A_PLAY + i] = cid
+                feats[A_PLAY + i, off_play] = len(sub) / 5
+                feats[A_PLAY + i, off_item:off_item + 23] = cf
+        return ids, feats
+
     if g.state == "SELECTING_HAND":
         remaining = max(g.target - g.chips, 1)
         best = 0.0
@@ -426,7 +458,9 @@ def _subs_array(plays, discs) -> np.ndarray:
 
 def encode(g: Game, cnt: Optional[Counters] = None) -> dict:
     cnt = cnt or Counters()
-    if g.state == "SELECTING_HAND":
+    if g.targeting is not None:
+        plays, discs, preds = target_candidates(g), [None] * N_SUB, {}
+    elif g.state == "SELECTING_HAND":
         plays, discs, preds = candidates(g)
     else:
         plays, discs, preds = [None] * N_SUB, [None] * N_SUB, {}
@@ -456,6 +490,10 @@ def subset_of(obs: dict, a: int) -> list[int]:
 
 # ------------------------------------------------------------------ executing actions
 def apply_action(g: Game, a: int, obs: dict):
+    if g.targeting is not None:
+        assert A_PLAY <= a < A_DISC, "a consumable is waiting for its target cards"
+        g.apply_targets(subset_of(obs, a))
+        return
     if A_PLAY <= a < A_DISC:
         g.play(subset_of(obs, a))
     elif A_DISC <= a < A_SELECT:
@@ -481,9 +519,9 @@ def apply_action(g: Game, a: int, obs: dict):
     elif A_SELL_C <= a < A_USE_C:
         g.sell_consumable(a - A_SELL_C)
     elif A_USE_C <= a < A_PICK:
-        g.use_consumable(a - A_USE_C)
+        g.use_consumable(a - A_USE_C, choose_targets=True)
     elif A_PICK <= a < A_PSKIP:
-        g.pack_pick(a - A_PICK)
+        g.pack_pick(a - A_PICK, choose_targets=True)
     elif a == A_PSKIP:
         g.pack_skip()
     elif A_SWAP <= a < N_ACTIONS:
@@ -491,6 +529,10 @@ def apply_action(g: Game, a: int, obs: dict):
 
 
 def describe_action(g: Game, a: int, obs: Optional[dict] = None) -> str:
+    if g.targeting is not None and A_PLAY <= a < A_DISC:
+        cards = g.target_cards()
+        pos = subset_of(obs, a) if obs is not None else []
+        return f"target {' '.join(repr(cards[i]) for i in pos)} with {g.targeting['cons'].key}"
     if a < A_SELECT:
         verb = "play" if a < A_DISC else "discard"
         pos = subset_of(obs, a) if obs is not None else list(SUBSETS[(a - A_PLAY) if a < A_DISC else (a - A_DISC)])
@@ -511,7 +553,8 @@ def describe_action(g: Game, a: int, obs: Optional[dict] = None) -> str:
         return f"use {g.consumables[a - A_USE_C].key}"
     if A_PICK <= a < A_PSKIP:
         x = g.pack_cards[a - A_PICK]
-        return f"pick {getattr(x, 'key', x)}"
+        key = getattr(x, "key", None)
+        return f"pick {key if isinstance(key, str) else repr(x)}"    # playing cards: e.g. Qs[STEEL][RED]
     i = a - A_SWAP
     return f"swap j_{g.jokers[i].key} <-> j_{g.jokers[i + 1].key}"
 
@@ -530,15 +573,17 @@ class BalatroEnv:
     Hieroglyph/Petroglyph's -1 Ante earns nothing. Plus `win_bonus` (default 10) for winning the
     run, and up to half a blind's weight on a loss at a new blind, for how close it was."""
 
-    def __init__(self, deck: str = "RED", stake: str = "GOLD", ante_weight: float = 1.0, win_bonus: float = 10.0):
+    def __init__(self, deck: str = "RED", stake: str = "GOLD", ante_weight: float = 1.0, win_bonus: float = 10.0,
+                 win_ante: int = 8, joker_pool=None):
         self.deck = deck
         self.stake = stake
+        self.game_kw = {"win_ante": win_ante, "joker_pool": joker_pool}
         self.weights = blind_weights(ante_weight)
         self.win_bonus = win_bonus
         self.g: Optional[Game] = None
 
     def reset(self, seed: Optional[int] = None) -> dict:
-        self.g = Game(seed=seed, deck_type=self.deck, stake=self.stake)
+        self.g = Game(seed=seed, deck_type=self.deck, stake=self.stake, **self.game_kw)
         self.steps = 0
         self.cnt = Counters()
         self.obs = encode(self.g, self.cnt)

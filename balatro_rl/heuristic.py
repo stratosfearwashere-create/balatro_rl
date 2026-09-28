@@ -83,6 +83,16 @@ def reserve(g: Game) -> int:
     return min(25, 5 * g.ante)
 
 
+def target_action(g: Game, obs: dict) -> int:
+    """The target slot matching the fixed targeting rule (Game.auto_targets): the behaviour-cloning
+    teacher for the targeting step. Falls back to the legal slot sharing the most cards with it."""
+    cards = g.target_cards()
+    want = {cards.index(c) for c in g.auto_targets(g.targeting["cons"].name, cards)}
+    legal = [int(a) for a in np.flatnonzero(obs["mask"][A_PLAY:A_DISC]) + A_PLAY]
+    return max(legal, key=lambda a: (set(subset_of(obs, a)) == want, len(want & set(subset_of(obs, a))),
+                                     -len(subset_of(obs, a))))
+
+
 class HeuristicPolicy:
     def __init__(self, rng=None, lookahead: bool = False):
         self.rng = rng or np.random.default_rng(0)
@@ -92,6 +102,8 @@ class HeuristicPolicy:
     def act(self, g: Game, obs: dict) -> int:
         m = obs["mask"]
         st = g.state
+        if g.targeting is not None:
+            return target_action(g, obs)
         if st == "BLIND_SELECT":
             self.shop_rerolls = 0
             return A_SELECT

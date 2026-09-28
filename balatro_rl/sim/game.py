@@ -24,6 +24,9 @@ MAX_CONSUMABLES = 3
 MAX_SHOP = 4
 MAX_PACK = 5
 WIN_ANTE = 8
+# consumables whose effect depends on which cards they target (the rest act on random or all cards)
+TARGETED = frozenset(TAROT_ENH) | frozenset(TAROT_SUIT) | {
+    "strength", "hanged_man", "death", "talisman", "deja_vu", "trance", "medium", "aura", "cryptid"}
 
 
 @dataclass
@@ -52,7 +55,12 @@ class Consumable:
 
 
 class Game:
-    def __init__(self, seed: Optional[int] = None, deck_type: str = "RED", stake: str = "GOLD"):
+    def __init__(self, seed: Optional[int] = None, deck_type: str = "RED", stake: str = "GOLD",
+                 win_ante: int = WIN_ANTE, joker_pool=None):
+        """win_ante < 8 ends the run as won after that ante's boss; joker_pool (keys) restricts the
+        jokers shops and packs can offer. Both exist for cheap experiments; defaults are the real game."""
+        self.win_ante = win_ante
+        self.joker_pool = frozenset(joker_pool) if joker_pool else None
         self.rng = random.Random(seed)
         self.seed = seed
         self.deck_type = deck_type
@@ -103,6 +111,7 @@ class Game:
         self.boss_disabled = False
         self.juggle = 0
         self.hand_size_override = 0
+        self.targeting = None               # {"cons": Consumable, "from_pack": bool} while targets are chosen
         self.first_draw_done = False
         self.boss_rerolled_ante = 0
         # shop state
@@ -599,7 +608,7 @@ class Game:
             if "investment" in self.pending_tags:
                 self.pending_tags.remove("investment")
                 self.money += 25
-            if self.ante >= WIN_ANTE:
+            if self.ante >= self.win_ante:
                 self.state = "WON"
                 return
             self.ante += 1
@@ -619,6 +628,9 @@ class Game:
                 and (k not in NOT_IN_POOL or self.flags.get("gros_michel_extinct"))]
         if self.flags.get("gros_michel_extinct") and "gros_michel" in pool:
             pool.remove("gros_michel")
+        if self.joker_pool is not None:
+            allowed = [k for k in pool if k in self.joker_pool]
+            pool = allowed or [k for k in sorted(self.joker_pool) if k not in owned and JOKERS[k].rarity < 4]
         if not pool:
             pool = ["joker"]
         key = self.rng.choice(pool)
@@ -895,6 +907,8 @@ class Game:
         need = TAROTS.get(c.name, 0) if c.kind == "tarot" else SPECTRALS.get(c.name, 0)
         if need and not cards:
             return False
+        if c.name == "death" and len(cards) < 2:
+            return False
         if c.name in ("judgement", "wraith", "soul") and len(self.jokers) >= self.joker_slots:
             return False
         if c.name in ("high_priestess", "emperor") and self.cons_used() >= self.consumable_slots + 1:
@@ -909,10 +923,39 @@ class Game:
             return False
         return True
 
-    def use_consumable(self, i: int):
+    def use_consumable(self, i: int, choose_targets: bool = False):
+        """Use consumable i. With choose_targets, a consumable that needs target cards waits for
+        apply_targets instead of picking them with the fixed rule (auto_targets)."""
         c = self.consumables.pop(i)
         cards = self.hand if self.state == "SELECTING_HAND" else []
+        if choose_targets and c.name in TARGETED and cards:
+            self.targeting = {"cons": c, "from_pack": False}
+            return
         self.apply_consumable(c, cards)
+
+    # ------------------------------------------------------------------ choosing target cards
+    @staticmethod
+    def target_range(c: Consumable) -> tuple[int, int]:
+        """How many cards a consumable may target: Death converts exactly 2, the rest 1 up to their limit."""
+        if c.name == "death":
+            return 2, 2
+        return 1, TAROTS.get(c.name, SPECTRALS.get(c.name, 0))
+
+    def target_cards(self) -> list[Card]:
+        return self.pack_hand if self.targeting["from_pack"] else self.hand
+
+    def apply_targets(self, positions: list[int]):
+        tg = self.targeting
+        assert tg is not None, "no consumable is waiting for targets"
+        cards = self.target_cards()
+        lo, hi = self.target_range(tg["cons"])
+        assert lo <= len(positions) <= hi and len(set(positions)) == len(positions)
+        assert all(0 <= p < len(cards) for p in positions)
+        targets = [cards[p] for p in sorted(positions)]
+        self.targeting = None
+        self.apply_consumable(tg["cons"], cards, targets=targets)
+        if tg["from_pack"]:
+            self._finish_pack_pick()
 
     # heuristic targeting shared with the real-game bridge
     @staticmethod
@@ -965,7 +1008,8 @@ class Game:
                        key=lambda c: -self.card_value(c))[:max(1, n)]
         return sorted(t, key=lambda c: order[c.uid])
 
-    def apply_consumable(self, c: Consumable, cards: list[Card]):
+    def apply_consumable(self, c: Consumable, cards: list[Card], targets: Optional[list[Card]] = None):
+        """Apply a consumable; its target cards are `targets` if given, else chosen by auto_targets."""
         n = c.name
         if c.kind == "planet":
             self.hand_levels[PLANETS[n]] += 1
@@ -979,7 +1023,7 @@ class Game:
             self.tarots_used += 1
             if n != "fool":
                 self.last_consumable = c
-        t = self.auto_targets(n, cards)
+        t = targets if targets is not None else self.auto_targets(n, cards)
         if n in TAROT_ENH:
             for x in t:
                 x.enh = TAROT_ENH[n]
@@ -1138,15 +1182,21 @@ class Game:
             return self.consumable_usable(x, self.pack_hand)
         return True
 
-    def pack_pick(self, i: int):
+    def pack_pick(self, i: int, choose_targets: bool = False):
         x = self.pack_cards.pop(i)
         if isinstance(x, Joker):
             self.add_joker(x)
         elif isinstance(x, Consumable):
+            if choose_targets and x.name in TARGETED and self.pack_hand:
+                self.targeting = {"cons": x, "from_pack": True}     # finished by apply_targets
+                return
             self.apply_consumable(x, self.pack_hand)
-            self.pack_hand = sort_hand([c for c in self.pack_hand if c in self.full_deck])
         else:
             self.add_card(x)
+        self._finish_pack_pick()
+
+    def _finish_pack_pick(self):
+        self.pack_hand = sort_hand([c for c in self.pack_hand if c in self.full_deck])
         self.pack_picks -= 1
         if self.pack_picks <= 0 or not self.pack_cards:
             self.close_pack()

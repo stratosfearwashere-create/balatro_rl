@@ -34,6 +34,7 @@ class EpisodeStats:
         self.blinds = collections.deque(maxlen=n)
         self.antes = collections.deque(maxlen=n)
         self.wins = collections.deque(maxlen=n)
+        self.returns = collections.deque(maxlen=n)
 
     def add(self, info):
         if info.get("episode_end"):
@@ -44,8 +45,20 @@ class EpisodeStats:
     def summary(self):
         if not self.blinds:
             return {}
-        return {"episodes": len(self.blinds), "blinds": round(float(np.mean(self.blinds)), 2),
-                "ante": round(float(np.mean(self.antes)), 2), "win%": round(100 * float(np.mean(self.wins)), 2)}
+        out = {"episodes": len(self.blinds), "blinds": round(float(np.mean(self.blinds)), 2),
+               "ante": round(float(np.mean(self.antes)), 2), "win%": round(100 * float(np.mean(self.wins)), 2)}
+        if self.returns:
+            out["ret"] = round(float(np.mean(self.returns)), 3)
+        return out
+
+
+def game_kw(a) -> dict:
+    """Environment options shared by every mode: reward shape and the cheap-experiment game options."""
+    pool = None
+    if a.joker_pool_file:
+        with open(a.joker_pool_file) as f:
+            pool = json.load(f)
+    return {"ante_weight": a.ante_weight, "win_bonus": a.win_bonus, "win_ante": a.win_ante, "joker_pool": pool}
 
 
 def log(path, row):
@@ -62,7 +75,7 @@ def train_bc(a):
     model = load_model(a.init, dev) if a.init else ActorCritic().to(dev)
     model.train()
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
-    venv = VecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000, expert=True)
+    venv = VecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000, expert=True, reward_kw=game_kw(a))
     obs, labels = venv.current()
     buf = collections.deque(maxlen=a.buffer)
     stats = EpisodeStats()
@@ -99,7 +112,8 @@ def train_bc(a):
                 losses.append(loss.item())
                 accs.append((logits.argmax(-1) == y).float().mean().item())
         row = {"iter": it, "beta": round(beta, 2), "loss": round(float(np.mean(losses)), 4),
-               "acc": round(float(np.mean(accs)), 3), "min": round((time.time() - t0) / 60, 1)}
+               "acc": round(float(np.mean(accs)), 3), "min": round((time.time() - t0) / 60, 1),
+               "phase": a.phase, "env_steps": it * a.steps * a.envs}
         row.update(stats.summary())
         log(a.log, row)
         if it % a.save_every == 0 or it == a.iters:
@@ -121,10 +135,11 @@ def train_ppo(a):
             logits, v = model(ob)
         return logits.float(), v.float()
     venv = VecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7,
-                  reward_kw={"ante_weight": a.ante_weight, "win_bonus": a.win_bonus},
+                  reward_kw=game_kw(a),
                   strategic_kw={"tactical": a.tactical or a.init, "margin": a.margin} if a.strategic else None)
     obs, _ = venv.current()
     stats = EpisodeStats()
+    ep_ret = np.zeros(a.envs)
     t0 = time.time()
     best = -1.0
     for it in range(1, a.iters + 1):
@@ -152,6 +167,11 @@ def train_ppo(a):
 
         def wait(k):
             gobs[k], r, d, infos, _ = venv.step_wait(groups[k])
+            for e, re_, de in zip(groups[k], r, d):
+                ep_ret[e] += re_
+                if de:
+                    stats.returns.append(float(ep_ret[e]))
+                    ep_ret[e] = 0.0
             gbuf[k]["rew"].append(r)
             gbuf[k]["done"].append(d.astype(np.float32))
             for inf in infos:
@@ -231,7 +251,7 @@ def train_ppo(a):
         pl, vl, ents, kls = (torch.stack(x).double().cpu().numpy() for x in (pl, vl, ents, kls))
         row = {"iter": it, "pi": round(float(np.mean(pl)), 4), "v": round(float(np.mean(vl)), 3),
                "ent": round(float(np.mean(ents)), 3), "kl": round(float(np.mean(kls)), 4),
-               "min": round((time.time() - t0) / 60, 1)}
+               "min": round((time.time() - t0) / 60, 1), "phase": a.phase, "env_steps": it * T * N}
         row.update(stats.summary())
         log(a.log, row)
         if it % a.save_every == 0 or it == a.iters:
@@ -277,6 +297,11 @@ def main():
     p.add_argument("--tactical", default=None, help="--strategic: checkpoint that plays the cards (default: --init)")
     p.add_argument("--margin", type=float, default=0.2,
                    help="--strategic: bonus x how comfortably a blind was cleared (score/target - 1, capped at 1)")
+    p.add_argument("--win-ante", type=int, default=8,
+                   help="end runs as won after this ante's boss (cheap experiments); 8 is the real game")
+    p.add_argument("--joker-pool-file", default=None,
+                   help="JSON list of joker keys that shops and packs may offer (cheap experiments)")
+    p.add_argument("--phase", default=None, help="label written to every log row (e.g. a curriculum stage)")
     p.add_argument("--amp", action="store_true",
                    help="PPO, experimental: run the network in bfloat16 mixed precision (~12%% faster on an RTX 4080, "
                         "but in a short test updates moved the policy ~2x further and entropy rose faster)")
@@ -288,6 +313,8 @@ def main():
         a.epochs = 2 if a.mode == "bc" else 4
     if a.lr is None:
         a.lr = 1e-3 if a.mode == "bc" else (1e-4 if a.init else 3e-4)
+    if a.phase is None:
+        a.phase = a.mode
     if a.pipeline and a.envs < 2:
         p.error("--pipeline needs --envs 2 or more")
     if a.strategic and not (a.tactical or a.init):
