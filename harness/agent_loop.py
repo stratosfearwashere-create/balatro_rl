@@ -34,8 +34,11 @@ def logged_ids() -> set[str]:
 def next_phase() -> tuple[str, list[str]]:
     reg = load_registry()
     logged = logged_ids()
+    # finished experiments without a notebook entry; stopped ones (status "killed") need none, and a
+    # baseline's full run is reported through the promoted experiment's report
     todo = [k for k, e in sorted(reg["experiments"].items())
-            if e["status"] in FINISHED and k not in logged and not (e.get("full_of") and not e.get("promoted_from"))]
+            if e["status"] in ("done", "failed") and k not in logged
+            and not (e.get("full_of") and not e.get("promoted_from"))]
     if todo:
         return "analyse", todo
     if any(e["status"] in ACTIVE for e in reg["experiments"].values()):

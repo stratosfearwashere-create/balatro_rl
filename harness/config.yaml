@@ -32,7 +32,8 @@ budgets:
 tiers:
   cheap:
     stake: GOLD
-    win_ante: 4                     # runs end as won after the ante-4 boss (12 blinds)
+    win_ante: 8                     # full-length Gold: cutting runs short would reward early-game play
+                                    # at the expense of the economy and scaling that later antes need
     joker_pool: null                # all 150 jokers (a list file here would restrict the pool)
     env_steps: 2000000              # per training seed; a spec may ask for less, not more
     seeds: [1, 2, 3]

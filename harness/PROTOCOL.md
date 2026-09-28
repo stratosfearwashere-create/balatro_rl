@@ -86,6 +86,12 @@ conclusion: what this means and what to try next
 outcome: negative            # positive | negative | inconclusive
 ```
 
+## Tiers
+Both tiers are full Gold Stake runs (all 8 antes, all jokers). The cheap tier is cheap only in
+training steps and evaluation games; the full tier confirms with more of both on separate held-out
+seeds. Judge ideas by how far runs get, not by early-ante survival: the bottleneck is building an
+economy and a scaling deck that last into antes 5-8.
+
 ## Rules
 - You may change: reward shaping, curriculum/stake schedule, observation features, network
   architecture, and discrete PPO settings (epochs, batch, envs, steps).
