@@ -10,3 +10,8 @@ balatro_rl/sim/_fastscore.c
 *.pyd
 *.so
 build/
+
+# research harness state (experiments, agent workspace), reports and agent drafts
+experiments/
+reports/
+drafts/

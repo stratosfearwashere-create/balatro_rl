@@ -114,14 +114,14 @@ then falls back to a safe action. You can test the whole path without the game, 
 that speaks the same API and is backed by the simulator:
 
 ```bash
-python tests/mock_balatrobot.py --port 12346 &
+python tests/fidelity/mock_balatrobot.py --port 12346 &
 python -m balatro_rl.bridge --model heuristic --runs 3
 ```
 
 ## How it works
 
 **Action space (475).** Plays and discards each have 218 candidate slots. With 8 or fewer cards in hand, those are exactly every subset of 1–5 cards. With a bigger hand (up to 16 cards), the play slots hold the 218 highest-scoring plays and the discard slots the 218 most promising discards; the observation says which cards each slot holds. The rest are: select or skip the blind, reroll the boss (Director's Cut / Retcon), buy shop card 1–4, buy pack 1–2, buy the voucher, reroll, leave the shop, sell joker 1–8, sell or use consumable 1–3, pick pack card 1–5 or skip the pack, and swap two neighbouring jokers (to set joker order). Illegal actions are masked out, and rerolls and swaps are capped per shop so the agent can't loop forever.
-Tarot and spectral targets are chosen by a fixed rule (`Game.auto_targets`), so the net only decides *whether* and *which* consumable to use.
+**Choosing targets.** Using or picking one of the 21 tarots and spectrals that act on chosen cards starts a targeting step: the play slots then mean "target these cards", limited to what the card allows (Death takes exactly 2, converting the left card into the right one; the suit tarots up to 3), and each slot is tagged with the consumable being applied. The network picks the cards; `Game.auto_targets` remains as the rule-based player's choice and as the fallback for other callers.
 
 **Observation.** The observation has these parts:
 - **Global features** (196): ante, blind, target, chips, hands, discards, hand size, money and debt limit, boss, tag, hand levels and play counts, cards left in the deck by rank and suit, deck enhancements and seals, and vouchers owned.
@@ -153,9 +153,29 @@ embeddings. A separate value head feeds PPO. It has about 0.4M parameters.
 
 - **Randomness differs.** The simulator uses Python's RNG, not Balatro's seeded one, so a given seed deals different cards and shops than the real game.
 - **Small rule approximations.** A few details are simplified: the order Baseball Card applies its ×1.5s, which boss effects count as "triggered" for Matador, the odds inside Standard packs, and Luchador on bosses that change hands or discards at the start of the round.
-- **Consumable targets.** Tarots and spectrals that need cards pick them with a fixed rule (`Game.auto_targets`), not the net.
 - **Bridge reading.** Jokers with counters (Ride the Bus, Castle, Idol, To Do List …) are read from their description text. Hiker's bonus chips are read the same way. This is best-effort, because it depends on how BalatroBot words the text.
 - **Teacher quality.** The rule-based player used for warm-starting is only moderately good.
+
+## Research harness (optional, off until you start it)
+
+`harness/` runs experiments for an automated research agent (headless Claude Code) within fixed rules:
+experiments run from git branches in their own worktrees, one at a time, with hard budget kills; decisions
+come only from `eval/run_eval.py` on held-out seeds with the main branch's simulator; nothing merges.
+The agent's instructions are `harness/PROTOCOL.md`; its permissions are `harness/claude_settings.json`
+(loaded only for the agent's `claude -p` runs); all limits are in `harness/config.yaml`.
+
+```bash
+python -m harness pin                 # you: pin the reference commit branches are checked against
+python -m harness daemon              # you: run the experiment queue (leave it running)
+python -m harness agent --dry-run     # you: show the agent's next command
+python -m harness agent --once        # you: one agent iteration (propose or analyse)
+python -m harness status | metrics <id> | failures <id> | compare <a> <b> | notebook summary
+```
+
+The agent may change reward shaping, curriculum, observation features, the network and discrete PPO
+settings; it may not change `harness/`, `eval/`, `tests/fidelity/`, `balatro_rl/sim/`, the notebook or the
+game-flow functions, and continuous hyperparameters are fixed. Promotion to a full Gold evaluation needs
+non-overlapping 95% intervals and produces `reports/<id>.md` for you to review.
 
 ## Layout
 
@@ -164,11 +184,15 @@ balatro_rl/
   sim/cards.py hands.py scoring.py jokers.py items.py game.py   # the simulator
   sim/_fastscore.pyx fastscore.py   # optional compiled score prediction (same results, ~60x faster per play)
   env.py        # action space, observation + action features, reward
+  strategic.py  # environment where PPO makes only strategic decisions (a frozen network plays the cards)
+  tactical.py   # search over plays/discards with sampled redraws, benchmark, distillation
   heuristic.py  # rule-based player (baseline + teacher)
   model.py      # actor-critic network
   vec_env.py    # parallel environments
   train.py      # bc (DAgger) and ppo
   evaluate.py   # benchmark policies
   bridge.py     # play the real game through BalatroBot
-tests/          # scoring tests, bridge-vs-simulator consistency test, mock BalatroBot server
+harness/        # research harness: queue, budgets, metrics, failures, compare, notebook, agent driver
+eval/           # the protected evaluation script and held-out seed lists
+tests/          # behaviour tests; tests/fidelity/ holds the simulator fidelity tests and mock BalatroBot
 ```

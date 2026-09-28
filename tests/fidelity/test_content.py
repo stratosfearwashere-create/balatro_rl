@@ -4,7 +4,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from balatro_rl.env import BalatroEnv, encode, A_PLAY, A_SWAP, A_REROLL_BOSS, N_SUB, subset_of  # noqa: E402
 from balatro_rl.sim.cards import Card  # noqa: E402

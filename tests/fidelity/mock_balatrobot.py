@@ -14,7 +14,7 @@ import threading
 import zlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from balatro_rl.sim.cards import SUITS, RANK_CHARS  # noqa: E402
 from balatro_rl.sim.game import Game, Consumable  # noqa: E402

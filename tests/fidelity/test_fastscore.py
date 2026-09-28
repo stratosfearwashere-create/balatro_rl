@@ -7,7 +7,7 @@ from itertools import combinations
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from balatro_rl.sim import fastscore  # noqa: E402
 from balatro_rl.sim.cards import Card  # noqa: E402

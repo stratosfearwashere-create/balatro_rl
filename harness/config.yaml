@@ -1,0 +1,68 @@
+# Research harness configuration. Protected: the agent can read this file but not change it.
+# Paths are relative to the repository root unless absolute.
+
+main_branch: master                 # the branch everything is compared against; never merged into automatically
+
+# Paths no experiment branch may touch (launch refuses the branch otherwise).
+protected_paths:
+  - harness/
+  - eval/
+  - tests/fidelity/
+  - notebook/
+  - .claude/
+  - balatro_rl/sim/                 # simulator: locked for now (allow_simulator_changes below)
+  - requirements.txt
+
+# Functions that decide the game's flow. Their source must be identical to the main branch's,
+# because evaluation runs the branch's environment code (observations may change, the rules may not).
+protected_functions:
+  balatro_rl/env.py: [apply_action, legal_mask, subset_of, BalatroEnv.step, BalatroEnv.reset]
+  balatro_rl/strategic.py: [StrategicEnv.step, StrategicEnv._decision_obs, StrategicEnv._track_blind]
+
+allow_simulator_changes: false      # if true, branches may change balatro_rl/sim/ once tests/fidelity passes
+simulator_paths: [balatro_rl/sim/]
+
+budgets:
+  experiment_minutes: {cheap: 150, full: 360}   # hard cap per experiment (all its seeds together)
+  day_minutes: 1200                             # training minutes per calendar day, all experiments
+  eval_minutes: 30                              # cap per evaluation (not counted in the day budget)
+  agent_wakeups_per_day: 8
+  agent_usd_per_wakeup: 5.0                     # passed to claude -p --max-budget-usd
+
+tiers:
+  cheap:
+    stake: GOLD
+    win_ante: 4                     # runs end as won after the ante-4 boss (12 blinds)
+    joker_pool: null                # all 150 jokers (a list file here would restrict the pool)
+    env_steps: 2000000              # per training seed; a spec may ask for less, not more
+    seeds: [1, 2, 3]
+    eval_seeds: eval/seeds_cheap.json
+    eval_games: 200                 # per training seed
+  full:
+    stake: GOLD
+    win_ante: 8
+    joker_pool: null
+    env_steps: 6000000
+    seeds: [1, 2, 3]
+    eval_seeds: eval/seeds_heldout.json
+    eval_games: 500
+
+# The frozen player that plays the cards in the strategic environment (same for every experiment).
+tactical_checkpoint: checkpoints/ppo_gold1_best.pt
+# Starting point for experiments that don't train from scratch (spec init: baseline).
+baseline_checkpoint: checkpoints/ppo_gold1_best.pt
+
+# Training settings a spec may set (train.py flags without the leading dashes, underscores for hyphens).
+allowed_overrides: [strategic, margin, ante_weight, win_bonus, envs, steps, epochs, batch, pipeline, deck]
+
+# Continuous hyperparameters are not the agent's job: fixed here, and a spec that sets one is refused.
+locked_hyperparameters: {lr: null, ent: 0.002, clip: 0.2, gamma: 0.995, lam: 0.95, vf: 0.5}
+
+# Promotion from cheap to full requires this rule against the named baseline experiment's cheap result.
+promotion_rule: non_overlapping_95ci
+
+agent:
+  model: claude-opus-5-5
+  analyse_model: claude-sonnet-5
+  max_turns: 60
+  allowed_branch_prefix: agent/
