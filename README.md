@@ -156,33 +156,6 @@ embeddings. A separate value head feeds PPO. It has about 0.4M parameters.
 - **Bridge reading.** Jokers with counters (Ride the Bus, Castle, Idol, To Do List …) are read from their description text. Hiker's bonus chips are read the same way. This is best-effort, because it depends on how BalatroBot words the text.
 - **Teacher quality.** The rule-based player used for warm-starting is only moderately good.
 
-## Research harness (optional, off until you start it)
-
-`harness/` runs experiments for an automated research agent (headless Claude Code) within fixed rules:
-experiments run from git branches in their own worktrees, one at a time, with hard budget kills; decisions
-come only from `eval/run_eval.py` on held-out seeds with the main branch's simulator; nothing merges.
-The agent's instructions are `harness/PROTOCOL.md`; its permissions are `harness/claude_settings.json`
-(loaded only for the agent's `claude -p` runs); all limits are in `harness/config.yaml`.
-
-```bash
-python -m harness pin                 # you: pin the reference commit branches are checked against
-python -m harness daemon              # you: run the queue; it also wakes the agent (leave it running)
-python -m harness agent --dry-run     # you: show the brief the next wake-up would get
-python -m harness agent --once        # you: wake the agent now for pending events
-python -m harness status | metrics <id> | failures <id> | compare <a> <b> | notebook summary
-```
-
-The daemon wakes the agent only when something happened: an experiment finished, the queue is about to
-run dry, a run crashed or hit its budget, or the daily summary time passed. Wake-ups are limited per day
-and in spend, at least 20 minutes apart (events in between are batched), and each gets a brief with the
-notebook summary, the events and the finished experiments' metrics and failures (`harness/scheduler.py`,
-limits in `harness/config.yaml`, log in `experiments/scheduler.log`).
-
-The agent may change reward shaping, curriculum, observation features, the network and discrete PPO
-settings; it may not change `harness/`, `eval/`, `tests/fidelity/`, `balatro_rl/sim/`, the notebook or the
-game-flow functions, and continuous hyperparameters are fixed. Promotion to a full Gold evaluation needs
-non-overlapping 95% intervals and produces `reports/<id>.md` for you to review.
-
 ## Layout
 
 ```
@@ -198,7 +171,5 @@ balatro_rl/
   train.py      # bc (DAgger) and ppo
   evaluate.py   # benchmark policies
   bridge.py     # play the real game through BalatroBot
-harness/        # research harness: queue, budgets, metrics, failures, compare, notebook, agent driver
-eval/           # the protected evaluation script and held-out seed lists
 tests/          # behaviour tests; tests/fidelity/ holds the simulator fidelity tests and mock BalatroBot
 ```
