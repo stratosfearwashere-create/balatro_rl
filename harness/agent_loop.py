@@ -7,13 +7,17 @@ these are for the human:
 from __future__ import annotations
 
 import glob
+import os
 import shutil
 import time
+from pathlib import Path
 
 from .core import ROOT, STATE, now, reference
 from .workspace import git
 
-WORKSPACE = STATE / "agent_workspace"
+# Outside the main repository on purpose: the agent's permission rules are relative to its own folder
+# (./...), and the main repository is then outside its working directory, so dontAsk refuses edits there.
+WORKSPACE = Path(os.environ.get("HARNESS_AGENT_WORKSPACE", ROOT.parent / f"{ROOT.name}_agent"))
 
 
 def prepare_workspace(ref: str):
