@@ -121,7 +121,8 @@ def train_ppo(a):
             logits, v = model(ob)
         return logits.float(), v.float()
     venv = VecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7,
-                  reward_kw={"ante_weight": a.ante_weight, "win_bonus": a.win_bonus})
+                  reward_kw={"ante_weight": a.ante_weight, "win_bonus": a.win_bonus},
+                  strategic_kw={"tactical": a.tactical or a.init, "margin": a.margin} if a.strategic else None)
     obs, _ = venv.current()
     stats = EpisodeStats()
     t0 = time.time()
@@ -271,6 +272,11 @@ def main():
                    help="PPO reward: an ante-8 blind is worth this many times an ante-1 blind, rising linearly "
                         "(the 24 blinds still add up to 24)")
     p.add_argument("--win-bonus", type=float, default=10.0, help="PPO reward for winning the run")
+    p.add_argument("--strategic", action="store_true",
+                   help="PPO only makes strategic decisions; a tactical network plays the cards (see strategic.py)")
+    p.add_argument("--tactical", default=None, help="--strategic: checkpoint that plays the cards (default: --init)")
+    p.add_argument("--margin", type=float, default=0.2,
+                   help="--strategic: bonus x how comfortably a blind was cleared (score/target - 1, capped at 1)")
     p.add_argument("--amp", action="store_true",
                    help="PPO, experimental: run the network in bfloat16 mixed precision (~12%% faster on an RTX 4080, "
                         "but in a short test updates moved the policy ~2x further and entropy rose faster)")
@@ -284,6 +290,8 @@ def main():
         a.lr = 1e-3 if a.mode == "bc" else (1e-4 if a.init else 3e-4)
     if a.pipeline and a.envs < 2:
         p.error("--pipeline needs --envs 2 or more")
+    if a.strategic and not (a.tactical or a.init):
+        p.error("--strategic needs --tactical or --init")
     if a.log is None:
         a.log = a.out.replace(".pt", "_log.jsonl")
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)

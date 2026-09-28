@@ -34,6 +34,9 @@ class JokerDef:
     perish_ok: bool = True
     copyable: bool = True
 
+    def __deepcopy__(self, memo):
+        return self                       # fixed definitions: copies of a game share them
+
 
 @dataclass
 class Joker:

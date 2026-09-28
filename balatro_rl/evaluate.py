@@ -35,8 +35,13 @@ def make_policy(spec: str, device: str = "cpu", greedy: bool = True):
     return act
 
 
-def run(policy, games: int, deck: str, stake: str, seed0: int = 10_000, verbose: bool = False):
-    env = BalatroEnv(deck, stake)
+def run(policy, games: int, deck: str, stake: str, seed0: int = 10_000, verbose: bool = False,
+        tactical: str | None = None):
+    if tactical:                           # the policy makes strategic decisions, `tactical` plays the cards
+        from .strategic import StrategicEnv
+        env = StrategicEnv(deck, stake, tactical=tactical)
+    else:
+        env = BalatroEnv(deck, stake)
     antes, wins, blinds = [], 0, []
     t = time.time()
     for k in range(games):
@@ -67,9 +72,11 @@ def main():
     p.add_argument("--stake", default="GOLD")
     p.add_argument("--sample", action="store_true", help="sample actions instead of greedy argmax")
     p.add_argument("--verbose", action="store_true", help="print every action (use with --games 1)")
+    p.add_argument("--tactical", default=None,
+                   help="checkpoint that plays the cards; the policy then only makes strategic decisions")
     a = p.parse_args()
     pol = make_policy(a.policy, greedy=not a.sample)
-    print(run(pol, a.games, a.deck, a.stake, verbose=a.verbose))
+    print(run(pol, a.games, a.deck, a.stake, verbose=a.verbose, tactical=a.tactical))
 
 
 if __name__ == "__main__":
