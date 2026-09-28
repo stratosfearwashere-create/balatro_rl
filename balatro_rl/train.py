@@ -120,7 +120,8 @@ def train_ppo(a):
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
             logits, v = model(ob)
         return logits.float(), v.float()
-    venv = VecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7)
+    venv = VecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7,
+                  reward_kw={"ante_weight": a.ante_weight, "win_bonus": a.win_bonus})
     obs, _ = venv.current()
     stats = EpisodeStats()
     t0 = time.time()
@@ -266,6 +267,10 @@ def main():
     p.add_argument("--pipeline", action="store_true",
                    help="PPO: overlap simulation and GPU work with two groups of envs "
                         "(use about twice your core count for --envs)")
+    p.add_argument("--ante-weight", type=float, default=1.0,
+                   help="PPO reward: an ante-8 blind is worth this many times an ante-1 blind, rising linearly "
+                        "(the 24 blinds still add up to 24)")
+    p.add_argument("--win-bonus", type=float, default=10.0, help="PPO reward for winning the run")
     p.add_argument("--amp", action="store_true",
                    help="PPO, experimental: run the network in bfloat16 mixed precision (~12%% faster on an RTX 4080, "
                         "but in a short test updates moved the policy ~2x further and entropy rose faster)")

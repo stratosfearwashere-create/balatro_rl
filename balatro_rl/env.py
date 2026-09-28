@@ -516,14 +516,25 @@ def describe_action(g: Game, a: int, obs: Optional[dict] = None) -> str:
     return f"swap j_{g.jokers[i].key} <-> j_{g.jokers[i + 1].key}"
 
 
-class BalatroEnv:
-    """Gym-style environment. Reward: +1 per blind beaten further than ever before in the run
-    (replaying blinds after Hieroglyph/Petroglyph's -1 Ante earns nothing), +10 for winning the run,
-    and up to +0.5 on a loss at a new blind for how close it was."""
+def blind_weights(ante_weight: float = 1.0) -> list[float]:
+    """Reward for beating each of the 24 blinds (index 0 = ante 1 small blind). Rises linearly
+    from ante 1 to ante 8, where it is `ante_weight` times ante 1's, scaled so the 24 add up to 24."""
+    raw = [1 + (ante_weight - 1) * (b // 3) / 7 for b in range(24)]
+    scale = 24 / sum(raw)
+    return [w * scale for w in raw]
 
-    def __init__(self, deck: str = "RED", stake: str = "GOLD"):
+
+class BalatroEnv:
+    """Gym-style environment. Reward: for each blind beaten further than ever before in the run,
+    that blind's weight (1 each by default; see blind_weights). Replaying blinds after
+    Hieroglyph/Petroglyph's -1 Ante earns nothing. Plus `win_bonus` (default 10) for winning the
+    run, and up to half a blind's weight on a loss at a new blind, for how close it was."""
+
+    def __init__(self, deck: str = "RED", stake: str = "GOLD", ante_weight: float = 1.0, win_bonus: float = 10.0):
         self.deck = deck
         self.stake = stake
+        self.weights = blind_weights(ante_weight)
+        self.win_bonus = win_bonus
         self.g: Optional[Game] = None
 
     def reset(self, seed: Optional[int] = None) -> dict:
@@ -548,12 +559,13 @@ class BalatroEnv:
                 self.cnt.rerolls = 0
             if {prev_state, g.state} != {"SHOP", "PACK"}:
                 self.cnt.swaps = 0
-        r = float(g.furthest_blind - before)
+        r = float(sum(self.weights[min(b, 23)] for b in range(before, g.furthest_blind)))
         if g.state == "WON":
-            r += 10.0
-        elif (g.state == "GAME_OVER" and g.target > 0
-              and 3 * (g.ante - 1) + g.blind_idx + 1 > g.furthest_blind):
-            r += 0.5 * min(1.0, g.chips / g.target)
+            r += self.win_bonus
+        elif g.state == "GAME_OVER" and g.target > 0:
+            lost = 3 * (g.ante - 1) + g.blind_idx         # index of the blind that was lost
+            if lost + 1 > g.furthest_blind:
+                r += 0.5 * self.weights[min(lost, 23)] * min(1.0, g.chips / g.target)
         done = g.done or self.steps >= MAX_STEPS
         obs = None if done else encode(g, self.cnt)
         if obs is not None and not obs["mask"].any():

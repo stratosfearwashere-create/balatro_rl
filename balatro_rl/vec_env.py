@@ -9,8 +9,8 @@ from .env import BalatroEnv
 from .heuristic import HeuristicPolicy
 
 
-def _worker(remote, idx, n, deck, stake, seed0, want_expert):
-    env = BalatroEnv(deck, stake)
+def _worker(remote, idx, n, deck, stake, seed0, want_expert, reward_kw):
+    env = BalatroEnv(deck, stake, **reward_kw)
     expert = HeuristicPolicy(rng=np.random.default_rng(seed0 + idx), lookahead=False)
     episode = 0
 
@@ -41,13 +41,14 @@ def _worker(remote, idx, n, deck, stake, seed0, want_expert):
 
 
 class VecEnv:
-    def __init__(self, n: int, deck="RED", stake="GOLD", seed0: int = 0, expert: bool = False):
+    def __init__(self, n: int, deck="RED", stake="GOLD", seed0: int = 0, expert: bool = False,
+                 reward_kw: dict | None = None):
         # "fork" is fastest but only exists on Linux/macOS; Windows needs "spawn"
         method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
         ctx = mp.get_context(method)
         self.n = n
         self.remotes, work = zip(*[ctx.Pipe() for _ in range(n)])
-        self.procs = [ctx.Process(target=_worker, args=(w, i, n, deck, stake, seed0, expert), daemon=True)
+        self.procs = [ctx.Process(target=_worker, args=(w, i, n, deck, stake, seed0, expert, reward_kw or {}), daemon=True)
                       for i, w in enumerate(work)]
         for p in self.procs:
             p.start()
