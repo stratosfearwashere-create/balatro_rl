@@ -73,7 +73,7 @@ def command(phase: str, ids: list[str]) -> list[str]:
                 "Follow harness/PROTOCOL.md: read metrics, failures and the paired comparison, write one notebook entry "
                 "per hypothesis, promote only if the rule passes, then stop.")
         model = a["analyse_model"]
-    return ["claude", "-p", task, "--model", model, "--permission-mode", "dontAsk",
+    return [shutil.which("claude") or "claude", "-p", task, "--model", model, "--permission-mode", "dontAsk",
             "--settings", str(ROOT / "harness" / "claude_settings.json"),
             "--append-system-prompt-file", str(ROOT / "harness" / "PROTOCOL.md"),
             "--max-turns", str(a["max_turns"]), "--max-budget-usd", str(cfg["budgets"]["agent_usd_per_wakeup"]),
@@ -111,8 +111,8 @@ def run(once: bool = False, dry_run: bool = False):
         t0 = time.time()
         r = subprocess.run(cmd, cwd=WORKSPACE, env=env, capture_output=True, text=True, timeout=4 * 3600)
         try:
-            res = json.loads(r.stdout)
-        except json.JSONDecodeError:
+            res = json.loads(r.stdout[r.stdout.find("{"):])
+        except (json.JSONDecodeError, ValueError):
             res = {"result": (r.stdout + r.stderr)[-2000:], "is_error": True}
         entry = {"time": now(), "phase": phase, "ids": ids, "minutes": round((time.time() - t0) / 60, 1),
                  "cost_usd": res.get("total_cost_usd"), "turns": res.get("num_turns"),
