@@ -11,6 +11,12 @@ from .metrics import load_evals
 
 
 WEAK = 0.6          # a run that scores less than this share of the losing blind's target had a weak build
+STICKERS = ("none", "eternal", "perishable", "rental")
+XMULT = {"cavendish", "duo", "trio", "family", "order", "tribe", "card_sharp", "acrobat", "blackboard",
+         "flower_pot", "seeing_double", "stencil", "loyalty_card", "steel_joker", "baseball", "throwback",
+         "drivers_license", "constellation", "ramen", "madness", "vampire", "hologram", "campfire", "glass",
+         "hit_the_road", "caino", "yorick", "obelisk", "lucky_cat", "photograph", "idol", "ancient",
+         "bloodstone", "triboulet", "baron"}
 
 
 def causes(game: dict) -> list[str]:
@@ -73,6 +79,21 @@ def text(exp_id: str, n: int = 5) -> str:
                 at_death[k] += j[k]
     out.append(f"stickered jokers held at death (per loss): " + ", ".join(
         f"{k} {at_death[k] / max(1, len(lost)):.2f}" for k in ("eternal", "perishable", "rental")))
+    # does it avoid jokers in general, or Gold's stickered ones? (older evaluations lack these fields)
+    offered = [g["joker_offers"] for g in games if "joker_offers" in g]
+    if offered:
+        tot = {k: [sum(o[k][0] for o in offered), sum(o[k][1] for o in offered)] for k in STICKERS}
+        out.append("jokers offered -> bought, by sticker: " + ", ".join(
+            f"{k} {o}->{b} ({100 * b / max(1, o):.0f}%)" for k, (o, b) in tot.items()))
+        took = [g for g in games if "joker_offers" in g]
+        bought_stickered = [g["furthest"] for g in took if any(g["joker_offers"][k][1] for k in STICKERS[1:])]
+        plain_only = [g["furthest"] for g in took if not any(g["joker_offers"][k][1] for k in STICKERS[1:])]
+        if bought_stickered and plain_only:
+            out.append(f"blinds cleared: runs that bought a stickered joker {np.mean(bought_stickered):.2f} "
+                       f"({len(bought_stickered)} runs), runs that bought only plain ones {np.mean(plain_only):.2f} "
+                       f"({len(plain_only)} runs)")
+    no_x = sum(1 for g in lost if not any(j["key"] in XMULT or j.get("edition") == "POLYCHROME" for j in g["jokers"]))
+    out.append(f"losses with no x-mult joker at death: {no_x} of {len(lost)}")
     # replays: spread over causes
     traced = [g for g in lost if g["trace"]]
     picked, seen = [], set()

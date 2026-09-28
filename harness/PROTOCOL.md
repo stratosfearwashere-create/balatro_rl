@@ -34,28 +34,56 @@ and `drafts/`.
 | `notebook set-summary drafts/<summary>.md` | replace the summary (max 900 words) |
 
 ## Each session
-The prompt tells you the phase.
+The daemon wakes you when something happened. Standard input holds your brief: the notebook summary,
+the events since your last wake-up, and `metrics`/`failures` for every experiment that finished (plus
+the end of the training log for runs that crashed). Handle every event in the brief, then stop.
+Events are batched: one wake-up can list several.
 
-**PROPOSE** (nothing of yours is running)
-1. `python -m harness notebook summary`, then `status`. Read the latest baseline `metrics` and `failures`.
-2. Write ONE specific, falsifiable hypothesis about the strategic bottleneck. Name the mechanism and the
-   measurable prediction, e.g. "rewarding interest-bearing savings will raise median shop money at
-   ante 3 above $10 and blinds cleared by at least 0.3". Don't repeat something the notebook already
-   tested unless you say what is different.
-3. `git checkout -b agent/<short-name> <reference commit>` (the commit your worktree is on).
-   Implement the smallest change that tests the hypothesis. Commit it.
-4. `python -m harness check agent/<short-name>`. Fix and re-check until it passes.
-5. Write `specs/<short-name>.yaml` and `python -m harness launch specs/<short-name>.yaml`. Stop.
+| Event | What to do |
+|---|---|
+| `experiment_finished` | Analyse it (below). The baseline to compare against is the latest finished experiment on `master` named `baseline`. |
+| `run_problem` | A run crashed or was stopped by its budget. Read the log tail; if it's your bug, fix it on the branch, `check` it and relaunch; if the budget was too small, say so in the notebook. |
+| `queue_low` / `queue_empty` | The GPU is about to go idle. Queue **2-3 related variants** of one idea (e.g. a shaping coefficient at three values, or an idea with and without one component), each on its own branch and spec, so the daemon always has work. |
+| `daily_summary` | Rewrite the notebook summary if it's due (`notebook summary` says so) or stale. Nothing else is required. |
 
-**ANALYSE** (your experiments finished)
-1. For each finished experiment: `metrics`, `failures`, and `compare <id> <baseline id>`.
-2. Decide: positive only if the promotion rule passes (95% CIs don't overlap). Otherwise negative or
-   inconclusive. Never conclude from a single run or a single seed.
-3. `notebook add` one entry per hypothesis, including negative results. Say what you learned and what
-   it suggests next.
+**Analysing a finished experiment**
+1. `compare <id> <baseline id>` (the brief already has its metrics and failures).
+2. Positive only if the promotion rule passes. Otherwise negative or inconclusive. Never conclude from
+   a single run or a single seed; `compare` resamples training seeds, so trust its interval.
+3. `notebook add` one entry per hypothesis (a set of variants counts as one), negative results included.
 4. If the rule passed: `promote <id> --baseline <baseline id>`. The human gets a report.
-5. If `notebook summary` says a rewrite is due: write a fresh summary (what has been tried, what
-   worked, what didn't, the current best, open questions) and `notebook set-summary`.
+
+**Starting new work** (when the queue is low or empty)
+1. Pick a hypothesis: specific, falsifiable, with a mechanism and a measurable prediction, e.g.
+   "rewarding interest-bearing savings raises median shop money at ante 3 above $10 and blinds cleared
+   by at least 0.3". Don't repeat something the notebook already tested unless you say what differs.
+   Start from the list under "First hypotheses" until the notebook says why not.
+2. For each variant: `git checkout -b agent/<short-name> <reference commit>` (the commit your worktree
+   is on), make the smallest change that tests it, commit, `python -m harness check agent/<short-name>`
+   until it passes, write `specs/<short-name>.yaml`, `python -m harness launch specs/<short-name>.yaml`.
+
+## What we know about Balatro (use it)
+- Jokers score left to right. Put +chips jokers first, then +mult, then x-mult, so each multiplier
+  multiplies the biggest total. The simulator models this order. The current model shuffles jokers back
+  and forth with the swap action until it hits the swap limit instead of ordering them.
+- Blind targets grow roughly geometrically; +chips and +mult grow linearly. Without x-mult jokers (or
+  retriggers and scaling jokers) a build falls behind by antes 4-6, which is where runs end.
+- Interest pays $1 per $5 held, up to $5 a round at $25. The model leaves the shop with $2-6.
+- On Gold, jokers can be Eternal (can't be sold), Perishable (stop working after 5 rounds) or Rental
+  ($3 a round). `failures` shows how often each is offered and bought.
+
+## First hypotheses (start here)
+1. **Capacity-based shaping.** Add potential-based shaping with
+   Phi = log(estimated score capacity / next boss requirement), where the capacity is estimated by the
+   frozen tactical network playing a few sample hands with the current jokers, hand levels and deck.
+   Reward gamma*Phi(s') - Phi(s) credits a purchase (a joker, a planet, a joker reorder) on the step it
+   happens instead of antes later, and covers empty slots and missing x-mult without special cases.
+   Potential-based shaping leaves the best policy unchanged. Try a few coefficients.
+2. **Interest as a second potential term**: Phi_money = c * min(money, 25) / 25 (or the interest it
+   earns), alongside 1 or alone, to credit saving.
+3. **Tell the network what a joker swap does**: give each swap action's features the predicted change
+   in score from making that swap (the same way each play carries its predicted score), so ordering
+   +chips, +mult, x-mult becomes visible instead of guessed.
 
 ## Experiment spec (specs/<name>.yaml)
 ```yaml

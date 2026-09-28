@@ -45,6 +45,11 @@ def stickers(j) -> dict:
     return {"eternal": bool(j.eternal), "perishable": j.perishable is not None, "rental": bool(j.rental)}
 
 
+def sticker_kinds(j) -> list[str]:
+    k = [n for n, v in stickers(j).items() if v]
+    return k or ["none"]
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--code", default=str(MAIN))
@@ -64,7 +69,8 @@ def main():
     load_code(Path(a.code))
     import numpy as np
     import torch
-    from balatro_rl.env import BalatroEnv, A_LEAVE, describe_action
+    from balatro_rl.env import BalatroEnv, A_BUY, A_BUY_PACK, A_LEAVE, A_PICK, A_PSKIP, describe_action
+    from balatro_rl.sim.jokers import Joker
     from balatro_rl.model import load_model, batch_obs
     from balatro_rl.sim.scoring import Plan
 
@@ -87,6 +93,8 @@ def main():
         g = env.g
         rec = {"seed": seed, "blinds": [], "money": [], "trace": [], "ratio_at_ante": {}}
         held, rental_paid, blind_key, done = {}, 0, None, False
+        offers = {k: [0, 0] for k in ("none", "eternal", "perishable", "rental")}   # [offered, bought]
+        seen_offers = set()
         while not done:
             for j in g.jokers:
                 held.setdefault(j.uid, stickers(j))
@@ -101,6 +109,22 @@ def main():
             with torch.no_grad():
                 logits, _ = model(batch_obs([obs], "cpu"))
             act = int(logits.argmax(-1))
+            # jokers offered in the shop or a Buffoon pack, and which were taken, by sticker
+            options = ([it.joker for it in g.shop if it.kind == "joker"] if g.state == "SHOP" else
+                       [x for x in g.pack_cards if isinstance(x, Joker)] if g.state == "PACK" else [])
+            for j in options:
+                if j.uid not in seen_offers:
+                    seen_offers.add(j.uid)
+                    for k in sticker_kinds(j):
+                        offers[k][0] += 1
+            taken = None
+            if g.state == "SHOP" and A_BUY <= act < A_BUY_PACK and g.shop[act - A_BUY].kind == "joker":
+                taken = g.shop[act - A_BUY].joker
+            elif g.state == "PACK" and A_PICK <= act < A_PSKIP and isinstance(g.pack_cards[act - A_PICK], Joker):
+                taken = g.pack_cards[act - A_PICK]
+            if taken is not None:
+                for k in sticker_kinds(taken):
+                    offers[k][1] += 1
             if act == A_LEAVE:
                 rec["money"].append([g.ante, g.blind_idx, g.money, len(g.jokers), g.joker_slots])
             if g.state in ("SHOP", "BLIND_SELECT", "PACK"):
@@ -114,6 +138,7 @@ def main():
                 rec["trace"].append(f"a{b['ante']} blind {'SBB'[b['blind']]}{' ' + b['boss'] if b['boss'] else ''}: "
                                     f"target {b['target']}, best hand {b['ratio']:.0%} of it -> cleared {g.chips}")
         rec.update(furthest=g.furthest_blind, ante=g.ante, won=bool(info["won"]), rental_paid=rental_paid,
+                   joker_offers=offers,
                    jokers=[{"key": j.key, "edition": j.edition, **stickers(j)} for j in g.jokers],
                    slots=g.joker_slots, stickers_held={k: sum(v[k] for v in held.values())
                                                        for k in ("eternal", "perishable", "rental")})

@@ -11,7 +11,23 @@ from pathlib import Path
 
 from .core import (ROOT, STATE, add_minutes, config, exp_dir, load_registry, locked, minutes_used, now, repo_path,
                    update)
+from .scheduler import Scheduler
 from .workspace import create_worktree, python_env
+
+SCHED: Scheduler | None = None          # set by run(); wake-ups are checked while the daemon waits
+
+
+def _tick():
+    if SCHED is not None:
+        try:
+            SCHED.tick()
+        except Exception as e:                             # noqa: BLE001  never let the agent stop the queue
+            SCHED.log(f"scheduler error: {e!r}")
+
+
+def _emit(kind: str, **info):
+    if SCHED is not None:
+        SCHED.emit(kind, **info)
 
 
 def kill_tree(pid: int):
@@ -95,6 +111,7 @@ def _run(cmd, cwd, env, log_path: Path, cap_minutes: float, exp_id: str, seed: i
         status = "done"
         while proc.poll() is None:
             time.sleep(5)
+            _tick()
             mins = (time.time() - t0) / 60
             reg = load_registry()
             if reg["experiments"][exp_id].get("kill_requested"):
@@ -129,6 +146,8 @@ def run_experiment(exp_id: str):
     reg = load_registry()
     exp = reg["experiments"][exp_id]
     update(lambda r: r["experiments"][exp_id].update(status="running", started=now()))
+    if not any(e["status"] == "queued" for k, e in reg["experiments"].items() if k != exp_id):
+        _emit("queue_low", id=exp_id)                      # the GPU goes idle when this one ends
     try:
         code = create_worktree(exp_id, exp["commit"])
     except Exception as e:                                 # noqa: BLE001
@@ -160,6 +179,10 @@ def run_experiment(exp_id: str):
             add_minutes(r, mins)
             r["experiments"][exp_id]["runs"][-1].update(status=status, minutes=round(mins, 2), ended=now())
         update(record)
+        if status != "done" and not status.startswith("killed"):
+            log_lines = (out / "train.log").read_text(encoding="utf-8", errors="replace").splitlines()
+            tail = "\n".join(log_lines[-20:])
+            _emit("run_problem", id=exp_id, seed=seed, status=status, log_tail=tail)
         ckpt = out / "model.pt"
         if ckpt.exists():
             ok, msg = evaluate(exp, seed, ckpt, out / "eval.json", code)
@@ -169,6 +192,8 @@ def run_experiment(exp_id: str):
     evaluated = sum(1 for r in runs if str(r.get("eval", "")).startswith("ok"))
     final = "killed" if reg["experiments"][exp_id].get("kill_requested") else ("done" if evaluated else "failed")
     update(lambda r: r["experiments"][exp_id].update(status=final, ended=now()))
+    if final != "killed" and not (exp.get("full_of") and not exp.get("promoted_from")):
+        _emit("experiment_finished", id=exp_id, status=final)
     if final == "done" and exp.get("promoted_from"):
         from .report import write_report
         write_report(exp_id)
@@ -180,11 +205,16 @@ def next_queued() -> str | None:
     return min(queued)[1] if queued else None
 
 
-def run(once: bool = False, poll: float = 15):
-    print(f"harness daemon started {now()} (state in {STATE})", flush=True)
+def run(once: bool = False, poll: float = 15, agent: bool = True):
+    """Run the queue. With agent=True the daemon also wakes the research agent (see scheduler.py)."""
+    global SCHED
+    SCHED = Scheduler() if agent else None
+    print(f"harness daemon started {now()} (state in {STATE}; agent wake-ups {'on' if agent else 'off'})", flush=True)
+    idle_reported = False
     while True:
         exp_id = next_queued()
         if exp_id:
+            idle_reported = False
             print(f"{now()} running {exp_id}", flush=True)
             run_experiment(exp_id)
             print(f"{now()} finished {exp_id}: {load_registry()['experiments'][exp_id]['status']}", flush=True)
@@ -193,4 +223,8 @@ def run(once: bool = False, poll: float = 15):
         elif once:
             return
         else:
+            if not idle_reported:
+                _emit("queue_empty")
+                idle_reported = True
+            _tick()
             time.sleep(poll)

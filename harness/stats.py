@@ -49,6 +49,25 @@ def paired_permutation(diffs, reps: int = 20000, seed: int = 0) -> float:
     return float((np.abs((flips * d).mean(1)) >= obs - 1e-12).mean())
 
 
+def paired_diff_hierarchical(a, b, reps: int = 4000, seed: int = 0) -> tuple[float, float, float, float]:
+    """Difference in means between experiments A and B scored on the same held-out games.
+    a, b: arrays [training seeds, games]. Each bootstrap round resamples A's training seeds, B's training
+    seeds and the games (the same games for both), so run-to-run variation between training seeds is
+    part of the interval, not just game-to-game variation. Returns (diff, lo, hi, two-sided p)."""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    rng = np.random.default_rng(seed)
+    n = a.shape[1]
+    stats = np.empty(reps)
+    for i in range(reps):
+        g = rng.integers(0, n, n)
+        sa = rng.integers(0, a.shape[0], a.shape[0])
+        sb = rng.integers(0, b.shape[0], b.shape[0])
+        stats[i] = a[np.ix_(sa, g)].mean() - b[np.ix_(sb, g)].mean()
+    d = float(a.mean() - b.mean())
+    p = float(min(1.0, 2 * min((stats <= 0).mean(), (stats >= 0).mean())))
+    return d, float(np.percentile(stats, 2.5)), float(np.percentile(stats, 97.5)), p
+
+
 def exact_binomial_two_sided(k: int, n: int) -> float:
     """McNemar's exact test: k of n discordant pairs went one way, p = 0.5 under no difference."""
     if n == 0:

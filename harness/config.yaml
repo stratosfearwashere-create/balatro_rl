@@ -26,8 +26,6 @@ budgets:
   experiment_minutes: {cheap: 150, full: 360}   # hard cap per experiment (all its seeds together)
   day_minutes: 1200                             # training minutes per calendar day, all experiments
   eval_minutes: 30                              # cap per evaluation (not counted in the day budget)
-  agent_wakeups_per_day: 8
-  agent_usd_per_wakeup: 5.0                     # passed to claude -p --max-budget-usd
 
 tiers:
   cheap:
@@ -51,7 +49,7 @@ tiers:
 # The frozen player that plays the cards in the strategic environment (same for every experiment).
 tactical_checkpoint: checkpoints/ppo_gold1_best.pt
 # Starting point for experiments that don't train from scratch (spec init: baseline).
-baseline_checkpoint: checkpoints/ppo_gold1_best.pt
+baseline_checkpoint: checkpoints/baseline_strategic.pt   # copy of ppo_gold_strat1_best.pt: 9.64 vs 8.71 blinds
 
 # Training settings a spec may set (train.py flags without the leading dashes, underscores for hyphens).
 allowed_overrides: [strategic, margin, ante_weight, win_bonus, envs, steps, epochs, batch, pipeline, deck]
@@ -62,8 +60,17 @@ locked_hyperparameters: {lr: null, ent: 0.002, clip: 0.2, gamma: 0.995, lam: 0.9
 # Promotion from cheap to full requires this rule against the named baseline experiment's cheap result.
 promotion_rule: non_overlapping_95ci
 
+# The daemon wakes the agent on events (see harness/scheduler.py), within these limits.
 agent:
   model: claude-opus-5-5
-  analyse_model: claude-sonnet-5
+  analyse_model: claude-sonnet-5            # used for wake-ups that are only the daily summary pass
   max_turns: 60
   allowed_branch_prefix: agent/
+  wakeups_per_day: 20
+  min_minutes_between_wakeups: 20           # events inside this window are batched into the next wake-up
+  # Runs on your Claude plan only (no API key, no usage credits). The dollar figures are claude's
+  # list-price estimates of plan usage, used as brakes on how much of your allowance the agent takes.
+  usd_per_wakeup: 5.0                       # claude -p --max-budget-usd
+  usd_per_day: 25.0                         # daily brake on estimated usage
+  limit_pause_minutes: 60                   # after Claude reports a plan limit, pause wake-ups this long
+  daily_summary_time: "08:00"               # once a day: notebook summary / compression pass

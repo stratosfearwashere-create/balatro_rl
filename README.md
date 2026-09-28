@@ -166,11 +166,17 @@ The agent's instructions are `harness/PROTOCOL.md`; its permissions are `harness
 
 ```bash
 python -m harness pin                 # you: pin the reference commit branches are checked against
-python -m harness daemon              # you: run the experiment queue (leave it running)
-python -m harness agent --dry-run     # you: show the agent's next command
-python -m harness agent --once        # you: one agent iteration (propose or analyse)
+python -m harness daemon              # you: run the queue; it also wakes the agent (leave it running)
+python -m harness agent --dry-run     # you: show the brief the next wake-up would get
+python -m harness agent --once        # you: wake the agent now for pending events
 python -m harness status | metrics <id> | failures <id> | compare <a> <b> | notebook summary
 ```
+
+The daemon wakes the agent only when something happened: an experiment finished, the queue is about to
+run dry, a run crashed or hit its budget, or the daily summary time passed. Wake-ups are limited per day
+and in spend, at least 20 minutes apart (events in between are batched), and each gets a brief with the
+notebook summary, the events and the finished experiments' metrics and failures (`harness/scheduler.py`,
+limits in `harness/config.yaml`, log in `experiments/scheduler.log`).
 
 The agent may change reward shaping, curriculum, observation features, the network and discrete PPO
 settings; it may not change `harness/`, `eval/`, `tests/fidelity/`, `balatro_rl/sim/`, the notebook or the
