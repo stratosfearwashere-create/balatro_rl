@@ -392,3 +392,36 @@ def test_solver_handles_hands_past_16_cards():
     sv2.fs = None                                            # the general scorer
     assert got == sv2._preds(S._Round(list(big), list(sv.sg.deck[1:]), 3, 2, 0, frozenset(), -1))
     assert len(got) == 2
+
+
+def test_flat_values_do_not_override_the_solver():
+    """With a value network that can't tell positions apart (flat values plus noise), the search must leave
+    in-round choices to the solver: the chosen play / discard is within one logit of the solver's best.
+    Training run 1 failed this: with per-tree min-max normalisation, value noise of 0.06 became 5 logits
+    and the search picked discards the solver rated 4-6 logits worse."""
+    noise = random.Random(0)
+
+    def flat_agent(value_range):
+        agent = Agent(AZNet().eval(), AgentConfig(budget_round=8, budget_boss=8, autoplay=False,
+                                                  value_range=value_range), seed=0)
+        inner = agent.evaluate
+
+        def evaluate(w, root, rng, choice=None):
+            node = inner(w, root, rng, choice)
+            if not node.terminal:
+                node.value = 0.12 + noise.uniform(-0.05, 0.05)
+            return node
+        agent.evaluate = evaluate
+        return agent
+
+    def worst_gap(value_range):
+        gaps = []
+        for seed in range(10):
+            g = in_round(300 + seed)
+            d = flat_agent(value_range).decide(World(g))
+            prior = d.enc[1]["c_prior"]
+            gaps.append(float(prior.max() - prior[d.index]))
+        return max(gaps)
+
+    assert worst_gap((0.0, 1.0)) <= 1.0
+    assert worst_gap(None) > 1.0                 # the old normalisation fails the same check

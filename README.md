@@ -185,7 +185,7 @@ The objective is P(win the run). Every shaping term either leaves the optimal po
   - In the AlphaZero path, the network learns a residual on top of it: `V = Φ + R`. Set `value_residual: false` to turn that off. In the PPO path, `--shape-phi` adds `γΦ(s') − Φ(s)`.
 - **Temporary terms:**
   - A novelty bonus `β/√N(build)`, added to the value training target only and clipped to [0, 1]. It is gone by step 3M.
-  - `κ·KL(π ‖ π_solver)` on in-round decisions, gone by step 1.5M.
+  - `κ·KL(π ‖ π_solver)` on in-round decisions, with κ starting at 1.0 and gone by step 1.5M.
   - Ablate novelty by running with `novelty: {beta: 0}`, and keep it only if held-out win rate is better with it.
 - **Diagnostics** (in `*_log.jsonl`):
   - the schedule, and each shaping component per episode;

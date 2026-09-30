@@ -16,7 +16,7 @@ rewards:
     end_step: 3_000_000
     window: 200_000
   solver_kl:
-    kappa: 0.1
+    kappa: 1.0                 # at 0.1 run 1's in-round play drifted far from the solver
     end_step: 1_500_000
   aux_loss_weights:
     p_clear_blind: 0.5

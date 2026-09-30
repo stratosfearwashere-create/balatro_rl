@@ -32,7 +32,7 @@ class NoveltyConfig:
 
 @dataclass
 class SolverKLConfig:
-    kappa: float = 0.1
+    kappa: float = 1.0                # 0.1 was too weak to keep early in-round targets near the solver
     end_step: int = 1_500_000
 
 

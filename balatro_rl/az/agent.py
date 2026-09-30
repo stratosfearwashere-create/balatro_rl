@@ -48,6 +48,7 @@ class AgentConfig:
     budget_clear: int = 0           # in a round, when the policy is already this sure (clear_cut)
     clear_cut: float = 0.9
     m_root: int = 8
+    value_range: tuple | None = (0.0, 1.0)   # fixed scale for Q in the search (None: per-tree min-max)
     solver_samples: int = 12        # root
     solver_samples_inner: int = 4   # inside the search
     boss_depth: int = 2             # solver depth on boss blinds (root)
@@ -244,7 +245,7 @@ class Agent:
                 return Decision(best.action, -1, choice, np.zeros(0), False, reason="auto-play")
         root = self.evaluate(w, True, rng, choice)         # simulations start from resamplings of w
         budget, reason = self.budget(root)
-        search = GumbelSearch(self._expand_inner(rng), m_root=self.cfg.m_root)
+        search = GumbelSearch(self._expand_inner(rng), m_root=self.cfg.m_root, value_range=self.cfg.value_range)
         idx, pi = search.run(root, budget, rng, explore=explore)
         self.stats[f"budget_{reason}"] += 1
         self.stats["sims"] += getattr(search, "used", 0)

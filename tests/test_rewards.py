@@ -271,7 +271,11 @@ def test_config_from_yaml(tmp_path):
     blind_score_ratio: 0.25
     next_headroom: 0.1
 """)
-    assert RewardConfig.load(str(p)) == RewardConfig()
+    got = RewardConfig.load(str(p))
+    assert got.solver_kl.kappa == 0.1                            # the file's value, not the default
+    got.solver_kl.kappa = RewardConfig().solver_kl.kappa
+    assert got == RewardConfig()
+    assert RewardConfig.load("balatro_rl/rewards/default.yaml") == RewardConfig()
     with pytest.raises(KeyError):
         RewardConfig.from_dict({"potential": {"w_heat": 1}})
 

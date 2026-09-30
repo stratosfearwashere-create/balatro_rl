@@ -11,6 +11,8 @@ Deterministic actions keep a single outcome, and frequent outcomes get the visit
 
 Root: Gumbel-Top-k with Sequential Halving (Danihelka et al. 2022). Interior nodes: the deterministic
 Gumbel MuZero rule argmax(pi'(a) - N(a) / (1 + sum N)), with pi' = softmax(logits + sigma(completed Q)).
+Q is put on a fixed [0, 1] scale (value_range), not min-max normalised per tree: min-max turned value
+differences of 0.06 into 5 logits and let an untrained value network override the solver (training run 1).
 The improved policy softmax(logits + sigma(completed Q)) at the root is the policy training target.
 
 Leaf value: the network's V(s) = Phi(s) + R(s), trained towards z = (1 - lam) * win + lam * progress
@@ -53,8 +55,14 @@ class Chance:
 
 class GumbelSearch:
     def __init__(self, expand, c_visit: float = 50.0, c_scale: float = 0.1, pw_c: float = 1.0,
-                 pw_alpha: float = 0.5, m_root: int = 8, max_depth: int = 60):
-        """expand(world, root: bool) -> Node (evaluated by the network, or terminal)."""
+                 pw_alpha: float = 0.5, m_root: int = 8, max_depth: int = 60,
+                 value_range: tuple[float, float] | None = (0.0, 1.0)):
+        """expand(world, root: bool) -> Node (evaluated by the network, or terminal).
+        value_range: values are mapped to [0, 1] by this fixed range before sigma (values are win
+        probabilities, so a difference means the same everywhere). None: min-max over the values seen in
+        this tree (MuZero's normalisation), which stretches even tiny, meaningless differences to the full
+        scale and lets a young value network override the prior."""
+        self.value_range = value_range
         self.expand = expand
         self.c_visit, self.c_scale = c_visit, c_scale
         self.pw_c, self.pw_alpha = pw_c, pw_alpha
@@ -64,7 +72,7 @@ class GumbelSearch:
 
     # ------------------------------------------------------------------ value transforms
     def _norm(self, q):
-        lo, hi = self.vmin, self.vmax
+        lo, hi = self.value_range if self.value_range is not None else (self.vmin, self.vmax)
         if not hi > lo:
             return np.full_like(q, 0.5, dtype=float)
         return np.clip((q - lo) / (hi - lo), 0.0, 1.0)
