@@ -21,7 +21,6 @@ Phi_prog = furthest blind beaten / 24 (blinds replayed after Hieroglyph / Petrog
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 import math
 import random
@@ -149,7 +148,7 @@ class Headroom:
 
 def fresh_round(g: Game) -> Game:
     """A copy of g set up as the first hand of a new round with no boss effect."""
-    p = copy.deepcopy(g)
+    p = g.clone()
     p.rng = random.Random(0)
     p.state = "SELECTING_HAND"
     p.blind_idx = 0                         # boss_active() is "" off the boss blind: no boss effect

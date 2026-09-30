@@ -6,6 +6,7 @@ A re-implementation of Balatro's rules with all of its content: 150 jokers, 12 p
 """
 from __future__ import annotations
 
+import copy
 import random
 from dataclasses import dataclass, field
 from typing import Optional
@@ -52,6 +53,47 @@ class Consumable:
 
     def sell_value(self):
         return (1 if self.kind != "spectral" else 2) + self.sell_bonus
+
+
+_ATOMS = (int, float, str, bool, type(None), frozenset)
+
+
+def _clone(v, memo: dict):
+    """Game.clone's copier: fast paths for the game's own types, memoised so sharing is preserved."""
+    t = type(v)
+    if t in _ATOMS:
+        return v
+    got = memo.get(id(v))
+    if got is not None:
+        return got
+    if t is list:
+        new = []
+        memo[id(v)] = new
+        new.extend(_clone(x, memo) for x in v)
+        return new
+    if t is Card or t is Consumable:                 # dataclasses of immutable fields
+        new = object.__new__(t)
+        new.__dict__ = dict(v.__dict__)
+    elif t is Joker:
+        new = object.__new__(t)
+        new.__dict__ = dict(v.__dict__)             # its JokerDef `d` is shared, as deepcopy does
+        new.state = _clone(v.state, memo)
+    elif t is ShopItem:
+        new = object.__new__(t)
+        new.__dict__ = {k: _clone(x, memo) for k, x in v.__dict__.items()}
+    elif t is dict:
+        new = {k: _clone(x, memo) for k, x in v.items()}
+    elif t is set:
+        new = set(v) if all(type(x) in _ATOMS for x in v) else copy.deepcopy(v)
+    elif t is tuple:
+        new = tuple(_clone(x, memo) for x in v)
+    elif t is random.Random:
+        new = random.Random()
+        new.setstate(v.getstate())
+    else:
+        new = copy.deepcopy(v)
+    memo[id(v)] = new
+    return new
 
 
 class Game:
@@ -142,6 +184,17 @@ class Game:
             self.vouchers.update({"tarot_merchant", "planet_merchant", "overstock_norm"})
         elif deck_type == "GHOST":
             self.consumables.append(Consumable("spectral", "hex"))
+
+    # ------------------------------------------------------------------ copying
+    def clone(self) -> "Game":
+        """An independent copy, equal to copy.deepcopy(self) but several times faster (searches copy the
+        game constantly). Every card, joker, consumable and shop item is copied once, so objects shared
+        between lists (a card in both the hand and the full deck) stay shared in the copy, and card / joker
+        ids are kept. Anything of a type not handled here falls back to copy.deepcopy."""
+        memo: dict = {}
+        new = object.__new__(Game)
+        new.__dict__ = {k: _clone(v, memo) for k, v in self.__dict__.items()}
+        return new
 
     # ------------------------------------------------------------------ helpers
     def has(self, key: str) -> bool:

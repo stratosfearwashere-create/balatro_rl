@@ -19,7 +19,6 @@ modelled. Scores come from the compiled scorer when it is built and are cached p
 from __future__ import annotations
 
 import argparse
-import copy
 import random
 import time
 from itertools import combinations
@@ -57,7 +56,7 @@ class RoundSolver:
 
     # ------------------------------------------------------------------ scoring with a cache
     def _setup(self, g):
-        sg = copy.deepcopy(g)
+        sg = g.clone()
         sg.rng = random.Random(0)                    # never used: nothing random happens in here
         self.sg, self.plan = sg, Plan(sg)
         self.target = g.target
@@ -67,7 +66,8 @@ class RoundSolver:
         return sg
 
     def _preds(self, r: _Round) -> list:
-        """[(score, hand type, subset)] for every play from r.hand, best first."""
+        """[(score, hand type, subset)] for the two best plays from r.hand, best first (all the rollouts
+        use). Ties go to the earlier subset, as a stable sort by score would."""
         eye = self.boss in ("eye", "mouth")
         key = (tuple(c.uid for c in r.hand), r.hl, r.dl, len(r.draw), (r.types, r.mouth) if eye else None)
         got = self.cache.get(key)
@@ -81,7 +81,16 @@ class RoundSolver:
             sg.round_hand_types, sg.mouth_hand = set(r.types), r.mouth
         subs = _subsets(len(r.hand))
         preds = sg.predict_many(subs, self.plan, r.hand) if subs else []
-        out = sorted(((p[0], p[1], s) for p, s in zip(preds, subs)), key=lambda x: -x[0])
+        b1 = b2 = -1
+        s1 = s2 = float("-inf")
+        for i, p in enumerate(preds):
+            sc = p[0]
+            if sc > s1:
+                b2, s2 = b1, s1
+                b1, s1 = i, sc
+            elif sc > s2:
+                b2, s2 = i, sc
+        out = [(preds[b][0], preds[b][1], subs[b]) for b in (b1, b2) if b >= 0]
         self.cache[key] = out
         return out
 

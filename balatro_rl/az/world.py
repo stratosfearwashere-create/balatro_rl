@@ -12,7 +12,6 @@ draw order or random generator; everything that simulates the future works on su
 """
 from __future__ import annotations
 
-import copy
 import random
 from dataclasses import dataclass
 
@@ -129,7 +128,7 @@ class World:
             g.state = "GAME_OVER"          # nothing left to play (as the base environment does)
 
     def copy(self) -> "World":
-        return World(copy.deepcopy(self.g), self.rerolls, self.moves, self.steps)
+        return World(self.g.clone(), self.rerolls, self.moves, self.steps)
 
     def determinize(self, rng: random.Random) -> "World":
         return World(determinize(self.g, rng), self.rerolls, self.moves, self.steps)
@@ -155,7 +154,7 @@ def redraw(g: Game, rng: random.Random):
 
 def determinize(g: Game, rng: random.Random) -> Game:
     """A copy of g with every piece of hidden information redrawn from `rng` (see the module doc)."""
-    w = copy.deepcopy(g)
+    w = g.clone()
     w.rng = random.Random(rng.getrandbits(64))
     if w.state == "SELECTING_HAND":
         redraw(w, w.rng)
