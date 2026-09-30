@@ -158,8 +158,16 @@ def collate(samples: list[tuple[dict, dict]], device="cpu"):
     return s, c, cmask.to(device)
 
 
-def save_net(net: AZNet, path: str, extra: dict | None = None):
-    torch.save({"config": net.config, "state_dict": net.state_dict(), "extra": extra or {}}, path)
+def save_net(net: AZNet, path: str, extra: dict | None = None, optimizer=None):
+    """Atomic: written to a temporary file, then renamed over `path`, so a run killed mid-save never leaves
+    a broken checkpoint. With `optimizer`, its state is saved too (for resuming training)."""
+    import os
+    ck = {"config": net.config, "state_dict": net.state_dict(), "extra": extra or {}}
+    if optimizer is not None:
+        ck["optimizer"] = optimizer.state_dict()
+    tmp = path + ".tmp"
+    torch.save(ck, tmp)
+    os.replace(tmp, path)
 
 
 def load_net(path: str, device="cpu") -> AZNet:

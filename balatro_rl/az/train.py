@@ -249,6 +249,11 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
 
 
 # ------------------------------------------------------------------ learner
+def load_rows_jsonl(path) -> list:
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 def load_rows(paths) -> list:
     rows = []
     for p in paths:
@@ -359,24 +364,61 @@ def run(a):
     import torch
     from .net import AZNet, load_net, save_net
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    rcfg = RewardConfig.load(a.reward_config)
     os.makedirs(a.data, exist_ok=True)
-    step = 0
-    if a.init:
-        net = load_net(a.init, device)
-        step = _checkpoint_meta(a.init).get("step", 0)
-    else:
-        torch.manual_seed(0)
-        net = AZNet(value_residual=rcfg.potential.value_residual).to(device)
-    meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict()}
-    save_net(net, a.out, meta(0))
     log_path = a.out.replace(".pt", "_log.jsonl")
+    done_path = a.out.replace(".pt", "_done.txt")
     opt = None
+    first = 1
+    if os.path.exists(a.out) and not a.resume:
+        raise SystemExit(f"{a.out} already exists: pass --resume to continue that run, or choose another --out")
+    if a.resume and os.path.exists(a.out):
+        # continue where the run stopped: network, optimizer, schedule step, reward config, novelty counts
+        # and alarm history; iterations count on from the last one saved (--iters is the run's total)
+        ck = torch.load(a.out, map_location=device, weights_only=False)
+        meta0 = ck.get("extra", {})
+        rcfg = RewardConfig.from_dict(meta0.get("rewards"))
+        net = load_net(a.out, device)
+        step = meta0.get("step", 0)
+        first = meta0.get("iter", 0) + 1
+        opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
+        if "optimizer" in ck:
+            opt.load_state_dict(ck["optimizer"])
+        print(f"resuming {a.out} after iteration {first - 1} ({step:,} decisions)", flush=True)
+    else:
+        rcfg = RewardConfig.load(a.reward_config)
+        step = 0
+        if a.init:
+            net = load_net(a.init, device)
+            step = _checkpoint_meta(a.init).get("step", 0)
+        else:
+            torch.manual_seed(0)
+            net = AZNet(value_residual=rcfg.potential.value_residual).to(device)
+    meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict()}
+    if first == 1:
+        save_net(net, a.out, meta(0))
     cfg_over = json.loads(a.cfg) if a.cfg else {}
     novelty = NoveltyCounter(rcfg.novelty.window)
     alarm = HackAlarm(a.alarm_n)
+    if first > 1:
+        logged = [r for r in load_rows_jsonl(log_path) if r["iter"] < first] if os.path.exists(log_path) else []
+        oldest = 1                              # novelty counts cover the last `window` decisions: load
+        prev = {r["iter"]: r["step"] for r in logged}   # only the iterations that fall inside it
+        for r in reversed(logged):
+            if step - prev.get(r["iter"] - 1, 0) >= rcfg.novelty.window:
+                oldest = r["iter"]
+                break
+        for s in sorted(glob.glob(os.path.join(a.data, "it*_w*.pkl"))):
+            if oldest <= int(os.path.basename(s)[2:6]) < first:
+                novelty.add(r["sig"] for r in load_rows([s]))
+        for row in logged:
+            if "eval" in row:
+                alarm.update(row["shaping"]["value_target"], row["eval"]["breakdown"]["win_rate"])
+    if os.path.exists(done_path) and first <= a.iters:
+        os.remove(done_path)                    # resumed with more iterations: not finished any more
     pot = dict(rcfg.potential.__dict__)
-    for it in range(1, a.iters + 1):
+    for it in range(first, a.iters + 1):
+        for stale in glob.glob(os.path.join(a.data, f"it{it:04d}_w*.pkl")):
+            os.remove(stale)                    # games of an iteration that was cut off: played again
         t0 = time.time()
         search = it > a.warmup
         sched = rcfg.schedule(step)
@@ -399,7 +441,7 @@ def run(a):
         rows = load_rows([s for s in shards if it - a.window < int(os.path.basename(s)[2:6]) <= it])
         sched = rcfg.schedule(step)
         losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty, opt)
-        save_net(net, a.out, meta(it))
+        save_net(net, a.out, meta(it), opt)
         comp = shaping_components(new_rows, sched, novelty, rcfg.potential.w_head)
         annealed = sched.lam == 0.0 and sched.beta == 0.0
         exact = not annealed or all(value_target(r, sched, novelty)[0] == r["win"] for r in new_rows)
@@ -437,6 +479,8 @@ def run(a):
         if "eval" in row:
             short["eval"] = {k: row["eval"][k] for k in ("games", "win%", "blinds", "ante")}
         print(json.dumps(short, default=float), flush=True)
+    with open(done_path, "w") as f:
+        f.write(f"finished {a.iters} iterations, {step} decisions\n")
 
 
 def main():
@@ -453,7 +497,9 @@ def main():
     r.add_argument("--lr", type=float, default=3e-4)
     r.add_argument("--deck", default="RED")
     r.add_argument("--stake", default=STAKE)
-    r.add_argument("--init", default=None)
+    r.add_argument("--init", default=None, help="start a new run from this checkpoint's network")
+    r.add_argument("--resume", action="store_true",
+                   help="if --out exists, continue that run from its last saved iteration (else start it)")
     r.add_argument("--data", default="checkpoints/az_data")
     r.add_argument("--out", default="checkpoints/az.pt")
     r.add_argument("--reward-config", default=None, help="YAML / JSON reward config (rewards/config.py)")
