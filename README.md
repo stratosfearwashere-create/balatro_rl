@@ -177,7 +177,7 @@ The search backs up the network's value `V`, and a finished game is worth `z` (b
 
 The objective is P(win the run). Every shaping term either leaves the optimal policy unchanged or decays to exactly 0. Raw score, overkill, gold held and leftover hands/discards are never rewarded; they only appear as auxiliary predictions. Held-out win rate is the only measure of success. Settings are in `balatro_rl/rewards/default.yaml`; pass a changed copy with `--reward-config`.
 
-- **Value target:** `z = (1 − λ)·win + λ·blinds/24`, where λ decays from 0.5 to 0 by step 2M. Steps count self-play decisions. After that, `z = win` exactly.
+- **Value target:** `z = (1 − λ)·win + λ·blinds/24`, where λ decays from 0.5 to 0 over 2M decisions on its own clock. That clock only runs while the agent wins: the self-play win rate over the last 320 games must be at least 10% (`lambda_gate_win_rate`, `lambda_gate_games`). If λ faded while nothing is ever won, every target would become 0 and the value network, and the search that relies on it, would have nothing to learn from. The clock never runs backwards, so λ doesn't rise again if the win rate dips. Once λ reaches 0, `z = win` exactly.
 - **Potential:** `Φ = 0.7·tanh(headroom / scale) + 0.3·blinds/24`, with `Φ = 0` at the end of a run.
   - `headroom` is `log E[best-hand score] − log(the current ante's boss target)`. It uses the real target, so The Wall counts ×4.
   - E[best-hand score] averages 32 hands sampled from the full deck, scored by the simulator's scorer as the first hand of a fresh round, with no boss effect.

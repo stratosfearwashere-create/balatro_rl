@@ -1,7 +1,11 @@
 """Reward / value-target configuration and annealing schedules.
 
     cfg = RewardConfig.load("rewards.yaml")      # or RewardConfig() for the defaults below
-    s = cfg.schedule(step)                        # lambda, beta (novelty), kappa (solver KL) at this step
+    s = cfg.schedule(step, lambda_clock)          # lambda, beta (novelty), kappa (solver KL)
+
+lambda fades on its own clock (LambdaGate), which only runs while the agent actually wins: if lambda faded
+while nothing is ever won, every value target would become 0 and the value network (and the search that
+relies on it) would have nothing to learn from. beta and kappa fade on the decision count.
 
 A YAML (or JSON) file may hold the settings at the top level or under a `rewards:` key; any setting left
 out keeps its default. Every temporary coefficient decays linearly and is exactly 0 from its end step on.
@@ -55,14 +59,19 @@ class Schedule:
 @dataclass
 class RewardConfig:
     lambda_start: float = 0.5
-    lambda_end_step: int = 2_000_000
+    lambda_end_step: int = 2_000_000          # decisions on the lambda clock for lambda to reach 0
+    lambda_gate_win_rate: float = 0.10        # the clock runs only while the recent win rate is at least this
+    lambda_gate_games: int = 320              # over this many recent self-play games (0 rate: always runs)
     potential: PotentialConfig = field(default_factory=PotentialConfig)
     novelty: NoveltyConfig = field(default_factory=NoveltyConfig)
     solver_kl: SolverKLConfig = field(default_factory=SolverKLConfig)
     aux_loss_weights: AuxWeights = field(default_factory=AuxWeights)
 
-    def schedule(self, step: int) -> Schedule:
-        return Schedule(step, _decay(self.lambda_start, self.lambda_end_step, step),
+    def schedule(self, step: int, lambda_clock: int | None = None) -> Schedule:
+        """lambda_clock: decisions played while the win-rate gate was open (LambdaGate.clock); None uses
+        `step`, i.e. a fixed fade."""
+        clock = step if lambda_clock is None else lambda_clock
+        return Schedule(step, _decay(self.lambda_start, self.lambda_end_step, clock),
                         _decay(self.novelty.beta, self.novelty.end_step, step),
                         _decay(self.solver_kl.kappa, self.solver_kl.end_step, step))
 
@@ -87,6 +96,40 @@ class RewardConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+class LambdaGate:
+    """The clock lambda fades on. After each iteration, update() adds the iteration's decisions to the clock
+    if the win rate over the most recent `games` self-play games (at least that many) is >= `win_rate`.
+    The clock never runs backwards, so lambda never rises again if the win rate dips."""
+
+    def __init__(self, win_rate: float, games: int, clock: int = 0, recent: list | None = None):
+        self.win_rate, self.games, self.clock = win_rate, games, clock
+        self.recent = list(recent or [])            # [(wins, games)] per iteration, newest last
+
+    def rate(self):
+        wins = games = 0
+        for w, n in reversed(self.recent):
+            wins, games = wins + w, games + n
+            if games >= self.games:
+                return wins / games
+        return None                                   # not enough games yet
+
+    def update(self, wins: int, games: int, decisions: int) -> bool:
+        self.recent.append((int(wins), int(games)))
+        self.recent = self.recent[-50:]
+        r = self.rate()
+        is_open = self.win_rate <= 0 or (r is not None and r >= self.win_rate)
+        if is_open:
+            self.clock += int(decisions)
+        return is_open
+
+    def state(self) -> dict:
+        return {"clock": self.clock, "recent": self.recent}
+
+    @classmethod
+    def from_state(cls, win_rate: float, games: int, state: dict) -> "LambdaGate":
+        return cls(win_rate, games, state.get("clock", 0), [tuple(x) for x in state.get("recent", [])])
 
 
 def _decay(start: float, end_step: int, step: int) -> float:

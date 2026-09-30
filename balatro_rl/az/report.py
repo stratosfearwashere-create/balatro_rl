@@ -40,7 +40,10 @@ def report(rows: list[dict], last: int = 0, detail: bool = False):
             losses = {k[5:]: v for k, v in r.items() if k.startswith("loss_")}
             print("      losses " + "  ".join(f"{k} {v:.4f}" for k, v in losses.items()))
             print("      shaping " + "  ".join(f"{k} {v:+.4f}" for k, v in r["shaping"].items()))
-            print(f"      lam {r['lam']:.3f}  beta {r['beta']:.4f}  kappa {r['kappa']:.3f}  sims/decision "
+            g = r.get("lambda_gate")
+            gate = (f"  (lambda clock {r.get('lambda_clock', 0):,}, gate {'open' if g['open'] else 'closed'}: "
+                    f"win rate {g['win_rate']} vs {g['threshold']})") if g else ""
+            print(f"      lam {r['lam']:.3f}{gate}  beta {r['beta']:.4f}  kappa {r['kappa']:.3f}  sims/decision "
                   f"{r['sims/decision']}  autoplay {r['autoplay%']}%  headroom {r['headroom_ms/decision']} ms/decision")
     last_r = rows[-1]
     evals = [r for r in rows if "eval" in r]
@@ -49,6 +52,10 @@ def report(rows: list[dict], last: int = 0, detail: bool = False):
     total_min += sum(0 for _ in evals)
     print(f"{len(rows)} iterations, {last_r['step']:,} decisions; schedule now lam {last_r['lam']:.3f}, "
           f"beta {last_r['beta']:.4f}, kappa {last_r['kappa']:.3f}")
+    g = last_r.get("lambda_gate")
+    if g:
+        print(f"lambda clock {last_r.get('lambda_clock', 0):,} decisions; gate {'OPEN' if g['open'] else 'closed'} "
+              f"(self-play win rate {g['win_rate']} vs threshold {g['threshold']}): lambda only fades while open")
     searched = [r for r in rows if r["search"]]
     if searched:
         m = sum(r["gen_min"] + r["train_min"] for r in searched[-5:]) / len(searched[-5:])

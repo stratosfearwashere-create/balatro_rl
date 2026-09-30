@@ -313,3 +313,55 @@ def test_calibration_and_alarm():
     assert ok.update(0.4, 0.2) is None
     b = breakdown([{"won": False, "ante": 2, "bosses": [("wall", False)]}, {"won": True, "ante": 8, "bosses": []}])
     assert b["win_rate"] == 0.5 and b["by_boss"]["wall"]["cleared%"] == 0.0
+
+
+# ------------------------------------------------------------------ lambda only fades while the agent wins
+def test_lambda_holds_until_the_agent_wins():
+    from balatro_rl.rewards.config import LambdaGate
+    cfg = RewardConfig()
+    gate = LambdaGate(0.10, 320)
+    for _ in range(200):                                   # 200 iterations of 64 games without a win
+        assert gate.update(0, 64, 10_000) is False
+    assert gate.clock == 0
+    s = cfg.schedule(2_000_000_000, gate.clock)
+    assert s.lam == cfg.lambda_start                       # lambda untouched however long it trains
+    assert s.beta == 0.0 and s.kappa == 0.0                # novelty and solver KL still follow the step count
+
+
+def test_lambda_gate_opens_needs_enough_games_and_never_rewinds():
+    from balatro_rl.rewards.config import LambdaGate
+    gate = LambdaGate(0.10, 320)
+    assert gate.update(64, 64, 5_000) is False and gate.rate() is None     # 100% but only 64 games: wait
+    for _ in range(4):
+        gate.update(7, 64, 5_000)
+    assert gate.rate() == (64 + 28) / 320 and gate.clock == 5_000          # opened on the 5th iteration
+    gate.update(0, 320, 5_000)                                             # the win rate collapses
+    assert gate.clock == 5_000                                             # closed again, clock kept
+    cfg = RewardConfig()
+    lam = [cfg.schedule(0, c).lam for c in (0, 5_000, 5_000)]
+    assert lam[0] > lam[1] == lam[2]                                       # lambda never rises again
+
+
+def test_lambda_gate_zero_threshold_is_the_old_fixed_fade():
+    from balatro_rl.rewards.config import LambdaGate
+    gate = LambdaGate(0.0, 320)
+    for _ in range(3):
+        assert gate.update(0, 64, 1_000)
+    cfg = RewardConfig()
+    assert cfg.schedule(3_000, gate.clock).lam == cfg.schedule(3_000).lam
+
+
+def test_training_saves_and_resumes_the_lambda_gate(tmp_path):
+    import json, subprocess, sys, torch
+    out, data = tmp_path / "az.pt", tmp_path / "data"
+    base = [sys.executable, "-m", "balatro_rl.az.train", "run", "--games", "2", "--workers", "1", "--warmup", "5",
+            "--steps", "2", "--batch", "8", "--out", str(out), "--data", str(data)]
+    subprocess.run(base + ["--iters", "1"], check=True, capture_output=True)
+    ck = torch.load(out, weights_only=False)["extra"]
+    assert ck["lambda_clock"] == 0 and len(ck["lambda_gate"]["recent"]) == 1
+    subprocess.run(base + ["--iters", "2", "--resume"], check=True, capture_output=True)
+    ck = torch.load(out, weights_only=False)["extra"]
+    assert len(ck["lambda_gate"]["recent"]) == 2                           # restored, then extended
+    rows = [json.loads(l) for l in open(tmp_path / "az_log.jsonl")]
+    assert [r["lam"] for r in rows] == [0.5, 0.5]                          # no wins yet: lambda held
+    assert rows[-1]["lambda_gate"]["open"] is False

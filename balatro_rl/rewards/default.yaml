@@ -2,7 +2,9 @@
 # pass a copy with changes via --reward-config.
 rewards:
   lambda_start: 0.5            # z = (1 - lambda) * win + lambda * blinds/24, lambda -> 0
-  lambda_end_step: 2_000_000   # steps = self-play decisions
+  lambda_end_step: 2_000_000   # decisions on the lambda clock, which only runs while the agent wins:
+  lambda_gate_win_rate: 0.10   #   win rate over the last lambda_gate_games self-play games >= this
+  lambda_gate_games: 320
   potential:
     w_head: 0.7
     w_prog: 0.3

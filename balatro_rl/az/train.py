@@ -10,7 +10,9 @@ iterations:
   + weighted auxiliary losses: P(clear), ante reached (8 classes), log(blind score / required),
     next blind's headroom
 Targets are computed at training time from the schedule at the current step (step = decisions played by
-self-play so far), so lam, beta and kappa always match rewards.RewardConfig.schedule. Warm-up iterations
+self-play so far; lam on its own clock, which only runs while the recent self-play win rate clears
+lambda_gate_win_rate, see rewards.config.LambdaGate), so lam, beta and kappa always match
+rewards.RewardConfig.schedule. Warm-up iterations
 play without search and train the heads first.
 
 Diagnostics (one JSON line per iteration, *_log.jsonl): the schedule, each shaping component per episode,
@@ -38,7 +40,7 @@ from collections import Counter
 
 import numpy as np
 
-from ..rewards.config import RewardConfig, PotentialConfig
+from ..rewards.config import LambdaGate, RewardConfig, PotentialConfig
 from ..rewards.diagnostics import HackAlarm, breakdown, calibration, mean_or_nan
 from ..rewards.novelty import NoveltyCounter
 from ..rewards.targets import GameRecorder, N_ANTE_CLASSES, blind_index, z_target
@@ -224,10 +226,11 @@ def _checkpoint_meta(model) -> dict:
 def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=STAKE, seed0=EVAL_SEED0,
              cfg_over=None, rcfg: RewardConfig | None = None) -> dict:
     """Held-out games (greedy, no exploration). The value of a finished game in the search uses lam from
-    the reward schedule at the checkpoint's training step, matching what its value head was trained on."""
+    the reward schedule at the checkpoint's training step and lambda clock, matching what its value head
+    was trained on."""
     meta = _checkpoint_meta(model)
     rcfg = rcfg or RewardConfig.from_dict(meta.get("rewards"))
-    cfg_over = {"lam": rcfg.schedule(meta.get("step", 0)).lam, **(cfg_over or {})}
+    cfg_over = {"lam": rcfg.schedule(meta.get("step", 0), meta.get("lambda_clock")).lam, **(cfg_over or {})}
     seeds = list(range(seed0, seed0 + games))
     jobs = [(model, c, search, deck, stake, cfg_over, dict(rcfg.potential.__dict__)) for c in _split(seeds, workers)]
     with mp.get_context("spawn").Pool(len(jobs)) as pool:
@@ -380,6 +383,8 @@ def run(a):
         net = load_net(a.out, device)
         step = meta0.get("step", 0)
         first = meta0.get("iter", 0) + 1
+        # runs saved before the lambda gate existed faded lambda on the step count: carry that on
+        gate_state = meta0.get("lambda_gate", {"clock": meta0.get("lambda_clock", step)})
         opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
         if "optimizer" in ck:
             opt.load_state_dict(ck["optimizer"])
@@ -387,13 +392,16 @@ def run(a):
     else:
         rcfg = RewardConfig.load(a.reward_config)
         step = 0
+        gate_state = {"clock": 0}
         if a.init:
             net = load_net(a.init, device)
             step = _checkpoint_meta(a.init).get("step", 0)
         else:
             torch.manual_seed(0)
             net = AZNet(value_residual=rcfg.potential.value_residual).to(device)
-    meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict()}
+    gate = LambdaGate.from_state(rcfg.lambda_gate_win_rate, rcfg.lambda_gate_games, gate_state)
+    meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict(), "lambda_clock": gate.clock,
+                       "lambda_gate": gate.state()}
     if first == 1:
         save_net(net, a.out, meta(0))
     cfg_over = json.loads(a.cfg) if a.cfg else {}
@@ -410,6 +418,8 @@ def run(a):
         for s in sorted(glob.glob(os.path.join(a.data, "it*_w*.pkl"))):
             if oldest <= int(os.path.basename(s)[2:6]) < first:
                 novelty.add(r["sig"] for r in load_rows([s]))
+        if "recent" not in gate_state:          # old checkpoint: recent win rates from its log
+            gate.recent = [(round(r["win%"] * r["games"] / 100), r["games"]) for r in logged][-50:]
         for row in logged:
             if "eval" in row:
                 alarm.update(row["shaping"]["value_target"], row["eval"]["breakdown"]["win_rate"])
@@ -421,7 +431,7 @@ def run(a):
             os.remove(stale)                    # games of an iteration that was cut off: played again
         t0 = time.time()
         search = it > a.warmup
-        sched = rcfg.schedule(step)
+        sched = rcfg.schedule(step, gate.clock)
         seeds = list(range(GEN_SEED0 + (it - 1) * a.games, GEN_SEED0 + it * a.games))
         jobs = [(a.out, c, search, os.path.join(a.data, f"it{it:04d}_w{k}.pkl"), a.deck, a.stake,
                  {"lam": sched.lam, **cfg_over}, pot)
@@ -434,18 +444,23 @@ def run(a):
         for p in parts:
             stats.update(p[1])
         step += stats["decisions"]
+        gate_open = gate.update(sum(i["won"] for i in infos), len(infos), stats["decisions"])
         t_gen = time.time() - t0
         new_rows = load_rows(sorted(glob.glob(os.path.join(a.data, f"it{it:04d}_w*.pkl"))))
         novelty.add(r["sig"] for r in new_rows)
         shards = sorted(glob.glob(os.path.join(a.data, "it*_w*.pkl")))
         rows = load_rows([s for s in shards if it - a.window < int(os.path.basename(s)[2:6]) <= it])
-        sched = rcfg.schedule(step)
+        sched = rcfg.schedule(step, gate.clock)
         losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty, opt)
         save_net(net, a.out, meta(it), opt)
         comp = shaping_components(new_rows, sched, novelty, rcfg.potential.w_head)
         annealed = sched.lam == 0.0 and sched.beta == 0.0
         exact = not annealed or all(value_target(r, sched, novelty)[0] == r["win"] for r in new_rows)
-        row = {"iter": it, "step": step, "search": search, "lam": round(sched.lam, 5), "beta": round(sched.beta, 5),
+        gate_rate = gate.rate()
+        row = {"iter": it, "step": step, "search": search, "lam": round(sched.lam, 5), "lambda_clock": gate.clock,
+               "lambda_gate": {"open": gate_open, "win_rate": None if gate_rate is None else round(gate_rate, 4),
+                               "threshold": gate.win_rate},
+               "beta": round(sched.beta, 5),
                "kappa": round(sched.kappa, 5), **{k: round(v, 3) for k, v in summarize(infos).items()},
                "autoplay%": round(100.0 * stats["autoplay"] / max(1, stats["decisions"]), 2),
                "sims/decision": round(stats["sims"] / max(1, stats["decisions"]), 2),
