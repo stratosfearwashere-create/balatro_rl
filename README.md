@@ -136,6 +136,8 @@ embeddings. A separate value head feeds PPO. It has about 0.4M parameters.
 
 **Rewards.** +1 per blind beaten further than ever before in the run, +10 for beating ante 8, and on a loss at a new blind up to +0.5 for how close you got. Blinds replayed after Hieroglyph or Petroglyph (−1 Ante) earn nothing, so the agent can't farm reward by setting itself back.
 
+**Reward shaping (optional).** `--shape-chips` and `--shape-phi` add potential-based shaping (`γΦ(s') − Φ(s)`, using PPO's `--gamma`), which gives feedback between blinds without changing which policy is optimal. `--shape-chips` weights the progress through the current new blind (score/target × that blind's weight). `--shape-phi` weights the build potential from `balatro_rl/rewards/` (see *Rewards and value targets* below; configure it with `--reward-config`). Both default to 0. Finished runs have Φ = 0, so over a run the shaping adds up to −Φ(start) and can't be farmed. With `--strategic`, it applies once per strategic decision.
+
 ## What the simulator models
 
 - **Scoring:** Balatro's scoring order, with retriggers, editions, enhancements, seals and held-in-hand effects.
@@ -148,6 +150,49 @@ embeddings. A separate value head feeds PPO. It has about 0.4M parameters.
 - **Gold Stake rules:** no Small Blind reward, faster blind scaling, −1 discard, and Eternal, Perishable and Rental stickers.
 - **Shop:** weights, rarities, edition odds, prices (including Balatro's discount rounding) and reroll costs match the wiki. The first shop guarantees a Buffoon pack. Magic Trick and Illusion put playing cards in the shop.
 - **Checks:** unit tests cover scoring and the new jokers, and a fuzz test plays 150 random games stuffed with random jokers, vouchers and consumables.
+
+## Unified agent (`balatro_rl/az/`)
+
+A second agent, separate from the PPO pipeline above. It handles the whole run as **one decision process**: in-round play, consumable use, shop, packs and blind selection are all actions chosen by one network and one search.
+
+```bash
+python -m balatro_rl.az.solver bench --games 20                       # round solver: speed and calibration
+python -m balatro_rl.az.train eval --model none --games 48 --no-search # untrained network = its priors
+python -m balatro_rl.az.train run --iters 50 --games 64 --workers 8 --out checkpoints/az.pt --eval-every 5
+python -m balatro_rl.az.train eval --model checkpoints/az.pt --games 100
+python -m balatro_rl.az.train eval --model checkpoints/az.pt --verbose  # one game, move by move
+```
+
+- **Actions (`actions.py`).** It lists every legal action: plays and discards of 1–5 cards, consumable uses with every valid target set, joker sells and moves, and every shop, pack and blind action. Plays are scored exactly by the simulator's own scoring code: chips, mult, score, whether the play clears, and whether it clears even if every chance effect fails. Card order is optimised where it changes the score (e.g. a Mult card before a Glass card). Each action also records what it changes besides the score: each joker's runtime state (Green Joker, Ride the Bus, Ice Cream …), money, hand levels, the deck, and consumables created. The network sees a pruned set that keeps the best few actions from each "side-effect group", so a lower-scoring play that keeps Ride the Bus going is never pruned away.
+- **Round solver (`solver.py`).** For each candidate it estimates P(clear the blind) and the expected score, by Monte Carlo over redraws of the unseen cards and a fixed playout policy. With depth 2 (used on boss blinds) it runs a shallow expectimax instead. It takes about 35 ms per decision at depth 1.
+- **Network (`net.py`, `features.py`).** A transformer over tokens: hand, unseen deck, pack hand, jokers with runtime state, consumables, hand levels, shop, pack, and one global token that holds the phase. The policy head scores candidates as `logit = prior + adjustment`. The adjustment's last layer starts at zero, so an untrained network plays exactly like its prior. The prior is the solver in rounds and the rule-based player elsewhere. The value is `V = Φ + R` (see *Rewards and value targets*). Auxiliary heads: P(clear the current blind), ante reached, log(final blind score / required), next blind's headroom.
+- **Search (`search.py`).** Gumbel AlphaZero search on the real simulator, with chance nodes for draws, shop and pack contents, and random consumables. Chance nodes widen progressively. The budget adapts per decision: 0 when the policy is already sure, 8 simulations in a normal round, 16 on a boss, 24 for shop and pack decisions, and 32 when a spectral is involved.
+- **The solver is only a prior.** It only sets prior logits. The network's adjustment and the search's value of what follows can overrule it, e.g. to discard with Green Joker or to keep a tarot for later.
+- **No hidden-information leakage (`world.py`).** Anything that simulates the future works on copies of the game in which the draw order, face-down cards, face-down joker order and the random generator are resampled from the agent's own RNG, starting from a canonical order. `tests/test_az.py` checks that two games differing only in draw order and RNG get identical decisions and search policies.
+- **Auto-play shortcut (`agent.py`).** The agent skips network and search only if all of these hold: a play clears the blind with certainty; every legal play and discard changes joker states exactly as that play does; no consumable is usable; and no alternative has different lasting side effects. `agent.stats` counts how often it fires (about 9% of decisions for the untrained agent). A test compares against the real simulator that it never fires when an accumulating joker would be affected.
+
+The search backs up the network's value `V`, and a finished game is worth `z` (below). The first `--warmup` iterations play without search, to train the value heads before the search relies on them. The `az` agent trains and evaluates on White Stake by default (`--stake`).
+
+### Rewards and value targets (`balatro_rl/rewards/`)
+
+The objective is P(win the run). Every shaping term either leaves the optimal policy unchanged or decays to exactly 0. Raw score, overkill, gold held and leftover hands/discards are never rewarded; they only appear as auxiliary predictions. Held-out win rate is the only measure of success. Settings are in `balatro_rl/rewards/default.yaml`; pass a changed copy with `--reward-config`.
+
+- **Value target:** `z = (1 − λ)·win + λ·blinds/24`, where λ decays from 0.5 to 0 by step 2M. Steps count self-play decisions. After that, `z = win` exactly.
+- **Potential:** `Φ = 0.7·tanh(headroom / scale) + 0.3·blinds/24`, with `Φ = 0` at the end of a run.
+  - `headroom` is `log E[best-hand score] − log(the current ante's boss target)`. It uses the real target, so The Wall counts ×4.
+  - E[best-hand score] averages 32 hands sampled from the full deck, scored by the simulator's scorer as the first hand of a fresh round, with no boss effect.
+  - The samples are seeded from the build and cached, so the same build always gets the same Φ.
+  - In the AlphaZero path, the network learns a residual on top of it: `V = Φ + R`. Set `value_residual: false` to turn that off. In the PPO path, `--shape-phi` adds `γΦ(s') − Φ(s)`.
+- **Temporary terms:**
+  - A novelty bonus `β/√N(build)`, added to the value training target only and clipped to [0, 1]. It is gone by step 3M.
+  - `κ·KL(π ‖ π_solver)` on in-round decisions, gone by step 1.5M.
+  - Ablate novelty by running with `novelty: {beta: 0}`, and keep it only if held-out win rate is better with it.
+- **Diagnostics** (in `*_log.jsonl`):
+  - the schedule, and each shaping component per episode;
+  - calibration of Φ and V against actual wins, flagged when win rate doesn't rise with them;
+  - headroom time per decision;
+  - held-out win rate by ante reached and by boss;
+  - an `ALARM` when the shaped return rises for 3 evaluations while held-out win rate doesn't.
 
 ## Limitations (where to improve)
 
@@ -171,5 +216,6 @@ balatro_rl/
   train.py      # bc (DAgger) and ppo
   evaluate.py   # benchmark policies
   bridge.py     # play the real game through BalatroBot
+  az/           # unified agent: world, actions, solver, features, net, search, agent, train
 tests/          # behaviour tests; tests/fidelity/ holds the simulator fidelity tests and mock BalatroBot
 ```

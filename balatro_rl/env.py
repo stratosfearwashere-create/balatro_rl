@@ -567,26 +567,63 @@ def blind_weights(ante_weight: float = 1.0) -> list[float]:
     return [w * scale for w in raw]
 
 
+def potential(g: Game, weights: list[float], chips: float = 0.0, build=None, build_w: float = 0.0) -> float:
+    """Shaping potential Phi(s); the reward gets gamma * Phi(s') - Phi(s) (potential-based shaping,
+    Ng et al. 1999), which adds dense signal without changing which policy is optimal.
+    `chips`: progress through the current blind (score/target, capped at 1) x that blind's weight;
+    only on blinds not beaten before, so replays after -1 Ante still earn nothing.
+    `build`, `build_w`: build_w x rewards.Potential (headroom of the build against the next boss, plus
+    blinds beaten / 24). Finished runs are 0."""
+    if g.done:
+        return 0.0
+    phi = 0.0
+    if chips and g.state == "SELECTING_HAND" and g.target > 0:
+        b = 3 * (g.ante - 1) + g.blind_idx
+        if b + 1 > g.furthest_blind:
+            phi += chips * weights[min(b, 23)] * min(1.0, g.chips / g.target)
+    if build is not None and build_w:
+        phi += build_w * build(g)
+    return phi
+
+
+def build_potential(reward_config: Optional[str] = None):
+    """rewards.Potential from a reward config file (defaults if None)."""
+    from .rewards.config import RewardConfig
+    from .rewards.potential import Potential
+    return Potential(RewardConfig.load(reward_config).potential)
+
+
 class BalatroEnv:
     """Gym-style environment. Reward: for each blind beaten further than ever before in the run,
     that blind's weight (1 each by default; see blind_weights). Replaying blinds after
     Hieroglyph/Petroglyph's -1 Ante earns nothing. Plus `win_bonus` (default 10) for winning the
-    run, and up to half a blind's weight on a loss at a new blind, for how close it was."""
+    run, and up to half a blind's weight on a loss at a new blind, for how close it was.
+    Optional potential-based shaping (see potential): `shape_chips`, `shape_phi` (weight of
+    rewards.Potential, configured by the `reward_config` file), with `shape_gamma` set to the
+    discount PPO uses."""
 
     def __init__(self, deck: str = "RED", stake: str = "GOLD", ante_weight: float = 1.0, win_bonus: float = 10.0,
-                 win_ante: int = 8, joker_pool=None):
+                 win_ante: int = 8, joker_pool=None,
+                 shape_chips: float = 0.0, shape_phi: float = 0.0, reward_config: Optional[str] = None,
+                 shape_gamma: float = 0.995):
         self.deck = deck
         self.stake = stake
         self.game_kw = {"win_ante": win_ante, "joker_pool": joker_pool}
         self.weights = blind_weights(ante_weight)
         self.win_bonus = win_bonus
+        self.shape_chips, self.shape_phi, self.shape_gamma = shape_chips, shape_phi, shape_gamma
+        self.build = build_potential(reward_config) if shape_phi else None
         self.g: Optional[Game] = None
+
+    def potential(self) -> float:
+        return potential(self.g, self.weights, self.shape_chips, self.build, self.shape_phi)
 
     def reset(self, seed: Optional[int] = None) -> dict:
         self.g = Game(seed=seed, deck_type=self.deck, stake=self.stake, **self.game_kw)
         self.steps = 0
         self.cnt = Counters()
         self.obs = encode(self.g, self.cnt)
+        self.phi = self.potential()
         return self.obs
 
     def step(self, a: int):
@@ -616,5 +653,9 @@ class BalatroEnv:
         if obs is not None and not obs["mask"].any():
             g.state = "GAME_OVER"
             done, obs = True, None
+        if self.shape_chips or self.shape_phi:
+            phi = 0.0 if done else self.potential()          # runs cut off at MAX_STEPS end at 0 too
+            r += self.shape_gamma * phi - self.phi
+            self.phi = phi
         self.obs = obs
         return obs, r, done, {"ante": g.ante, "won": g.state == "WON", "blinds": g.furthest_blind}

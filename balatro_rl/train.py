@@ -58,7 +58,9 @@ def game_kw(a) -> dict:
     if a.joker_pool_file:
         with open(a.joker_pool_file) as f:
             pool = json.load(f)
-    return {"ante_weight": a.ante_weight, "win_bonus": a.win_bonus, "win_ante": a.win_ante, "joker_pool": pool}
+    return {"ante_weight": a.ante_weight, "win_bonus": a.win_bonus, "win_ante": a.win_ante, "joker_pool": pool,
+            "shape_chips": a.shape_chips, "shape_phi": a.shape_phi, "reward_config": a.reward_config,
+            "shape_gamma": a.gamma}
 
 
 def log(path, row):
@@ -292,6 +294,13 @@ def main():
                    help="PPO reward: an ante-8 blind is worth this many times an ante-1 blind, rising linearly "
                         "(the 24 blinds still add up to 24)")
     p.add_argument("--win-bonus", type=float, default=10.0, help="PPO reward for winning the run")
+    p.add_argument("--shape-chips", type=float, default=0.0,
+                   help="PPO potential-based shaping: reward for progress through a new blind, as a fraction of "
+                        "that blind's weight (e.g. 0.5). Paid back when the blind ends, so it only speeds learning")
+    p.add_argument("--shape-phi", type=float, default=0.0,
+                   help="PPO potential-based shaping: weight of the build potential (rewards/potential.py: "
+                        "headroom against the next boss + blinds beaten / 24), e.g. 1.0")
+    p.add_argument("--reward-config", default=None, help="YAML/JSON reward config (rewards/config.py)")
     p.add_argument("--strategic", action="store_true",
                    help="PPO only makes strategic decisions; a tactical network plays the cards (see strategic.py)")
     p.add_argument("--tactical", default=None, help="--strategic: checkpoint that plays the cards (default: --init)")

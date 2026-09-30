@@ -1,3 +1,4 @@
 numpy>=1.24
 torch>=2.1
+pyyaml>=6       # reward configs (balatro_rl/rewards)
 pytest>=7  # tests only
