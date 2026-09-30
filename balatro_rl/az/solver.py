@@ -81,7 +81,7 @@ class RoundSolver:
             self.cache_hits += 1
             return got
         self.calls += 1
-        if self.fs is not None:
+        if self.fs is not None and len(r.hand) <= 16:     # (The Serpent can push a simulated hand past 16)
             if eye:                             # as the uncompiled path leaves them (read by _evaluate)
                 self.sg.round_hand_types, self.sg.mouth_hand = set(r.types), r.mouth
             types, mouth = (fastscore.hand_types_mask(r.types), r.mouth) if eye else self.base_types

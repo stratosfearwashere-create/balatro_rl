@@ -371,3 +371,24 @@ def test_unlisted_kinds_take_the_full_path():
         h = copy.deepcopy(g)
         mutate(h)
         assert not A.plays_side_effect_free(Plan(h), h.hand_view())
+
+
+def test_solver_handles_hands_past_16_cards():
+    """The Serpent draws 3 after every play or discard, so a simulated hand can grow past the pooled
+    scorer's 16 cards; such hands fall back to the general scorer, with the same results."""
+    from balatro_rl.az import solver as S
+    from balatro_rl.sim import fastscore
+    g = Game(seed=21, stake="WHITE")
+    g.boss, g.blind_idx = "serpent", 2
+    g.hand_size = 16
+    g.select_blind()
+    sv = RoundSolver()
+    sv._setup(g)
+    big = list(sv.sg.hand) + list(sv.sg.deck[:1])            # 17 cards, as a Serpent draw can leave
+    r = S._Round(big, list(sv.sg.deck[1:]), 3, 2, 0, frozenset(), -1)
+    got = sv._preds(r)
+    sv2 = RoundSolver()
+    sv2._setup(g)
+    sv2.fs = None                                            # the general scorer
+    assert got == sv2._preds(S._Round(list(big), list(sv.sg.deck[1:]), 3, 2, 0, frozenset(), -1))
+    assert len(got) == 2
