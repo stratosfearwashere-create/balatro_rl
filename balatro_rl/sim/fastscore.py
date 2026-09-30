@@ -130,10 +130,14 @@ def kept_feats_many(hand, subsets):
     return _fs.kept_feats_many([(c.rank, c.suit, ENH.get(c.enh, C["E_OTHER"]), c.hidden) for c in hand], subsets)
 
 
-def build(g, plan, view):
-    """Compiled scorer for this state (plan and view as passed to Game.predict), or None."""
-    if not ENABLED:
-        return None
+def card_row(c) -> tuple:
+    return (c.rank, c.suit, ENH.get(c.enh, C["E_OTHER"]), EDITION.get(c.edition, C["ED_OTHER"]),
+            C["S_NONE"] if not c.seal else (C["S_RED"] if c.seal == "RED" else C["S_OTHER"]),
+            c.extra_chips, c.debuffed)
+
+
+def _context(g, plan) -> tuple:
+    """Everything the scorer reads besides the cards: (jokers, lists, flags, boss, arrays, probs, scalars)."""
     table = g.jokers
     index = {id(j): i for i, j in enumerate(table)}
     jokers = []
@@ -147,18 +151,12 @@ def build(g, plan, view):
         v = st.get("val")
         jokers.append(row + (EDITION.get(j.edition, C["ED_OTHER"]), target, st.get("rank", 14), st.get("suit", 0),
                              v is not None, 0.0 if v is None else v, j.sell_value()))
-    cards = [(c.rank, c.suit, ENH.get(c.enh, C["E_OTHER"]), EDITION.get(c.edition, C["ED_OTHER"]),
-              C["S_NONE"] if not c.seal else (C["S_RED"] if c.seal == "RED" else C["S_OTHER"]),
-              c.extra_chips, c.debuffed) for c in view]
     lists = ([index[id(j)] for j, _ in plan.before], [index[id(j)] for j, _ in plan.card],
              [index[id(j)] for j, _ in plan.retrig], [index[id(j)] for j, _ in plan.held],
              [index[id(j)] for j, _, _ in plan.main])
     flags = (plan.four_fingers, plan.shortcut, plan.smeared, plan.pareidolia, plan.splash, plan.mime,
              g.has("four_fingers"), g.has("shortcut"), g.has("smeared"))
-    types = 0
-    for h in g.round_hand_types:
-        types |= 1 << h
-    boss = (BOSS.get(plan.boss, 0), BOSS.get(g.boss_active(), 0), types, g.mouth_hand)
+    boss = (BOSS.get(plan.boss, 0), BOSS.get(g.boss_active(), 0), hand_types_mask(g.round_hand_types), g.mouth_hand)
     obs = [0] * N_HANDS
     if "observatory" in g.vouchers:
         for c in g.consumables:
@@ -174,7 +172,40 @@ def build(g, plan, view):
                sum(1 for c in fd if c.enh == "STEEL"), sum(1 for c in fd if c.enh == "STONE"),
                sum(1 for c in fd if c.enh), len(fd), g.starting_deck_size,
                sum(o.sell_value() for o in table), sum(1 for o in plan.jokers if o.d.rarity == 2))
+    return jokers, lists, flags, boss, arrays, probs, scalars
+
+
+def hand_types_mask(types) -> int:
+    m = 0
+    for h in types:
+        m |= 1 << h
+    return m
+
+
+def build(g, plan, view):
+    """Compiled scorer for this state (plan and view as passed to Game.predict), or None."""
+    if not ENABLED:
+        return None
+    cards, ctx = [card_row(c) for c in view], _context(g, plan)
     try:
-        return _fs.Scorer(cards, jokers, lists, flags, boss, arrays, probs, scalars)
+        return _fs.Scorer(cards, *ctx)
     except (ValueError, OverflowError, TypeError):
         return None                       # unusual state (e.g. > 64 cards): use Python
+
+
+def pool_scorer(g, plan, pool):
+    """A compiled scorer for this state that scores hands drawn from `pool` (a list of cards), by index:
+    best_two / best_two_many / score_all. Same results as build() on each hand. None if not built."""
+    if not ENABLED or not hasattr(_fs.Scorer, "best_two"):
+        return None
+    rows, ctx = [card_row(c) for c in pool], _context(g, plan)
+    try:
+        sc = _fs.Scorer([], *ctx)
+        sc.set_pool(rows)
+        return sc
+    except (ValueError, OverflowError, TypeError):
+        return None
+
+
+def subset_patterns(n: int):
+    return _fs.subset_patterns(n)

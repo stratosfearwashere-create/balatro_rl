@@ -94,3 +94,34 @@ def test_compiled_scorer_matches_python():
         got = fastscore.build(g, plan, view).predict_many(subs)
         for c, a, b in zip(subs, ref, got):
             assert a == b and type(a[0]) is type(b[0]), (s, c, a, b, [j.key for j in g.jokers])
+
+def test_pooled_calls_match_predict_many():
+    """best_two / best_two_many / score_all (hands drawn from a pool, round counters per call) give what
+    build() + predict_many give on the same hand with the same counters."""
+    rng = random.Random(11)
+    for s in range(150):
+        g = rand_state(rng)
+        plan = Plan(g)
+        pool = list(g.hand) + list(g.full_deck)
+        sc = fastscore.pool_scorer(g, plan, pool)
+        batch = []
+        for _ in range(3):
+            n = rng.randint(1, 16)
+            idx = rng.sample(range(len(pool)), min(n, len(pool)))
+            hl, dl = rng.randint(1, 4), rng.randint(0, 4)
+            dlen = rng.randint(0, 40)
+            types = set(rng.sample(range(12), rng.randint(0, 3)))
+            mouth = rng.choice([-1, rng.randrange(12)])
+            g.hand = [pool[i] for i in idx]
+            g.hands_left, g.discards_left, g.deck = hl, dl, [None] * dlen
+            g.round_hand_types, g.mouth_hand = types, mouth
+            subs = fastscore.subset_patterns(len(idx))
+            ref = fastscore.build(g, plan, g.hand).predict_many(subs)
+            mask = fastscore.hand_types_mask(types)
+            assert sc.score_all(idx, hl, dl, dlen, mask, mouth) == ref
+            top = sorted(((p[0], p[1], k) for k, p in enumerate(ref)), key=lambda x: -x[0])[:2]
+            got = sc.best_two(idx, hl, dl, dlen, mask, mouth)
+            assert got == top and [type(x[0]) for x in got] == [type(x[0]) for x in top]
+            batch.append((idx, hl, dl, dlen, mask, mouth, top))
+        idx, hl, dl, dlen, mask, mouth, top = batch[0]
+        assert sc.best_two_many([idx, idx], hl, dl, dlen, mask, mouth) == [top, top]

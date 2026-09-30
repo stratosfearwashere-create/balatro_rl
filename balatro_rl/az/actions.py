@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from itertools import combinations, permutations
 
 from ..env import _kept_feats_many
+from ..sim import fastscore
 from ..sim.game import Game, Consumable, TARGETED, MAX_SHOP, MAX_PACK, MAX_JOKERS
 from ..sim.hands import N_HANDS
 from ..sim.items import HAND_TO_PLANET
@@ -177,8 +178,38 @@ def _dedupe(g: Game, subs: list[tuple]) -> list[tuple]:
     return out
 
 
-def best_orders(g: Game, plan: Plan, view, subs: list[tuple], preds: list) -> tuple[list, list]:
+class _HandScorer:
+    """Scores plays of the current hand: all subsets in one compiled call (score_all), and any ordered
+    subsets (card orders) on the same compiled scorer. Same values as Game.predict_many; falls back to it
+    when the compiled scorer isn't built."""
+
+    def __init__(self, g: Game, plan: Plan, view):
+        self.g, self.plan, self.view = g, plan, view
+        n = len(view)
+        self.fs = fastscore.pool_scorer(g, plan, view) if n <= 16 else None
+        self._all = None
+        if self.fs is not None:
+            self._all = self.fs.score_all(list(range(n)), g.hands_left, g.discards_left, len(g.deck),
+                                          fastscore.hand_types_mask(g.round_hand_types), g.mouth_hand)
+            self._index = {s: k for k, s in enumerate(fastscore.subset_patterns(n))}
+
+    def subsets(self, subs: list[tuple]) -> list:
+        """Scores of hand-order subsets (as produced by play_subsets)."""
+        if self._all is None:
+            return self.g.predict_many(subs, self.plan, self.view) if subs else []
+        return [self._all[self._index[s]] for s in subs]
+
+    def ordered(self, subs: list[tuple]) -> list:
+        """Scores of subsets in any card order (the hand stays loaded after score_all)."""
+        if self.fs is None:
+            return self.g.predict_many(subs, self.plan, self.view)
+        return self.fs.predict_many(subs)
+
+
+def best_orders(g: Game, plan: Plan, view, subs: list[tuple], preds: list, scorer: _HandScorer | None = None
+                ) -> tuple[list, list]:
     """Replace each play by its best-scoring card order, where order matters (see the module doc)."""
+    predict = scorer.ordered if scorer is not None else (lambda s: g.predict_many(s, plan, view))
     multi = [i for i, s in enumerate(subs) if len(s) >= 2]
     alts = []
     for i in multi:
@@ -186,14 +217,14 @@ def best_orders(g: Game, plan: Plan, view, subs: list[tuple], preds: list) -> tu
         alts += [s[::-1], s[1:] + s[:1]]
     if not alts:
         return subs, preds
-    res = g.predict_many(alts, plan, view)
+    res = predict(alts)
     subs, preds = list(subs), list(preds)
     for k, i in enumerate(multi):
         base = preds[i][0]
         if res[2 * k][0] == base and res[2 * k + 1][0] == base:
             continue
         perms = list(permutations(subs[i]))
-        pr = g.predict_many(perms, plan, view)
+        pr = predict(perms)
         b = max(range(len(perms)), key=lambda t: (pr[t][0], -t))
         if pr[b][0] > base:
             subs[i], preds[i] = perms[b], pr[b]
@@ -202,8 +233,10 @@ def best_orders(g: Game, plan: Plan, view, subs: list[tuple], preds: list) -> tu
 
 def analyze_play(g: Game, plan: Plan, view, pos: tuple, need: float, slot_of: dict, real_only: bool) -> Cand:
     """Exact score and every lasting change of one play (no side effects on g: scored on card copies)."""
-    played = _copies([view[i] for i in pos])
-    held = _copies([c for i, c in enumerate(view) if i not in pos])
+    # the expected-value pass never changes cards (only a real play or a random generator does: Hiker, glass,
+    # commit), so it can read the hand's own cards; the random passes below work on copies
+    played = [view[i] for i in pos]
+    held = [c for i, c in enumerate(view) if i not in pos]
     sc, ctx = score_hand(g, played, held, rng=None, commit=False, plan=plan)
     violated = g.violates_boss([view[i] for i in pos])
     if violated:
@@ -584,8 +617,9 @@ def _round_candidates(w: World, rng: random.Random, cfg: Config) -> Choice:
     view = g.hand_view()
     slot_of = {j.uid: i for i, j in enumerate(g.jokers)}
     subs = play_subsets(g)
-    preds = g.predict_many(subs, plan, view) if subs else []
-    subs, preds = best_orders(g, plan, view, subs, preds)
+    hs = _HandScorer(g, plan, view)
+    preds = hs.subsets(subs)
+    subs, preds = best_orders(g, plan, view, subs, preds, hs)
     order = sorted(range(len(subs)), key=lambda i: -preds[i][0])
     real_only = any(j.key in REAL_ONLY_JOKERS for j in plan.jokers)
     after = after_play_jdiff(g, rng)

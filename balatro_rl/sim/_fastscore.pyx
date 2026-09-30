@@ -6,12 +6,15 @@ The Python code is the reference. fastscore.py turns a game state into the flat 
 and tests/test_fastscore.py checks the two agree. Effects that only move money are left out
 (they never change the score)."""
 cimport cython
-from libc.math cimport pow, floor
+from libc.math cimport pow, floor, isinf, isnan
+from libc.stdlib cimport malloc
 from cpython.long cimport PyLong_FromDouble
 
 cdef enum:
     MAXC = 64          # cards in hand (view)
     MAXJ = 64          # jokers
+    MAXPOOL = 512      # cards a pooled scorer can draw hands from
+    MAXHAND = 16       # hand size for the pooled calls (subset patterns are precomputed up to this)
 
 # hand types, same numbering as hands.py
 cdef enum:
@@ -504,6 +507,57 @@ def kept_feats_many(cards, subsets):
     return out
 
 
+# ------------------------------------------------------------------ subset patterns
+# every 1-5 card subset of an n-card hand, in the order of
+#   [c for k in range(1, min(5, n) + 1) for c in itertools.combinations(range(n), k)]
+# (the order the Python callers use, so ties between equal scores resolve the same way)
+cdef int PAT_OFF[MAXHAND + 1]
+cdef int PAT_N[MAXHAND + 1]
+cdef int* PAT_K
+cdef int* PAT_POS
+
+
+def _init_patterns():
+    global PAT_K, PAT_POS
+    from itertools import combinations
+    pats = []
+    for n in range(MAXHAND + 1):
+        PAT_OFF[n] = len(pats)
+        subs = [c for k in range(1, min(5, n) + 1) for c in combinations(range(n), k)]
+        PAT_N[n] = len(subs)
+        pats += subs
+    PAT_K = <int*> malloc(len(pats) * sizeof(int))
+    PAT_POS = <int*> malloc(5 * len(pats) * sizeof(int))
+    if PAT_K == NULL or PAT_POS == NULL:
+        raise MemoryError()
+    for t, c in enumerate(pats):
+        PAT_K[t] = len(c)
+        for i in range(5):
+            PAT_POS[5 * t + i] = c[i] if i < len(c) else -1
+
+
+_init_patterns()
+
+
+def subset_patterns(int n):
+    """The subsets the pooled calls score, as tuples, in their order (for mapping indices back)."""
+    from itertools import combinations
+    return [c for k in range(1, min(5, n) + 1) for c in combinations(range(n), k)]
+
+
+cdef inline object _score_obj(double f, bint viol):
+    # what predict_many returns for one play: 0.0 when the boss forbids it, else the int floor
+    return 0.0 if viol else PyLong_FromDouble(f)
+
+
+cdef inline void _check_finite(double f) except *:
+    # predict_many converts every floor(score) with PyLong_FromDouble, which raises on inf / nan
+    if isinf(f):
+        raise OverflowError("cannot convert float infinity to integer")
+    if isnan(f):
+        raise ValueError("cannot convert float NaN to integer")
+
+
 @cython.final
 cdef class Scorer:
     """Game state for one decision, flattened; predict_many scores candidate plays."""
@@ -529,6 +583,8 @@ cdef class Scorer:
     cdef bint plasma
     cdef long long discards_left, hands_left, money, njokers, deck_len, tarots, skipped, slots
     cdef long long stencils, steel, stone, enhanced, full_len, start_len, sell_total, rare2
+    cdef Crd pool[MAXPOOL]
+    cdef int npool
 
     def __init__(self, cards, jokers, lists, flags, boss, arrays, probs, scalars):
         cdef int i
@@ -591,6 +647,92 @@ cdef class Scorer:
             v = self._score(pos, k, &hand, &viol)
             sc = PyLong_FromDouble(floor(v))     # math.floor(chips * mult), overflow errors included
             out.append((0.0 if viol else sc, hand))
+        return out
+
+    # ------------------------------------------------------------------ pooled hands (batched calls)
+    def set_pool(self, cards):
+        """Cards (same row format as the constructor's) that hands are drawn from by index."""
+        cdef int i
+        if len(cards) > MAXPOOL:
+            raise ValueError("too many cards for the pooled scorer")
+        for i, c in enumerate(cards):
+            (self.pool[i].rank, self.pool[i].suit, self.pool[i].enh, self.pool[i].ed,
+             self.pool[i].seal, self.pool[i].extra, self.pool[i].deb) = c
+        self.npool = len(cards)
+
+    cdef int _load(self, hand, long long hands_left, long long discards_left, long long deck_len,
+                   int round_types, int mouth_hand) except -1:
+        cdef int n = len(hand), i, k
+        if n > MAXHAND:
+            raise ValueError("hand too large for the pooled scorer")
+        for i in range(n):
+            k = hand[i]
+            if k < 0 or k >= self.npool:
+                raise IndexError("pool index out of range")
+            self.cards[i] = self.pool[k]
+        self.ncards = n
+        self.hands_left, self.discards_left, self.deck_len = hands_left, discards_left, deck_len
+        self.round_types, self.mouth_hand = round_types, mouth_hand
+        return n
+
+    cdef list _best_two(self, int n):
+        """[(score, hand type, subset index)] for the two best plays, best first; ties keep the earlier
+        subset (what a stable sort by score gives)."""
+        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, hand, h1 = -1, h2 = -1, b1 = -1, b2 = -1
+        cdef int pos[5]
+        cdef double v, f, s1 = -1e308, s2 = -1e308
+        cdef bint viol, v1 = False, v2 = False
+        for t in range(m):
+            k = PAT_K[off + t]
+            for i in range(k):
+                pos[i] = PAT_POS[5 * (off + t) + i]
+            v = self._score(pos, k, &hand, &viol)
+            f = floor(v)
+            _check_finite(f)
+            if viol:
+                f = 0.0
+            if b1 < 0 or f > s1:
+                b2, s2, h2, v2 = b1, s1, h1, v1
+                b1, s1, h1, v1 = t, f, hand, viol
+            elif b2 < 0 or f > s2:
+                b2, s2, h2, v2 = t, f, hand, viol
+        out = []
+        if b1 >= 0:
+            out.append((_score_obj(s1, v1), h1, b1))
+        if b2 >= 0:
+            out.append((_score_obj(s2, v2), h2, b2))
+        return out
+
+    def best_two(self, hand, long long hands_left, long long discards_left, long long deck_len,
+                 int round_types, int mouth_hand):
+        """The two best plays of one hand (pool indices): [(score, hand type, subset index)], best first.
+        Subset indices refer to subset_patterns(len(hand)). Scores as predict_many returns them."""
+        return self._best_two(self._load(hand, hands_left, discards_left, deck_len, round_types, mouth_hand))
+
+    def best_two_many(self, hands, long long hands_left, long long discards_left, long long deck_len,
+                      int round_types, int mouth_hand):
+        """best_two for a batch of hands that share the round counters (one call for all of them)."""
+        return [self._best_two(self._load(h, hands_left, discards_left, deck_len, round_types, mouth_hand))
+                for h in hands]
+
+    def score_all(self, hand, long long hands_left, long long discards_left, long long deck_len,
+                  int round_types, int mouth_hand):
+        """[(score, hand type)] for every subset of one hand, in subset_patterns order; the same values as
+        predict_many(subset_patterns(len(hand))) on that hand."""
+        cdef int n = self._load(hand, hands_left, discards_left, deck_len, round_types, mouth_hand)
+        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, h
+        cdef int pos[5]
+        cdef double v, f
+        cdef bint viol
+        out = []
+        for t in range(m):
+            k = PAT_K[off + t]
+            for i in range(k):
+                pos[i] = PAT_POS[5 * (off + t) + i]
+            v = self._score(pos, k, &h, &viol)
+            f = floor(v)
+            _check_finite(f)
+            out.append((_score_obj(f, viol), h))
         return out
 
     # ------------------------------------------------------------------ joker state helpers

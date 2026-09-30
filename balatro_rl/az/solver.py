@@ -23,6 +23,7 @@ import random
 import time
 from itertools import combinations
 
+from ..sim import fastscore
 from ..sim.cards import sort_hand
 from ..sim.scoring import Plan
 from .actions import Choice
@@ -63,6 +64,11 @@ class RoundSolver:
         self.hand_size = g.effective_hand_size()
         self.boss = g.boss_active()
         self.cache = {}
+        # one compiled scorer for the whole solve; every hand of every future is drawn from these cards
+        pool = list(sg.hand) + list(sg.deck)
+        self.fs = fastscore.pool_scorer(sg, self.plan, pool)
+        self.pidx = {id(c): i for i, c in enumerate(pool)}
+        self.base_types = (fastscore.hand_types_mask(sg.round_hand_types), sg.mouth_hand)
         return sg
 
     def _preds(self, r: _Round) -> list:
@@ -75,6 +81,16 @@ class RoundSolver:
             self.cache_hits += 1
             return got
         self.calls += 1
+        if self.fs is not None:
+            if eye:                             # as the uncompiled path leaves them (read by _evaluate)
+                self.sg.round_hand_types, self.sg.mouth_hand = set(r.types), r.mouth
+            types, mouth = (fastscore.hand_types_mask(r.types), r.mouth) if eye else self.base_types
+            pidx = self.pidx
+            best = self.fs.best_two([pidx[id(c)] for c in r.hand], r.hl, r.dl, len(r.draw), types, mouth)
+            subs = _subsets(len(r.hand))
+            out = [(sc, h, subs[k]) for sc, h, k in best]
+            self.cache[key] = out
+            return out
         sg = self.sg
         sg.hand, sg.hands_left, sg.discards_left, sg.deck = r.hand, r.hl, r.dl, r.draw
         if eye:

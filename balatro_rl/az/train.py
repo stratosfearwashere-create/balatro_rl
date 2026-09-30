@@ -158,6 +158,51 @@ def _eval_worker(args):
     return infos, {**dict(agent.stats), **_headroom_stats(agent)}, light
 
 
+def _bench_worker(args):
+    """Fixed games with search on a fixed (seeded, untrained) network: identical work on every version."""
+    seeds, cfg_over = args
+    import torch
+    torch.set_num_threads(1)
+    from .agent import Agent, AgentConfig
+    from .net import AZNet
+    torch.manual_seed(0)
+    net = AZNet().eval()
+    out = []
+    for s in seeds:
+        agent = Agent(net, AgentConfig(**(cfg_over or {})), seed=s)
+        t = time.perf_counter()
+        _, info = play_game(agent, s, "RED", STAKE, explore=True, record=False)
+        out.append({"sec": time.perf_counter() - t, "decisions": agent.stats["decisions"],
+                    "sims": agent.stats["sims"], **_headroom_stats(agent), **_cache_stats(agent), **info})
+    return out
+
+
+def _cache_stats(agent) -> dict:
+    return {k: v for k, v in agent.stats.items() if k.startswith("cache_")}
+
+
+def bench(games: int, workers: int, seed0: int = 950_000, cfg_over=None) -> dict:
+    """games/hour with search, on fixed seeds (the same games whatever the code version, as long as the
+    decisions are unchanged)."""
+    seeds = list(range(seed0, seed0 + games))
+    t = time.time()
+    with mp.get_context("spawn").Pool(min(workers, games)) as pool:
+        parts = pool.map(_bench_worker, [(c, cfg_over) for c in _split(seeds, workers)])
+    wall = time.time() - t
+    games_ = sum(parts, [])
+    sec = sum(g["sec"] for g in games_)
+    res = {"games": len(games_), "workers": min(workers, games), "wall_min": round(wall / 60, 2),
+           "games_per_hour": round(len(games_) / wall * 3600, 1),
+           "sec_per_game_single_core": round(sec / len(games_), 2),
+           "decisions": sum(g["decisions"] for g in games_), "sims": sum(g["sims"] for g in games_),
+           "blinds": round(float(np.mean([g["blinds"] for g in games_])), 3)}
+    hits = sum(g.get("cache_hits", 0) for g in games_)
+    looks = hits + sum(g.get("cache_misses", 0) for g in games_)
+    if looks:
+        res["score_cache_hit%"] = round(100 * hits / looks, 1)
+    return res
+
+
 def _split(seeds, n):
     chunks = [seeds[i::n] for i in range(n)]
     return [c for c in chunks if c]
@@ -416,6 +461,10 @@ def main():
     r.add_argument("--eval-games", type=int, default=100)
     r.add_argument("--alarm-n", type=int, default=3, help="evaluations of rising shaped return before the alarm")
     r.add_argument("--cfg", default="", help="AgentConfig overrides as JSON, e.g. '{\"budget_shop\": 16}'")
+    b = sub.add_parser("bench", help="games/hour with search on fixed seeds and a fixed untrained network")
+    b.add_argument("--games", type=int, default=14)
+    b.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
+    b.add_argument("--cfg", default="")
     e = sub.add_parser("eval", help="play unseen seeds greedily")
     e.add_argument("--model", default="none", help="checkpoint, or 'none' for an untrained network (the priors)")
     e.add_argument("--games", type=int, default=100)
@@ -429,6 +478,8 @@ def main():
     a = p.parse_args()
     if a.cmd == "run":
         run(a)
+    elif a.cmd == "bench":
+        print(json.dumps(bench(a.games, a.workers, cfg_over=json.loads(a.cfg) if a.cfg else None)))
     elif a.cmd == "eval":
         cfg_over = json.loads(a.cfg) if a.cfg else None
         rcfg = RewardConfig.load(a.reward_config) if a.reward_config else None

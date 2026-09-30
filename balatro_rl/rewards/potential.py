@@ -27,6 +27,7 @@ import random
 import time
 from itertools import combinations
 
+from ..sim import fastscore
 from ..sim.cards import Card
 from ..sim.game import Game
 from ..sim.hands import N_HANDS
@@ -124,6 +125,13 @@ class Headroom:
         pool = sorted(probe.full_deck, key=lambda c: (_card_sig(c), c.uid))
         n = min(fresh_hand_size(g), len(pool))
         plan = Plan(probe)
+        fs = fastscore.pool_scorer(probe, plan, pool) if n <= 16 else None
+        if fs is not None:                   # all K hands in one compiled call
+            pos = {id(c): i for i, c in enumerate(pool)}
+            hands = [[pos[id(c)] for c in rng.sample(pool, n)] for _ in range(k)]
+            best = fs.best_two_many(hands, probe.hands_left, probe.discards_left, len(pool) - n,
+                                    fastscore.hand_types_mask(probe.round_hand_types), probe.mouth_hand)
+            return [b[0][0] if b else 0.0 for b in best]
         out = []
         for _ in range(k):
             hand = rng.sample(pool, n)
