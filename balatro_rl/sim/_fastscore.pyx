@@ -585,6 +585,7 @@ cdef class Scorer:
     cdef long long stencils, steel, stone, enhanced, full_len, start_len, sell_total, rare2
     cdef Crd pool[MAXPOOL]
     cdef int npool
+    cdef double last_chips, last_mult    # of the latest _score call (after Plasma Deck averaging)
 
     def __init__(self, cards, jokers, lists, flags, boss, arrays, probs, scalars):
         cdef int i
@@ -733,6 +734,28 @@ cdef class Scorer:
             f = floor(v)
             _check_finite(f)
             out.append((_score_obj(f, viol), h))
+        return out
+
+    def score_ext(self, subsets):
+        """[(score, hand type, chips, mult)] for plays of the loaded hand (in any card order): predict_many's
+        values plus the final chips and mult, as scoring.score_hand leaves them in ctx.chips / ctx.mult."""
+        cdef int pos[5]
+        cdef int k, i, hand
+        cdef bint viol
+        cdef double v, f
+        out = []
+        for s in subsets:
+            k = len(s)
+            if k < 1 or k > 5:
+                raise ValueError("a play has 1 to 5 cards")
+            for i in range(k):
+                pos[i] = s[i]
+                if pos[i] < 0 or pos[i] >= self.ncards:
+                    raise IndexError("hand position out of range")
+            v = self._score(pos, k, &hand, &viol)
+            f = floor(v)
+            _check_finite(f)
+            out.append((_score_obj(f, viol), hand, self.last_chips, self.last_mult))
         return out
 
     # ------------------------------------------------------------------ joker state helpers
@@ -1160,4 +1183,5 @@ cdef class Scorer:
             elif self.vboss == B_MOUTH and self.mouth_hand >= 0 and vh != self.mouth_hand:
                 viol[0] = True
         hand_out[0] = x.hand
+        self.last_chips, self.last_mult = x.chips, x.mult
         return x.chips * x.mult

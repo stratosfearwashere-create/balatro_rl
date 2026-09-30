@@ -231,6 +231,89 @@ def best_orders(g: Game, plan: Plan, view, subs: list[tuple], preds: list, score
     return subs, preds
 
 
+# ------------------------------------------------------------------ plays without side effects
+# Kinds known to change nothing but the score when a hand is played and scored: jokers whose scoring hooks
+# only read state (no runtime-state writes, money, randomness, creations or level changes) or that have no
+# scoring hooks at all; card enhancements, seals and editions with deterministic, score-only effects; bosses
+# whose play effects are score-only. When everything in play is on these lists, a play's analysis is just
+# its compiled score, chips and mult (analyze_play would find no joker change and no side effect); anything
+# else, including anything not listed, takes the full analysis. tests/test_az.py checks the two agree.
+PLAY_SAFE_JOKERS = frozenset({
+    # scoring hooks that only read state
+    "abstract", "acrobat", "ancient", "arrowhead", "banner", "baron", "baseball", "blackboard", "blue_joker",
+    "blueprint", "brainstorm", "caino", "campfire", "card_sharp", "castle", "cavendish", "ceremonial", "clever",
+    "constellation", "crafty", "crazy", "devious", "drivers_license", "droll", "duo", "dusk", "erosion",
+    "even_steven", "family", "fibonacci", "flash", "flower_pot", "fortune_teller", "glass", "gluttenous_joker",
+    "greedy_joker", "gros_michel", "hack", "half", "hanging_chad", "hit_the_road", "hologram", "ice_cream",
+    "idol", "joker", "jolly", "lusty_joker", "mad", "madness", "mystic_summit", "odd_todd", "onyx_agate",
+    "order", "popcorn", "raised_fist", "ramen", "red_card", "scary_face", "scholar", "seeing_double", "selzer",
+    "shoot_the_moon", "sly", "smiley", "sock_and_buskin", "steel_joker", "stencil", "stone", "stuntman",
+    "supernova", "swashbuckler", "throwback", "tribe", "triboulet", "trio", "walkie_talkie", "wily",
+    "wrathful_joker", "yorick", "zany",
+    # no scoring hooks (their play effects, if any, are rule flags the scorer handles)
+    "astronomer", "burglar", "burnt", "cartomancer", "certificate", "chaos", "chicot", "cloud_9", "credit_card",
+    "delayed_grat", "diet_cola", "drunkard", "egg", "faceless", "four_fingers", "gift", "golden", "hallucination",
+    "invisible", "juggler", "luchador", "mail", "marble", "matador", "merry_andy", "mime", "mr_bones", "oops",
+    "pareidolia", "perkeo", "riff_raff", "ring_master", "rocket", "satellite", "shortcut", "smeared", "splash",
+    "to_the_moon", "trading", "troubadour", "turtle_bean",
+})
+PLAY_SAFE_ENHANCEMENTS = frozenset({"", "BONUS", "MULT", "WILD", "STEEL", "STONE", "HIDDEN"})  # not GLASS, GOLD, LUCKY
+PLAY_SAFE_SEALS = frozenset({"", "RED", "PURPLE"})                                          # not GOLD, BLUE
+PLAY_SAFE_EDITIONS = frozenset({"", "FOIL", "HOLO", "POLYCHROME", "NEGATIVE"})
+PLAY_SAFE_BOSSES = frozenset({                                                     # not tooth, arm, ox
+    "", "amber_acorn", "cerulean_bell", "club", "crimson_heart", "eye", "fish", "flint", "goad", "head", "hook",
+    "house", "manacle", "mark", "mouth", "needle", "pillar", "plant", "psychic", "serpent", "verdant_leaf",
+    "violet_vessel", "wall", "water", "wheel", "window",
+})
+
+
+# Jokers that are side-effect free for some plays, by an exact per-play condition:
+#   misprint    random mult: only a clearing play's pessimistic score differs -> clearing plays take the full path
+#   todo_list   pays $4 when the played hand type is its target -> plays of that hand type take the full path
+#   lucky_cat   grows only on Lucky cards, which are never on the fast path anyway; needs its value present
+CONDITIONAL_JOKERS = frozenset({"misprint", "todo_list", "lucky_cat"})
+
+
+def fast_play_filter(plan: Plan, view):
+    """None when every play needs the full analysis; else a test (score, hand type, chips needed) -> bool for
+    whether a play can take the fast path (analyze_play would find no joker change and no side effect)."""
+    if plan.boss not in PLAY_SAFE_BOSSES:
+        return None
+    if not all(c.enh in PLAY_SAFE_ENHANCEMENTS and c.seal in PLAY_SAFE_SEALS and c.edition in PLAY_SAFE_EDITIONS
+               for c in view):
+        return None
+    misprint, todo = False, set()
+    for j in plan.jokers:
+        if j.key in PLAY_SAFE_JOKERS:
+            continue
+        if j.key == "misprint":
+            misprint = True
+        elif j.key == "todo_list":
+            todo.add(j.state.get("hand", 1))
+        elif j.key == "lucky_cat" and isinstance(j.state.get("val"), (int, float)):
+            pass
+        else:
+            return None
+    return lambda sc, h, need: not (misprint and sc >= need) and h not in todo
+
+
+def plays_side_effect_free(plan: Plan, view) -> bool:
+    """Every play of this hand can take the fast path, unconditionally."""
+    return (fast_play_filter(plan, view) is not None
+            and not any(j.key in CONDITIONAL_JOKERS and j.key != "lucky_cat" for j in plan.jokers))
+
+
+def light_play(pos: tuple, ext: tuple, need: float) -> Cand:
+    """analyze_play's result for a play without side effects, from the compiled (score, hand, chips, mult)."""
+    sc, h, chips, mult = ext
+    c = Cand(Action("play", cards=tuple(pos)), score=float(sc), chips=chips, mult=mult, hand=h, analyzed=True)
+    c.clears = sc >= need
+    if c.clears:
+        c.score_min = float(sc)                 # nothing random in play: the pessimistic score is the score
+        c.certain = c.score_min >= need
+    return c
+
+
 def analyze_play(g: Game, plan: Plan, view, pos: tuple, need: float, slot_of: dict, real_only: bool) -> Cand:
     """Exact score and every lasting change of one play (no side effects on g: scored on card copies)."""
     # the expected-value pass never changes cards (only a real play or a random generator does: Hiker, glass,
@@ -624,8 +707,15 @@ def _round_candidates(w: World, rng: random.Random, cfg: Config) -> Choice:
     real_only = any(j.key in REAL_ONLY_JOKERS for j in plan.jokers)
     after = after_play_jdiff(g, rng)
     plays = []
+    fast = fast_play_filter(plan, view) if hs.fs is not None else None
+    if fast is not None:
+        ext = hs.fs.score_ext([subs[i] for i in order[:cfg.max_analyzed]])
+        after_sorted = tuple(sorted(after, key=repr))
     for rank, i in enumerate(order):
-        if rank < cfg.max_analyzed:
+        if rank < cfg.max_analyzed and fast is not None and fast(ext[rank][0], ext[rank][1], need):
+            c = light_play(subs[i], ext[rank], need)
+            c.jdiff = after_sorted
+        elif rank < cfg.max_analyzed:
             c = analyze_play(g, plan, view, subs[i], need, slot_of, real_only)
             c.jdiff = tuple(sorted(c.jdiff + after, key=repr))
         else:                                   # beyond the analysis budget: score only

@@ -305,3 +305,69 @@ def test_agent_logs_autoplay():
     agent = Agent(AZNet().eval(), AgentConfig(search=False), seed=0)
     d = agent.decide(World(g))
     assert d.reason == "auto-play" and agent.stats["autoplay"] == 1 and agent.autoplay_rate() == 1.0
+
+
+# ------------------------------------------------------------------ fast path for side-effect-free plays
+def test_side_effect_free_fast_path_matches_full_analysis():
+    """For states using only listed kinds, the compiled fast path equals analyze_play on every play."""
+    from balatro_rl.az import actions as A
+    from balatro_rl.sim import fastscore
+    if not fastscore.ENABLED:
+        pytest.skip("compiled scorer not built")
+    rng = random.Random(3)
+    safe = sorted(A.PLAY_SAFE_JOKERS | A.CONDITIONAL_JOKERS)
+    bosses = sorted(A.PLAY_SAFE_BOSSES - {""})
+    enh, seals, eds = (sorted(A.PLAY_SAFE_ENHANCEMENTS - {"HIDDEN"}), sorted(A.PLAY_SAFE_SEALS),
+                       sorted(A.PLAY_SAFE_EDITIONS))
+    covered = set()
+    n_fast = n_full = 0
+    for t in range(220):
+        keys = [safe[(t * 3 + k) % len(safe)] for k in range(3)] + rng.sample(safe, 2)
+        if t % 4 == 0:                                   # conditional jokers, also copied by Blueprint / Brainstorm
+            keys = [rng.choice(sorted(A.CONDITIONAL_JOKERS)), rng.choice(["blueprint", "brainstorm", "joker"])] + keys[:3]
+        g = in_round(700 + t, keys)
+        covered |= set(keys)
+        for j in g.jokers:
+            if isinstance(j.state.get("val"), (int, float)):
+                j.state["val"] += rng.randint(0, 5)
+        if rng.random() < 0.5:
+            g.boss, g.blind_idx, g.state = rng.choice(bosses), 2, "BLIND_SELECT"
+            g.select_blind()
+        for c in g.hand:
+            c.enh, c.seal, c.edition = rng.choice(enh), rng.choice(seals), rng.choice(eds)
+        if rng.random() < 0.2 and g.hand:
+            g.hand[0].hidden = True
+        plan = Plan(g)
+        view = g.hand_view()
+        filt = A.fast_play_filter(plan, view)
+        assert filt is not None
+        need = max(g.target - g.chips, 1) if rng.random() < 0.5 else 1
+        slot_of = {j.uid: i for i, j in enumerate(g.jokers)}
+        hs = A._HandScorer(g, plan, view)
+        subs = A.play_subsets(g)
+        ext = hs.fs.score_ext(subs)
+        for s, e in zip(subs, ext):
+            full = A.analyze_play(g, plan, view, s, need, slot_of, False)
+            if filt(e[0], e[1], need):
+                fast_ = A.light_play(s, e, need)
+                assert vars(fast_) == vars(full), (keys, g.boss, s)
+                n_fast += 1
+            else:
+                n_full += 1
+    assert covered == set(safe)
+    assert n_fast > 1000 and n_full > 50                 # both branches of the conditions were exercised
+
+
+def test_unlisted_kinds_take_the_full_path():
+    from balatro_rl.az import actions as A
+    g = in_round(1, ["joker"])
+    assert A.plays_side_effect_free(Plan(g), g.hand_view())
+    for mutate in (lambda g: g.add_joker(Joker("green_joker", base_cost=4)),
+                   lambda g: setattr(g.hand[0], "enh", "GLASS"),
+                   lambda g: setattr(g.hand[0], "seal", "GOLD"),
+                   lambda g: g.add_joker(Joker("some_future_joker", base_cost=4)),
+                   lambda g: g.add_joker(Joker("todo_list", base_cost=4)),
+                   lambda g: g.add_joker(Joker("misprint", base_cost=4))):
+        h = copy.deepcopy(g)
+        mutate(h)
+        assert not A.plays_side_effect_free(Plan(h), h.hand_view())
