@@ -14,6 +14,12 @@ adds its own adjustment on top, and the search compares actions by the network's
 (V = Phi + R, trained towards z; rewards/), not by the solver's P(clear). So playing instead of discarding with
 Green Joker, resetting Ride the Bus, spending Mystic Summit's discards or a tarot a build needs later can
 all be overruled once the value network has learned what they cost.
+
+Override statistics (agent.stats, summarised by override_summary): per phase (round, boss, shop, pack,
+blind), how many decisions the network saw, how many were searched, and how often
+  - the final choice is not one of the prior's top choices            ("final")
+  - the network alone (prior + adjustment) would not pick one of them  ("net")
+  - the search changed the network's own choice                        ("search")
 """
 from __future__ import annotations
 
@@ -48,6 +54,9 @@ class AgentConfig:
     budget_clear: int = 0           # in a round, when the policy is already this sure (clear_cut)
     clear_cut: float = 0.9
     m_root: int = 8
+    c_visit: float = 50.0           # search vs prior: sigma = (c_visit + max N) * c_scale * Q
+    c_scale: float = 0.1
+    crn: bool = False               # root candidates share each sweep's sampled future (search.py)
     value_range: tuple | None = (0.0, 1.0)   # fixed scale for Q in the search (None: per-tree min-max)
     solver_samples: int = 12        # root
     solver_samples_inner: int = 4   # inside the search
@@ -200,11 +209,12 @@ class Agent:
             prior = rule_prior(w, choice, cfg.heur_bonus)
         state = encode_state(w)
         state["phi"] = np.float32(self.potential(w.g))
+        state["prog"] = np.float32(self.potential.progress(w.g))
         enc = (state, encode_cands(w, choice, prior))
         with torch.no_grad():
             s, c, m = collate([enc], self.device)
             logits, _, out = self.net(s, c, m)
-        heads = self.net.split_heads(out[0], s["phi"][0])
+        heads = self.net.split_heads(out[0], s["phi"][0], s["prog"][0], cfg.lam)
         heads = {k: float(v) for k, v in heads.items() if k != "ante_probs"}
         heads["phi"] = float(state["phi"])
         return Node(w, choice, enc, logits[0].float().cpu().numpy().astype(float), heads["value"], heads=heads)
@@ -246,18 +256,60 @@ class Agent:
                 return Decision(best.action, -1, choice, np.zeros(0), False, reason="auto-play")
         root = self.evaluate(w, True, rng, choice)         # simulations start from resamplings of w
         budget, reason = self.budget(root)
-        search = GumbelSearch(self._expand_inner(rng), m_root=self.cfg.m_root, value_range=self.cfg.value_range)
+        cfg = self.cfg
+        search = GumbelSearch(self._expand_inner(rng), c_visit=cfg.c_visit, c_scale=cfg.c_scale, m_root=cfg.m_root,
+                              value_range=cfg.value_range, crn=cfg.crn)
         idx, pi = search.run(root, budget, rng, explore=explore)
         self.stats[f"budget_{reason}"] += 1
         self.stats["sims"] += getattr(search, "used", 0)
+        self._count_override(w, root, idx, budget > 0)
         return Decision(root.choice.cands[idx].action, idx, root.choice, pi, budget > 0, enc=root.enc,
                         value=root.value, heads=root.heads, sims=getattr(search, "used", 0), reason=reason)
+
+    def _count_override(self, w: World, root: Node, idx: int, searched: bool):
+        prior = root.enc[1]["c_prior"]
+        top = float(prior.max()) - 1e-6
+        net_idx = int(np.argmax(root.logits))
+        ph = phase_of(w.g)
+        st = self.stats
+        st[f"ovr_{ph}_n"] += 1
+        st[f"ovr_{ph}_searched"] += int(searched)
+        st[f"ovr_{ph}_final"] += int(prior[idx] < top)
+        st[f"ovr_{ph}_net"] += int(prior[net_idx] < top)
+        st[f"ovr_{ph}_search"] += int(idx != net_idx)
 
     def _expand_inner(self, rng):
         return lambda w, root: self.evaluate(w, root, rng)
 
     def autoplay_rate(self) -> float:
         return self.stats["autoplay"] / max(1, self.stats["decisions"])
+
+
+OVERRIDE_PHASES = ("round", "boss", "shop", "pack", "blind")
+
+
+def phase_of(g) -> str:
+    if g.state == "SELECTING_HAND":
+        return "boss" if g.blind_idx == 2 else "round"
+    return {"SHOP": "shop", "PACK": "pack"}.get(g.state, "blind")
+
+
+def override_summary(stats) -> dict:
+    """Per phase and overall ("all"): decisions the network saw (n), % of them searched, and the override
+    rates in % of n (see the module doc). Greedy play gives the meaningful numbers: with exploration the
+    final choice also differs because of the Gumbel noise."""
+    out = {}
+    tot = Counter()
+    for ph in OVERRIDE_PHASES + ("all",):
+        if ph != "all":
+            c = {k: stats.get(f"ovr_{ph}_{k}", 0) for k in ("n", "searched", "final", "net", "search")}
+            tot.update(c)
+        else:
+            c = tot
+        n = c["n"]
+        if n:
+            out[ph] = {"n": int(n), **{f"{k}%": round(100.0 * c[k] / n, 2) for k in ("searched", "final", "net", "search")}}
+    return out
 
 
 def _is_spectral(g, a: Action) -> bool:

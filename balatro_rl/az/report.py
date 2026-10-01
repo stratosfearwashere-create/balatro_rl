@@ -45,6 +45,10 @@ def report(rows: list[dict], last: int = 0, detail: bool = False):
                     f"win rate {g['win_rate']} vs {g['threshold']})") if g else ""
             print(f"      lam {r['lam']:.3f}{gate}  beta {r['beta']:.4f}  kappa {r['kappa']:.3f}  sims/decision "
                   f"{r['sims/decision']}  autoplay {r['autoplay%']}%  headroom {r['headroom_ms/decision']} ms/decision")
+            for name, o in (("self-play", r.get("override")), ("held-out", (r.get("eval") or {}).get("override"))):
+                if o:
+                    print(f"      override % ({name}; final choice not the prior's): "
+                          + "  ".join(f"{ph} {v['final%']:.1f}" for ph, v in o.items()))
     last_r = rows[-1]
     evals = [r for r in rows if "eval" in r]
     print()
@@ -72,6 +76,9 @@ def report(rows: list[dict], last: int = 0, detail: bool = False):
         for name in ("calibration_phi", "calibration_v"):
             c = e[name]
             print(f"  {name}: {c['status']} ({c.get('won_games', 0)} won games)")
+        if e.get("override"):
+            print("  override rate, % of decisions whose final choice isn't the prior's (n decisions): "
+                  + ", ".join(f"{ph} {v['final%']:.1f} ({v['n']})" for ph, v in e["override"].items()))
     else:
         print("no held-out evaluation yet (every --eval-every iterations)")
     alarms = [r for r in rows if "ALARM" in r]

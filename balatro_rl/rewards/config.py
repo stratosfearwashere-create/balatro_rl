@@ -25,6 +25,9 @@ class PotentialConfig:
     aggregate: str = "mean"           # "mean": log of the mean best-hand score; "geomean": mean of the logs
     round_hands: bool = False         # compare E[best hand] x hands per round with the target
     value_residual: bool = True       # V(s) = Phi(s) + R(s); False: V(s) = R(s) (ablation)
+    value_bound: str = "none"         # "floor_sigmoid": V = lo + (1 - lo) * sigmoid(a * Phi + b + R), with
+    value_init_scale: float = 1.0     #   lo = lam * progress so far, a = value_init_scale and
+    value_init_bias: float = -1.9     #   b = value_init_bias (az/net.py); V stays in [0, 1]
 
 
 @dataclass

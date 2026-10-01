@@ -13,6 +13,9 @@ rewards:
     aggregate: mean            # mean: log(mean best-hand score); geomean: mean of log scores
     round_hands: false         # true: E[best hand] x hands per round against the target
     value_residual: true       # V = Phi + R; false for the ablation
+    value_bound: none          # floor_sigmoid: V = lo + (1 - lo) * sigmoid(a * Phi + b + R), in [0, 1];
+    value_init_scale: 1.0      #   lo = lambda * progress so far (what a game lost now is worth),
+    value_init_bias: -1.9      #   a = value_init_scale, b = value_init_bias
   novelty:
     beta: 0.02                 # set to 0 for the ablation against search's own exploration
     end_step: 3_000_000

@@ -49,7 +49,8 @@ class GameRecorder:
         g = w.g
         comp = self.potential.components(g)
         row = {"step": w.steps, "blind": blind_index(g), "in_round": g.state == "SELECTING_HAND",
-               "sig": build_signature(g), "phi": comp["phi"], "headroom": comp["headroom"], **extra}
+               "sig": build_signature(g), "phi": comp["phi"], "headroom": comp["headroom"],
+               "prog": comp["prog"], **extra}
         self.rows.append(row)
         return row
 

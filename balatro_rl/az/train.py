@@ -4,9 +4,11 @@ Iteration: worker processes play games with the agent (search on, Gumbel noise a
 each decision the network's inputs (with the potential Phi), the search's improved policy and, once the
 game is over, the raw outcomes (rewards/targets.py). The learner then trains on a window of recent
 iterations:
-    cross-entropy to the improved policy (searched decisions only)
+    cross-entropy to the improved policy (searched decisions only; logged as loss_policy, and as
+        loss_policy_kl = KL(improved policy || network), which is the part the network can remove)
   + kappa * KL(pi || pi_solver) on in-round decisions            (kappa anneals to exactly 0)
   + MSE(V, clip(z + novelty, 0, 1)), V = Phi + R                    (z = (1 - lam) win + lam progress)
+        (with potential.value_bound = floor_sigmoid: cross-entropy on the bounded V's logit, az/net.py)
   + weighted auxiliary losses: P(clear), ante reached (8 classes), log(blind score / required),
     next blind's headroom
 Targets are computed at training time from the schedule at the current step (step = decisions played by
@@ -52,7 +54,8 @@ STAKE = "WHITE"
 
 def _compact(enc):
     s, c = enc
-    s = {k: (v.astype(np.float16) if (v.dtype == np.float32 and k != "phi") else v) for k, v in s.items()}
+    s = {k: (v.astype(np.float16) if (v.dtype == np.float32 and k not in ("phi", "prog")) else v)
+         for k, v in s.items()}
     c = {k: (v.astype(np.float16) if (v.dtype == np.float32 and k != "c_prior") else v) for k, v in c.items()}
     return s, c
 
@@ -84,7 +87,7 @@ def play_game(agent, seed: int, deck: str = "RED", stake: str = STAKE, explore: 
         rec.transition(*prev, w)
     g = w.g
     rows = rec.finish(g)
-    info = {"won": g.state == "WON", "blinds": g.furthest_blind, "ante": g.ante, "steps": w.steps,
+    info = {"seed": seed, "won": g.state == "WON", "blinds": g.furthest_blind, "ante": g.ante, "steps": w.steps,
             "bosses": rec.bosses}
     return rows, info
 
@@ -121,8 +124,19 @@ def _make_agent(model, search: bool, seed: int, cfg_over: dict | None = None, po
     from .agent import Agent, AgentConfig
     from .net import AZNet, load_net
     cfg = AgentConfig(search=search, **(cfg_over or {}))
-    net = load_net(model, "cpu") if model and model != "none" else AZNet().eval()
-    return Agent(net, cfg, seed=seed, potential=PotentialConfig(**pot) if pot else None)
+    pcfg = PotentialConfig(**pot) if pot else None
+    if model and model != "none":
+        net = load_net(model, "cpu")
+    else:                                   # untrained: the same weights in every worker and every run
+        torch.manual_seed(0)
+        net = new_net(pcfg or PotentialConfig()).eval()
+    return Agent(net, cfg, seed=seed, potential=pcfg)
+
+
+def new_net(pcfg: PotentialConfig):
+    from .net import AZNet
+    return AZNet(value_residual=pcfg.value_residual, value_bound=pcfg.value_bound,
+                 value_init_scale=pcfg.value_init_scale, value_init_bias=pcfg.value_init_bias)
 
 
 def _headroom_stats(agent) -> dict:
@@ -154,7 +168,9 @@ def _eval_worker(args):
     agent = _make_agent(model, search, seeds[0], cfg_over, pot)
     infos, light = [], []
     for s in seeds:
+        t = time.process_time()
         rows, info = play_game(agent, s, deck, stake, explore=False, record=False)
+        info["cpu_sec"] = time.process_time() - t
         infos.append(info)
         light += [_light({**r, "game": s}) for r in rows]
     return infos, {**dict(agent.stats), **_headroom_stats(agent)}, light
@@ -227,7 +243,9 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
              cfg_over=None, rcfg: RewardConfig | None = None) -> dict:
     """Held-out games (greedy, no exploration). The value of a finished game in the search uses lam from
     the reward schedule at the checkpoint's training step and lambda clock, matching what its value head
-    was trained on."""
+    was trained on. Also returns the override rates by phase (agent.override_summary), the result of each
+    game (per_game, for paired comparisons on the same seeds) and the cost in CPU seconds per game."""
+    from .agent import override_summary
     meta = _checkpoint_meta(model)
     rcfg = rcfg or RewardConfig.from_dict(meta.get("rewards"))
     cfg_over = {"lam": rcfg.schedule(meta.get("step", 0), meta.get("lambda_clock")).lam, **(cfg_over or {})}
@@ -245,6 +263,10 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
     res["sims/decision"] = stats["sims"] / max(1, stats["decisions"])
     res["headroom_ms/decision"] = 1e3 * stats["headroom_sec"] / max(1, stats["decisions"])
     res["breakdown"] = breakdown(infos)
+    res["override"] = override_summary(stats)
+    res["decisions"] = stats["decisions"]
+    res["cpu_sec/game"] = float(np.mean([i["cpu_sec"] for i in infos]))
+    res["per_game"] = sorted(([i["seed"], i["blinds"], int(i["won"]), min(i["ante"], 8)] for i in infos))
     games = [x["game"] for x in light]
     res["calibration_phi"] = calibration([x["phi"] for x in light], [x["win"] for x in light], games)
     res["calibration_v"] = calibration([x["value"] for x in light], [x["win"] for x in light], games)
@@ -304,6 +326,8 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
             pl = -(pi[searched] * logp[searched]).sum(-1).mean()
             loss = loss + pl
             logs["policy"] += pl.item()
+            ent = -(pi[searched] * torch.log(pi[searched].clamp(min=1e-12))).sum(-1).mean()
+            logs["policy_kl"] += (pl - ent).item()          # KL(target || network) = cross-entropy - H(target)
         # closeness to the solver, in-round decisions only, while kappa > 0
         in_round = torch.tensor([bool(r["in_round"]) for r in mb], device=device)
         if sched.kappa > 0 and in_round.any():
@@ -314,7 +338,14 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
         # value: V = Phi + R towards clip(z + novelty, 0, 1)
         tg = [value_target(r, sched, novelty) for r in mb]
         zt = torch.tensor([t[0] for t in tg], dtype=torch.float32, device=device)
-        vl = F.mse_loss(net.value(out, s["phi"]), zt)
+        v = net.value(out, s["phi"], s["prog"], sched.lam)
+        if net.value_bound == "none":
+            vl = F.mse_loss(v, zt)
+        else:                                               # V = lo + (1 - lo) sigmoid(u): cross-entropy on u
+            lo = sched.lam * s["prog"].float()              # towards where the target sits between lo and 1
+            t01 = ((zt - lo) / (1.0 - lo).clamp(min=1e-6)).clamp(0.0, 1.0)
+            vl = F.binary_cross_entropy_with_logits(net.value_logit(out, s["phi"]), t01)
+            logs["value_mse"] += F.mse_loss(v, zt).item()
         loss = loss + vl
         logs["value"] += vl.item()
         # auxiliary heads (predicted, never rewarded)
@@ -365,7 +396,8 @@ def shaping_components(rows, sched, novelty, w_head: float) -> dict:
 
 def run(a):
     import torch
-    from .net import AZNet, load_net, save_net
+    from .agent import override_summary
+    from .net import load_net, save_net
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(a.data, exist_ok=True)
     log_path = a.out.replace(".pt", "_log.jsonl")
@@ -398,7 +430,7 @@ def run(a):
             step = _checkpoint_meta(a.init).get("step", 0)
         else:
             torch.manual_seed(0)
-            net = AZNet(value_residual=rcfg.potential.value_residual).to(device)
+            net = new_net(rcfg.potential).to(device)
     gate = LambdaGate.from_state(rcfg.lambda_gate_win_rate, rcfg.lambda_gate_games, gate_state)
     meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict(), "lambda_clock": gate.clock,
                        "lambda_gate": gate.state()}
@@ -465,6 +497,7 @@ def run(a):
                "autoplay%": round(100.0 * stats["autoplay"] / max(1, stats["decisions"]), 2),
                "sims/decision": round(stats["sims"] / max(1, stats["decisions"]), 2),
                "headroom_ms/decision": round(1e3 * stats["headroom_sec"] / max(1, stats["decisions"]), 3),
+               "override": override_summary(stats),      # self-play: includes the exploration noise
                "samples": len(rows), "gen_min": round(t_gen / 60, 2),
                "train_min": round((time.time() - t0 - t_gen) / 60, 2),
                "shaping": comp, "value_target_is_win": annealed and exact,
@@ -490,9 +523,11 @@ def run(a):
                     row.setdefault("flags", []).append(f"held-out {name}: actual win rate does not rise with it")
         with open(log_path, "a") as f:
             f.write(json.dumps(row, default=float) + "\n")
-        short = {k: v for k, v in row.items() if not k.startswith("calibration") and k != "eval"}
+        short = {k: v for k, v in row.items() if not k.startswith("calibration") and k not in ("eval", "override")}
+        short["override%"] = {ph: v["final%"] for ph, v in row["override"].items()}
         if "eval" in row:
             short["eval"] = {k: row["eval"][k] for k in ("games", "win%", "blinds", "ante")}
+            short["eval"]["override%"] = {ph: v["final%"] for ph, v in row["eval"]["override"].items()}
         print(json.dumps(short, default=float), flush=True)
     with open(done_path, "w") as f:
         f.write(f"finished {a.iters} iterations, {step} decisions\n")
