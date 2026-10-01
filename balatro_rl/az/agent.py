@@ -107,11 +107,12 @@ def heuristic_action(w: World) -> Action | None:
     h = HeuristicPolicy()
     h.shop_rerolls = min(w.rerolls, 3)
     a = h.act(w.g, obs)
-    simple = {E.A_SELECT: "select", E.A_SKIP: "skip", E.A_REROLL_BOSS: "reroll_boss", E.A_VOUCHER: "voucher",
+    simple = {E.A_SELECT: "select", E.A_SKIP: "skip", E.A_REROLL_BOSS: "reroll_boss",
               E.A_REROLL: "reroll", E.A_LEAVE: "leave", E.A_PSKIP: "pack_skip"}
     if a in simple:
         return Action(simple[a])
     for lo, hi, kind in ((E.A_BUY, E.A_BUY_PACK, "buy"), (E.A_BUY_PACK, E.A_VOUCHER, "buy_pack"),
+                         (E.A_VOUCHER, E.A_REROLL, "voucher"),
                          (E.A_SELL_J, E.A_SELL_C, "sell_joker"), (E.A_SELL_C, E.A_USE_C, "sell_cons"),
                          (E.A_USE_C, E.A_PICK, "use"), (E.A_PICK, E.A_PSKIP, "pick")):
         if lo <= a < hi:

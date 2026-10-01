@@ -117,7 +117,7 @@ def evaluate(cards: list[Card], four_fingers=False, shortcut=False, smeared=Fals
         contains.add(QUADS)
     if top >= 5:
         contains.add(FIVE_KIND)
-    if (top >= 2 and second >= 2) or top >= 4:
+    if top >= 2 and second >= 2:                   # two separate groups: Four / Five of a Kind don't count
         contains.add(TWO_PAIR)
     if is_straight:
         contains.add(STRAIGHT)

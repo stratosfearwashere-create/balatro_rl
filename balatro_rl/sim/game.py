@@ -17,13 +17,14 @@ from .jokers import JOKERS, Joker, EDITION_COST, NOT_IN_POOL
 from .items import (PLANETS, HAND_TO_PLANET, TAROTS, TAROT_ENH, TAROT_SUIT, SPECTRALS, VOUCHERS,
                     VOUCHER_COST, PACKS, PACK_KEYS, TAGS, TAG_MIN_ANTE, BOSSES, FINISHERS, ALL_BOSSES,
                     SUIT_BOSS, BLIND_BASE, STAKES, SPECTRAL_POOL)
-from .scoring import score_hand
+from .scoring import Plan, copies, score_hand
 
 MAX_HAND = 16          # hand slots exposed to the agent (hand size can grow past 8)
 MAX_JOKERS = 8
 MAX_CONSUMABLES = 3
 MAX_SHOP = 4
 MAX_PACK = 5
+MAX_VOUCHERS = 2                    # the ante's voucher, plus one from a Voucher tag
 WIN_ANTE = 8
 # consumables whose effect depends on which cards they target (the rest act on random or all cards)
 TARGETED = frozenset(TAROT_ENH) | frozenset(TAROT_SUIT) | {
@@ -156,10 +157,12 @@ class Game:
         self.targeting = None               # {"cons": Consumable, "from_pack": bool} while targets are chosen
         self.first_draw_done = False
         self.boss_rerolled_ante = 0
+        self.ox_hand = -1                   # The Ox: the most played hand, fixed when its round starts
         # shop state
         self.shop: list[ShopItem] = []
         self.shop_packs: list[ShopItem] = []
-        self.shop_voucher: Optional[ShopItem] = None
+        self.ante_voucher: Optional[ShopItem] = None    # this ante's voucher until bought (kept across shops)
+        self.shop_vouchers: list[ShopItem] = []          # vouchers in the current shop (ante's first)
         self.reroll_cost = 5
         self.free_rerolls = 0
         self.shops_seen = 0
@@ -202,6 +205,28 @@ class Game:
 
     def count(self, key: str) -> int:
         return sum(1 for j in self.jokers if j.key == key and not j.debuffed)
+
+    def count_with_copies(self, key: str) -> int:
+        """Jokers `key` plus Blueprints / Brainstorms copying one (for effects the copies repeat)."""
+        return sum(1 for j in self.jokers if not j.debuffed and (j.key == key or copies(self, j) == key))
+
+    def showman(self) -> bool:
+        return self.has("ring_master")
+
+    @property
+    def shop_voucher(self) -> Optional[ShopItem]:
+        """The first voucher in the shop (kept for callers that know only one voucher slot)."""
+        return self.shop_vouchers[0] if self.shop_vouchers else None
+
+    @shop_voucher.setter
+    def shop_voucher(self, it: Optional[ShopItem]):
+        self.ante_voucher = it
+        self.shop_vouchers = [it] if it is not None else []
+
+    def _voucher_options(self) -> list[str]:
+        shown = {it.key[2:] for it in self.shop_vouchers}
+        return [v for v, pre in VOUCHERS.items()
+                if v not in self.vouchers and v not in shown and (pre is None or pre in self.vouchers)]
 
     def prob(self, n: int, d: int) -> float:
         return min(1.0, n * (2 ** self.count("oops")) / d)
@@ -292,7 +317,8 @@ class Game:
         self.boss = self.rng.choice(pool)
         self.used_bosses.add(self.boss)
         self.tags_offered = [self.random_tag(), self.random_tag()]
-        self.shop_voucher = None
+        self.ante_voucher = None
+        self.shop_vouchers = []
         self.ante_played_uids = set()
 
     def random_tag(self) -> str:
@@ -314,8 +340,26 @@ class Game:
         return "retcon" in self.vouchers or ("directors_cut" in self.vouchers and self.boss_rerolled_ante != self.ante)
 
     def disable_boss(self):
+        """Everything the game undoes when a boss is disabled (Chicot, Luchador): The Water's discards and
+        The Needle's hands come back, The Wall's target halves and Violet Vessel's thirds, The Manacle's
+        hand size returns (and one card is drawn), face-down cards and jokers turn face up, debuffs and
+        Cerulean Bell's forced card go."""
+        if self.boss_disabled:
+            return
+        boss = self.boss if self.blind_idx == 2 else ""
+        in_round = self.state == "SELECTING_HAND"
         self.boss_disabled = True
         self.flags.pop("verdant", None)
+        if in_round and boss == "water":
+            self.discards_left = max(self.discards_left, self.round_discards() - self.discards_used_round)
+        if in_round and boss == "needle":
+            self.hands_left = max(self.hands_left, self.round_hands() - sum(self.hand_played_round))
+        if in_round and boss in ("wall", "violet_vessel"):
+            t = self.target / (2 if boss == "wall" else 3)
+            self.target = int(t) if t == int(t) else t
+        if in_round and boss == "manacle" and self.first_draw_done:
+            self.draw(1)
+        self.forced_uid = -1
         for c in self.full_deck:
             c.debuffed = False
             c.hidden = False
@@ -329,9 +373,6 @@ class Game:
         self.target = self.blind_target(self.blind_idx)
         self.chips = 0
         boss = self.boss_active()
-        if boss and self.has("chicot"):
-            self.boss_disabled = True
-            boss = ""
         self.hands_left = self.round_hands()
         self.discards_left = self.round_discards()
         if boss == "needle":
@@ -342,6 +383,7 @@ class Game:
         self.hand_played_round = [0] * N_HANDS
         self.round_hand_types = set()
         self.mouth_hand = -1
+        self.first_draw_done = False
         if boss == "amber_acorn":
             self.rng.shuffle(self.jokers)
             for j in self.jokers:
@@ -353,6 +395,11 @@ class Game:
         for j in list(self.jokers):
             if j.d.blind_select and not j.debuffed and j in self.jokers:
                 j.d.blind_select(self, j)
+        if boss and self.has("chicot"):             # after the target and the boss's own effects are set
+            self.disable_boss()
+            boss = ""
+        if boss == "ox":                            # most played hand, ties to the higher-ranked hand
+            self.ox_hand = max(range(N_HANDS), key=lambda h: (self.hand_played[h], h))
         for c in self.full_deck:
             c.debuffed = False
             c.hidden = False
@@ -361,10 +408,9 @@ class Game:
         self.rng.shuffle(self.deck)
         self.hand = []
         self.discard_pile = []
-        self.first_draw_done = False
         self.draw()
         self.first_draw_done = True
-        for _ in range(self.count("certificate")):
+        for _ in range(self.count_with_copies("certificate")):
             c = Card(self.rng.randrange(2, 15), self.rng.randrange(4),
                      seal=self.rng.choice(["RED", "BLUE", "GOLD", "PURPLE"]))
             self.add_card(c, to_hand=True)
@@ -372,9 +418,10 @@ class Game:
     def apply_debuffs(self):
         boss = self.boss_active()
         par = self.has("pareidolia")
+        smeared = self.has("smeared")
         for c in self.full_deck:
             d = False
-            if boss in SUIT_BOSS and c.has_suit(SUIT_BOSS[boss]) and c.enh != "WILD":
+            if boss in SUIT_BOSS and c.has_suit(SUIT_BOSS[boss], smeared):   # Wild cards too
                 d = True
             if boss == "plant" and c.is_face(par):
                 d = True
@@ -395,10 +442,8 @@ class Game:
         if tag == "double":
             self.pending_tags.append("double")
             return
-        n = 1
-        while self.pending_tags and self.pending_tags[-1] == "double" and tag != "double":
-            self.pending_tags.pop()
-            n += 1
+        n = 1 + self.pending_tags.count("double")         # every queued Double copies the next tag,
+        self.pending_tags = [t for t in self.pending_tags if t != "double"]   # wherever it sits in the queue
         for _ in range(n):
             self.apply_tag(tag)
 
@@ -509,34 +554,52 @@ class Game:
         return [self.predict(list(s), plan, view) for s in subsets]
 
     def play(self, positions: list[int]):
+        """Play these hand slots, in this order. As in the game: The Arm lowers the hand's level first
+        (above level 1 only); The Hook discards 2 random held cards before scoring; a hand the boss forbids
+        (The Psychic, The Eye, The Mouth) scores nothing and triggers no scoring effects, but still counts
+        as a hand played and still meets The Eye / The Mouth / The Arm / The Ox."""
         assert self.state == "SELECTING_HAND" and 1 <= len(positions) <= 5
         played = [self.hand[i] for i in positions]
         held = [c for i, c in enumerate(self.hand) if i not in positions]
         for c in played:
             c.hidden = False
         boss = self.boss_active()
+        plan = Plan(self)
         violated = self.violates_boss(played)
-        sc, ctx = score_hand(self, played, held, rng=self.rng, commit=True)
+        res = evaluate(played, plan.four_fingers, plan.shortcut, plan.smeared)
+        h = res.hand
+        arm_lowered = boss == "arm" and self.hand_levels[h] > 1
+        if arm_lowered:
+            self.hand_levels[h] -= 1
+        if boss == "hook" and held:
+            hooked = self.rng.sample(held, min(2, len(held)))
+            held = [c for c in held if all(c is not x for x in hooked)]
+            self.hand = [c for c in self.hand if all(c is not x for x in hooked)]
+            self._discard_effects(hooked, from_hook=True)
+            self.discard_pile += hooked
+            if "trading_destroy" in self.flags:
+                self.destroy_cards([self.flags.pop("trading_destroy")])
         if violated:
-            sc = 0
-        h = ctx.hand
+            sc, money, events, scoring = 0, 0, [], res.scoring
+        else:
+            sc, ctx = score_hand(self, played, held, rng=self.rng, commit=True, plan=plan, arm_applied=True,
+                                 hooked=True)
+            h, money, events, scoring = ctx.hand, ctx.money, ctx.events, ctx.scoring
         if boss and self.has("matador"):
-            triggered = (violated or any(c.debuffed for c in played)
-                         or boss in ("hook", "tooth", "flint", "arm", "crimson_heart")
-                         or (boss == "ox" and max(self.hand_played) > 0 and self.hand_played[h] == max(self.hand_played)))
+            triggered = (violated or any(played[i].debuffed for i in scoring)
+                         or boss in ("hook", "tooth", "flint", "crimson_heart")
+                         or arm_lowered or (boss == "ox" and h == self.ox_hand))
             if triggered:
                 self.money += 8 * self.count("matador")
-        if boss == "ox" and max(self.hand_played) > 0 and self.hand_played[h] == max(self.hand_played):
+        if boss == "ox" and h == self.ox_hand:
             self.money = 0
         if boss == "tooth":
             self.money -= len(played)
-        if boss == "arm" and self.hand_levels[h] > 1:
-            self.hand_levels[h] -= 1
         if boss == "mouth" and self.mouth_hand < 0:
             self.mouth_hand = h
         self.round_hand_types.add(h)
         self.last_hand = h
-        self.money += int(ctx.money)
+        self.money += int(money)
         self.chips += sc
         self.hand_played[h] += 1
         self.hand_played_round[h] += 1
@@ -549,7 +612,7 @@ class Game:
                 j.d.after(self, j)
         # creations / copies triggered during scoring
         destroyed = []
-        for ev in ctx.events:
+        for ev in events:
             if ev[0] == "create":
                 self.create_consumable(ev[1])
             elif ev[0] == "dna":
@@ -568,7 +631,7 @@ class Game:
             bones = next((j for j in self.jokers if j.key == "mr_bones" and not j.debuffed), None)
             if bones is not None and self.chips >= 0.25 * self.target:
                 self.destroy_joker(bones)
-                self.win_round()
+                self.win_round(saved_by_bones=True)
             else:
                 self.state = "GAME_OVER"
         else:
@@ -576,25 +639,27 @@ class Game:
                 self.draw(3, after_play=True)
             else:
                 self.draw(after_play=True)
-            if boss == "hook" and self.hand:
-                for c in self.rng.sample(self.hand, min(2, len(self.hand))):
-                    self.hand.remove(c)
-                    self.discard_pile.append(c)
-                self.draw()
             if not self.hand:
                 self.state = "GAME_OVER"
 
-    def discard(self, positions: list[int]):
-        assert self.state == "SELECTING_HAND" and self.discards_left > 0 and 1 <= len(positions) <= 5
-        cards = [self.hand[i] for i in positions]
+    def _discard_effects(self, cards: list[Card], from_hook: bool = False):
+        """Jokers' discard effects and Purple seals. The Hook's discards trigger them too (without using up a
+        discard), except Burnt Joker."""
         for c in cards:
             c.hidden = False
         for j in list(self.jokers):
-            if j.d.discard and not j.debuffed:
+            if j.d.discard and not j.debuffed and j in self.jokers:
+                if from_hook and (j.key == "burnt" or copies(self, j) == "burnt"):
+                    continue
                 j.d.discard(self, j, cards)
         for c in cards:
             if c.seal == "PURPLE" and not c.debuffed:
                 self.create_consumable("tarot")
+
+    def discard(self, positions: list[int]):
+        assert self.state == "SELECTING_HAND" and self.discards_left > 0 and 1 <= len(positions) <= 5
+        cards = [self.hand[i] for i in positions]
+        self._discard_effects(cards)
         self.hand = [c for c in self.hand if c not in cards]
         self.discard_pile += cards
         if "trading_destroy" in self.flags:
@@ -607,12 +672,16 @@ class Game:
             self.draw()
 
     # ------------------------------------------------------------------ end of round
-    def win_round(self):
+    def win_round(self, saved_by_bones: bool = False):
+        """Round payout. Mr. Bones saving the run pays no blind reward (hands and interest still pay).
+        Interest: (1 + To the Moon) x $1 per $5 held, up to the cap; none on the Green Deck."""
         was_boss = self.blind_idx == 2
         self.blinds_beaten += 1
         self.furthest_blind = max(self.furthest_blind, 3 * (self.ante - 1) + self.blind_idx + 1)
         earned = 0
-        if self.blind_idx == 0:
+        if saved_by_bones:
+            pass
+        elif self.blind_idx == 0:
             earned += 0 if self.stake >= 1 else 3
         else:
             earned += 4 if self.blind_idx == 1 else 5
@@ -620,16 +689,18 @@ class Game:
             earned += 2 * self.hands_left + self.discards_left
         else:
             earned += self.hands_left
-            earned += min(max(0, self.money) // 5, self.interest_cap())
-        if self.has("to_the_moon"):
-            earned += self.count("to_the_moon") * (max(0, self.money) // 5)
-        # held-in-hand end of round
-        mime = self.count("mime")
+            earned += (1 + self.count("to_the_moon")) * min(max(0, self.money) // 5, self.interest_cap())
+        # held-in-hand end of round: Gold cards and Blue seals, retriggered by Mime and Red seals
+        mime = self.count_with_copies("mime")
         for c in self.hand:
-            if c.enh == "GOLD" and not c.debuffed:
-                earned += 3 * (1 + mime + (c.seal == "RED"))
-            if c.seal == "BLUE" and not c.debuffed:
-                self.create_consumable("planet", name=HAND_TO_PLANET[self.last_hand])
+            if c.debuffed:
+                continue
+            triggers = 1 + mime + (c.seal == "RED")
+            if c.enh == "GOLD":
+                earned += 3 * triggers
+            if c.seal == "BLUE":
+                for _ in range(triggers):
+                    self.create_consumable("planet", name=HAND_TO_PLANET[self.last_hand])
         for j in list(self.jokers):
             if j.debuffed:
                 continue
@@ -672,11 +743,16 @@ class Game:
         self.open_shop()
 
     # ------------------------------------------------------------------ shop
-    def random_joker(self, rarity: Optional[int] = None, sticker: bool = True) -> Joker:
+    def random_joker(self, rarity: Optional[int] = None, sticker: bool = True, exclude=(),
+                     allow_empty: bool = False) -> Optional[Joker]:
+        """A random joker, never one already owned or listed in `exclude` (keys; e.g. the rest of the
+        shop or pack being generated), unless Showman is owned. The price it counts as paid (Joker.cost, for
+        its sell value) is its shop price: discounted, $1 for Rental. allow_empty: None when no joker of
+        the rarity is left (else a plain Joker)."""
         if rarity is None:
             r = self.rng.random()
             rarity = 3 if r > 0.95 else (2 if r > 0.7 else 1)
-        owned = set() if self.has("ring_master") else {j.key for j in self.jokers}
+        owned = set() if self.showman() else {j.key for j in self.jokers} | set(exclude)
         pool = [k for k, d in JOKERS.items() if d.rarity == rarity and k not in owned
                 and (k not in NOT_IN_POOL or self.flags.get("gros_michel_extinct"))]
         if self.flags.get("gros_michel_extinct") and "gros_michel" in pool:
@@ -685,6 +761,8 @@ class Game:
             allowed = [k for k in pool if k in self.joker_pool]
             pool = allowed or [k for k in sorted(self.joker_pool) if k not in owned and JOKERS[k].rarity < 4]
         if not pool:
+            if allow_empty:
+                return None
             pool = ["joker"]
         key = self.rng.choice(pool)
         d = JOKERS[key]
@@ -710,49 +788,83 @@ class Game:
                 j.rental = True
         if d.init:
             d.init(self, j)
+        j.cost = 1 if j.rental else self.price(j.base_cost)
         return j
 
-    def random_consumable(self, kind: str) -> Consumable:
+    def random_consumable(self, kind: str, exclude=()) -> Consumable:
+        """A random consumable of `kind`, not one named in `exclude` (unless Showman is owned)."""
         if kind == "planet":
             opts = [p for p, h in PLANETS.items() if h not in SECRET_HANDS or self.hand_played[h] > 0]
-            return Consumable("planet", self.rng.choice(opts))
-        if kind == "tarot":
-            return Consumable("tarot", self.rng.choice(list(TAROTS)))
-        return Consumable("spectral", self.rng.choice(SPECTRAL_POOL))
+        elif kind == "tarot":
+            opts = list(TAROTS)
+        else:
+            opts = list(SPECTRAL_POOL)
+        if not self.showman():
+            opts = [o for o in opts if o not in exclude] or opts
+        return Consumable(kind, self.rng.choice(opts))
 
-    def shop_card(self) -> ShopItem:
-        tw = 4 * (4 if "tarot_tycoon" in self.vouchers else 2 if "tarot_merchant" in self.vouchers else 1)
-        pw = 4 * (4 if "planet_tycoon" in self.vouchers else 2 if "planet_merchant" in self.vouchers else 1)
+    def shop_card(self, exclude=()) -> ShopItem:
+        """One shop card; `exclude`: keys already in this shop (no duplicates unless Showman)."""
+        tw = 32 if "tarot_tycoon" in self.vouchers else 9.6 if "tarot_merchant" in self.vouchers else 4
+        pw = 32 if "planet_tycoon" in self.vouchers else 9.6 if "planet_merchant" in self.vouchers else 4
         sw = 2 if self.deck_type == "GHOST" else 0
         cw = 4 if "magic_trick" in self.vouchers else 0
         r = self.rng.random() * (20 + tw + pw + sw + cw)
+        names = {k[2:] for k in exclude}
         if r < 20:
-            j = self.random_joker()
-            cost = 1 if j.rental else self.price(j.base_cost)
-            return ShopItem("joker", f"j_{j.key}", cost, joker=j)
+            j = self.random_joker(exclude=names)
+            return ShopItem("joker", f"j_{j.key}", j.cost, joker=j)
         r -= 20
         if r < tw:
-            c = self.random_consumable("tarot")
+            c = self.random_consumable("tarot", names)
             return ShopItem("tarot", c.key, self.price(3))
         r -= tw
         if r < pw:
-            c = self.random_consumable("planet")
+            c = self.random_consumable("planet", names)
             return ShopItem("planet", c.key, 0 if self.has("astronomer") else self.price(3))
         r -= pw
         if r < sw:
-            c = self.random_consumable("spectral")
+            c = self.random_consumable("spectral", names)
             return ShopItem("spectral", c.key, self.price(4))
-        card = self.random_playing_card(enhanced=("illusion" in self.vouchers))
-        return ShopItem("card", "<playing_card>", self.price(1 + (card.enh != "") + (card.edition != "") * 2
-                                                                 + (card.seal != "")), card=card)
+        card = self.shop_playing_card()
+        return ShopItem("card", "<playing_card>", self.price(1 + EDITION_COST[card.edition]), card=card)
+
+    def poll_edition(self, mod: float = 1.0, no_neg: bool = False, guaranteed: bool = False) -> str:
+        """The game's poll_edition. Hone / Glow Up raise the rates (edition_rate 2 / 4)."""
+        rate = 4 if "glow_up" in self.vouchers else 2 if "hone" in self.vouchers else 1
+        r = self.rng.random()
+        if guaranteed:
+            neg, poly, holo, foil = 0.003 * 25, 0.006 * 25, 0.02 * 25, 0.04 * 25
+        else:
+            neg, poly, holo, foil = 0.003 * mod, 0.006 * rate * mod, 0.02 * rate * mod, 0.04 * rate * mod
+        if r > 1 - neg and not no_neg:
+            return "NEGATIVE"
+        if r > 1 - poly:
+            return "POLYCHROME"
+        if r > 1 - holo:
+            return "HOLO"
+        if r > 1 - foil:
+            return "FOIL"
+        return ""
+
+    def shop_playing_card(self) -> Card:
+        """A playing card in the shop (Magic Trick). With Illusion: 40% enhanced, 20% with an edition (foil 50 /
+        holo 35 / polychrome 15); never a seal."""
+        c = Card(self.rng.randrange(2, 15), self.rng.randrange(4))
+        if "illusion" in self.vouchers:
+            if self.rng.random() > 0.6:
+                c.enh = self.rng.choice(["BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"])
+            if self.rng.random() > 0.8:
+                c.edition = self.poll_edition(no_neg=True, guaranteed=True)
+        return c
 
     def random_playing_card(self, enhanced: bool) -> Card:
+        """A Standard pack card: 40% enhanced, edition by poll_edition(mod 2, no Negative), 20% sealed."""
         c = Card(self.rng.randrange(2, 15), self.rng.randrange(4))
         if enhanced:
             if self.rng.random() < 0.4:
                 c.enh = self.rng.choice(["BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"])
-            if self.rng.random() < 0.08:
-                c.edition = self.rng.choices(["FOIL", "HOLO", "POLYCHROME"], [50, 35, 15])[0]
+            c.edition = self.poll_edition(mod=2, no_neg=True)
             if self.rng.random() < 0.2:
                 c.seal = self.rng.choice(["RED", "BLUE", "GOLD", "PURPLE"])
         return c
@@ -766,46 +878,78 @@ class Game:
     def shop_slots(self) -> int:
         return 2 + ("overstock_norm" in self.vouchers) + ("overstock_plus" in self.vouchers)
 
+    def _shop_cards(self, n: int, first: Optional[list] = None) -> list:
+        """n shop cards without duplicates (unless Showman); `first`: cards already placed (tag jokers)."""
+        cards = list(first or [])
+        while len(cards) < n:
+            cards.append(self.shop_card(exclude={it.key for it in cards}))
+        return cards
+
+    def _apply_edition_tags(self):
+        """Edition tags wait for a joker: each goes to the first plain joker in the shop, or stays queued
+        (for rerolls and later shops) while there is none."""
+        eds = {"foil": "FOIL", "holo": "HOLO", "polychrome": "POLYCHROME", "negative": "NEGATIVE"}
+        rest = []
+        for t in self.pending_tags:
+            it = next((it for it in self.shop if it.kind == "joker" and it.joker.edition == ""), None) \
+                if t in eds else None
+            if it is None:
+                rest.append(t)
+                continue
+            it.joker.edition = eds[t]
+            it.joker.base_cost += EDITION_COST[eds[t]]
+            it.cost = it.joker.cost = 0
+        self.pending_tags = rest
+
     def open_shop(self):
         self.state = "SHOP"
         self.shops_seen += 1
         self.reroll_cost = max(0, 5 - 2 * ("reroll_surplus" in self.vouchers) - 2 * ("reroll_glut" in self.vouchers))
         self.free_rerolls = self.count("chaos")
-        self.shop = [self.shop_card() for _ in range(self.shop_slots())]
+        # Uncommon / Rare tags: their free joker takes one of the normal shop slots (the Rare tag makes
+        # nothing when every Rare is owned)
+        tagged, rest = [], []
+        for t in self.pending_tags:
+            if t in ("uncommon", "rare") and len(tagged) < self.shop_slots():
+                j = self.random_joker(2 if t == "uncommon" else 3, exclude={it.key[2:] for it in tagged},
+                                      allow_empty=True)
+                if j is not None:
+                    j.cost = 0
+                    tagged.append(ShopItem("joker", f"j_{j.key}", 0, joker=j))
+            else:
+                rest.append(t)
+        self.pending_tags = rest
+        self.shop = self._shop_cards(self.shop_slots(), tagged)
         if self.shops_seen == 1:
             self.shop_packs = [ShopItem("pack", "p_buffoon_normal", self.price(4), pack=("buffoon", "normal")),
                                self.random_pack()]
         else:
             self.shop_packs = [self.random_pack(), self.random_pack()]
-        if self.shop_voucher is None and not self.flags.get("voucher_bought_ante") == self.ante:
-            opts = [v for v, pre in VOUCHERS.items() if v not in self.vouchers and (pre is None or pre in self.vouchers)]
+        if self.ante_voucher is None and not self.flags.get("voucher_bought_ante") == self.ante:
+            self.shop_vouchers = []
+            opts = self._voucher_options()
             if opts:
                 v = self.rng.choice(opts)
-                self.shop_voucher = ShopItem("voucher", f"v_{v}", self.price(VOUCHER_COST))
+                self.ante_voucher = ShopItem("voucher", f"v_{v}", self.price(VOUCHER_COST))
+        self.shop_vouchers = [self.ante_voucher] if self.ante_voucher is not None else []
         # pending shop tags
+        self._apply_edition_tags()
         tags, self.pending_tags = self.pending_tags, []
         for t in tags:
-            if t in ("uncommon", "rare"):
-                j = self.random_joker(2 if t == "uncommon" else 3)
-                self.shop.append(ShopItem("joker", f"j_{j.key}", 0, joker=j))
-            elif t in ("foil", "holo", "polychrome", "negative"):
-                ed = {"foil": "FOIL", "holo": "HOLO", "polychrome": "POLYCHROME", "negative": "NEGATIVE"}[t]
-                for it in self.shop:
-                    if it.kind == "joker" and it.joker.edition == "":
-                        it.joker.edition = ed
-                        it.joker.base_cost += EDITION_COST[ed]
-                        it.cost = 0
-                        break
+            if t in ("foil", "holo", "polychrome", "negative"):
+                self.pending_tags.append(t)                # waiting for a joker
             elif t == "coupon":
                 for it in self.shop + self.shop_packs:
                     it.cost = 0
+                    if it.joker is not None:
+                        it.joker.cost = 0
             elif t == "d_six":
                 self.reroll_cost = 0
-            elif t == "voucher":
-                opts = [v for v, pre in VOUCHERS.items() if v not in self.vouchers and (pre is None or pre in self.vouchers)]
-                if opts and self.shop_voucher is None:
+            elif t == "voucher":                         # one more voucher, whatever the shop already has
+                opts = self._voucher_options()
+                if opts and len(self.shop_vouchers) < MAX_VOUCHERS:
                     v = self.rng.choice(opts)
-                    self.shop_voucher = ShopItem("voucher", f"v_{v}", self.price(VOUCHER_COST))
+                    self.shop_vouchers.append(ShopItem("voucher", f"v_{v}", self.price(VOUCHER_COST)))
             elif t in ("investment", "juggle"):
                 self.pending_tags.append(t)
         self.shop = self.shop[:MAX_SHOP]
@@ -826,6 +970,7 @@ class Game:
         self.money -= it.cost
         self.shop.pop(i)
         if it.kind == "joker":
+            it.joker.cost = it.cost                         # its sell value follows the price paid
             self.add_joker(it.joker)
         elif it.kind == "card":
             self.add_card(it.card)
@@ -839,12 +984,14 @@ class Game:
         self.shop_packs.pop(i)
         self.open_pack(*it.pack, return_to="SHOP")
 
-    def buy_voucher(self):
-        it = self.shop_voucher
-        assert it is not None and self.can_afford(it.cost)
+    def buy_voucher(self, i: int = 0):
+        it = self.shop_vouchers[i]
+        assert self.can_afford(it.cost)
         self.money -= it.cost
-        self.shop_voucher = None
-        self.flags["voucher_bought_ante"] = self.ante
+        self.shop_vouchers.pop(i)
+        if it is self.ante_voucher:                     # the ante's own voucher: none again this ante
+            self.ante_voucher = None
+            self.flags["voucher_bought_ante"] = self.ante
         self.redeem_voucher(it.key[2:])
 
     def redeem_voucher(self, v: str):
@@ -871,7 +1018,8 @@ class Game:
         for j in self.jokers:
             if j.key == "flash":
                 j.state["val"] = j.state.get("val", 0) + 2
-        self.shop = [self.shop_card() for _ in range(self.shop_slots())]
+        self.shop = self._shop_cards(self.shop_slots())
+        self._apply_edition_tags()
 
     def leave_shop(self):
         for _ in range(self.count("perkeo")):
@@ -954,7 +1102,8 @@ class Game:
         elif self.state == "SELECTING_HAND":
             self.deck.insert(0, c)
 
-    def consumable_usable(self, c: Consumable, cards: list[Card]) -> bool:
+    def consumable_usable(self, c: Consumable, cards: list[Card], from_slot: bool = True) -> bool:
+        """from_slot: used from the consumable slots (it frees its own slot) rather than picked from a pack."""
         if c.kind == "planet":
             return True
         need = TAROTS.get(c.name, 0) if c.kind == "tarot" else SPECTRALS.get(c.name, 0)
@@ -964,15 +1113,19 @@ class Game:
             return False
         if c.name in ("judgement", "wraith", "soul") and len(self.jokers) >= self.joker_slots:
             return False
-        if c.name in ("high_priestess", "emperor") and self.cons_used() >= self.consumable_slots + 1:
+        if c.name in ("high_priestess", "emperor", "fool") and not from_slot and not self.cons_room():
             return False
         if c.name == "fool" and (self.last_consumable is None or self.last_consumable.name == "fool"):
             return False
-        if c.name in ("ankh", "hex", "ectoplasm", "wheel_of_fortune") and not self.jokers:
+        if c.name == "ankh" and not self.jokers:
+            return False
+        if c.name in ("hex", "ectoplasm", "wheel_of_fortune") and not any(j.edition == "" for j in self.jokers):
             return False
         if c.name == "ankh" and len(self.jokers) >= self.joker_slots:
             return False
-        if c.name in ("familiar", "grim", "incantation", "immolate", "sigil", "ouija") and not cards:
+        if c.name in ("familiar", "grim", "incantation", "immolate", "sigil", "ouija") and len(cards) < 2:
+            return False
+        if c.name == "aura" and not any(x.edition == "" for x in cards):
             return False
         return True
 
@@ -1056,6 +1209,8 @@ class Game:
             t = sorted(plain or cards, key=lambda c: -self.card_value(c))[:n]
         elif name == "cryptid":
             t = sorted(cards, key=lambda c: -self.card_value(c))[:1]
+        elif name == "aura":                               # only a card without an edition
+            t = sorted([c for c in cards if c.edition == ""], key=lambda c: -self.card_value(c))[:1]
         else:
             t = sorted([c for c in cards if c.seal == "" and c.edition == ""] or cards,
                        key=lambda c: -self.card_value(c))[:max(1, n)]
@@ -1101,7 +1256,7 @@ class Game:
                 self.add_joker(self.random_joker(sticker=False))
         elif n == "wheel_of_fortune":
             cand = [j for j in self.jokers if j.edition == ""]
-            if cand and self.rng.random() < 0.25:
+            if cand and self.rng.random() < self.prob(1, 4):
                 j = self.rng.choice(cand)
                 j.edition = self.rng.choices(["FOIL", "HOLO", "POLYCHROME"], [50, 35, 15])[0]
         elif n == "strength":
@@ -1122,7 +1277,8 @@ class Game:
                 x.seal = seal
         elif n == "aura":
             for x in t:
-                x.edition = self.rng.choices(["FOIL", "HOLO", "POLYCHROME"], [50, 35, 15])[0]
+                if x.edition == "":
+                    x.edition = self.rng.choices(["FOIL", "HOLO", "POLYCHROME"], [50, 35, 15])[0]
         elif n == "cryptid":
             for x in t:
                 for _ in range(2):
@@ -1162,7 +1318,7 @@ class Game:
         elif n == "wraith":
             if len(self.jokers) < self.joker_slots:
                 self.add_joker(self.random_joker(3, sticker=False))
-            self.money = min(self.money, 0)
+            self.money = 0                                  # exactly $0, even from debt
         elif n == "hex":
             if self.jokers:
                 keep = self.rng.choice([j for j in self.jokers if j.edition == ""] or self.jokers)
@@ -1177,7 +1333,7 @@ class Game:
                     if j is not src and not j.eternal:
                         self.destroy_joker(j)
                 cp = Joker(key=src.key, edition="" if src.edition == "NEGATIVE" else src.edition,
-                           base_cost=src.base_cost, state=dict(src.state))
+                           base_cost=src.base_cost, state=dict(src.state), cost=src.cost)
                 self.add_joker(cp)
         self.hand = sort_hand([x for x in self.hand if x in self.full_deck])
 
@@ -1190,7 +1346,8 @@ class Game:
         self.pack_cards = []
         self.pack_hand = []
         if kind == "buffoon":
-            self.pack_cards = [self.random_joker() for _ in range(shown)]
+            for _ in range(shown):                          # no duplicates within the pack
+                self.pack_cards.append(self.random_joker(exclude={j.key for j in self.pack_cards}))
         elif kind == "celestial":
             opts = [p for p, h in PLANETS.items() if h not in SECRET_HANDS or self.hand_played[h] > 0]
             chosen = self.rng.sample(opts, min(shown, len(opts)))
@@ -1205,19 +1362,23 @@ class Game:
             if "omen_globe" in self.vouchers:
                 for i in range(len(self.pack_cards)):
                     if self.rng.random() < 0.2:
-                        self.pack_cards[i] = Consumable("spectral", self.rng.choice(SPECTRAL_POOL))
+                        self.pack_cards[i] = self.random_consumable(
+                            "spectral", {x.name for x in self.pack_cards})
         elif kind == "spectral":
             self.pack_cards = [Consumable("spectral", t) for t in self.rng.sample(SPECTRAL_POOL, shown)]
         elif kind == "standard":
             self.pack_cards = [self.random_playing_card(enhanced=True) for _ in range(shown)]
-        # The Soul (arcana/spectral) and Black Hole (celestial/spectral): 0.3% per card
+        # The Soul (arcana/spectral) and Black Hole (celestial/spectral): 0.3% per card, once per run
+        # (unless Showman)
         for i, x in enumerate(self.pack_cards):
             if isinstance(x, Consumable):
-                if kind in ("arcana", "spectral") and self.rng.random() < 0.003:
-                    self.pack_cards[i] = Consumable("spectral", "soul")
-                elif kind in ("celestial", "spectral") and self.rng.random() < 0.003:
-                    self.pack_cards[i] = Consumable("spectral", "black_hole")
-        for _ in range(self.count("hallucination")):
+                for name, kinds in (("soul", ("arcana", "spectral")), ("black_hole", ("celestial", "spectral"))):
+                    if kind in kinds and self.rng.random() < 0.003:
+                        if self.showman() or not self.flags.get(f"seen_{name}"):
+                            self.pack_cards[i] = Consumable("spectral", name)
+                            self.flags[f"seen_{name}"] = True
+                        break
+        for _ in range(self.count_with_copies("hallucination")):
             if self.rng.random() < self.prob(1, 2):
                 self.create_consumable("tarot")
         if kind in ("arcana", "spectral"):
@@ -1232,7 +1393,7 @@ class Game:
         if isinstance(x, Joker):
             return x.edition == "NEGATIVE" or len(self.jokers) < self.joker_slots
         if isinstance(x, Consumable):
-            return self.consumable_usable(x, self.pack_hand)
+            return self.consumable_usable(x, self.pack_hand, from_slot=False)
         return True
 
     def pack_pick(self, i: int, choose_targets: bool = False):

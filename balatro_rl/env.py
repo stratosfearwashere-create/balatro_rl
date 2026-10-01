@@ -18,7 +18,7 @@ import numpy as np
 
 from .sim import fastscore
 from .sim.cards import ENHANCEMENTS, EDITIONS, SEALS
-from .sim.game import Game, Consumable, MAX_HAND, MAX_JOKERS, MAX_CONSUMABLES, MAX_SHOP, MAX_PACK
+from .sim.game import Game, Consumable, MAX_HAND, MAX_JOKERS, MAX_CONSUMABLES, MAX_SHOP, MAX_PACK, MAX_VOUCHERS
 from .sim.hands import N_HANDS
 from .sim.items import BOSS_KEYS, TAGS, VOUCHERS, PLANETS, item_id, VOCAB
 from .sim.jokers import Joker
@@ -36,8 +36,8 @@ A_SKIP = A_SELECT + 1
 A_REROLL_BOSS = A_SKIP + 1
 A_BUY = A_REROLL_BOSS + 1
 A_BUY_PACK = A_BUY + MAX_SHOP
-A_VOUCHER = A_BUY_PACK + 2
-A_REROLL = A_VOUCHER + 1
+A_VOUCHER = A_BUY_PACK + 2                             # voucher 1-2
+A_REROLL = A_VOUCHER + MAX_VOUCHERS
 A_LEAVE = A_REROLL + 1
 A_SELL_J = A_LEAVE + 1
 A_SELL_C = A_SELL_J + MAX_JOKERS
@@ -286,12 +286,17 @@ def target_candidates(g: Game) -> list:
     cards = g.target_cards()
     lo, hi = g.target_range(g.targeting["cons"])
     n = len(cards)
+    name = g.targeting["cons"].name
+    aura = name == "aura"                           # Aura only takes a card without an edition
+
+    def ok(s):
+        return not aura or all(cards[i].edition == "" for i in s)
     if n <= BASE_HAND:
-        return [s if s[-1] < n and lo <= len(s) <= hi else None for s in SUBSETS]
-    auto = {c.uid for c in g.auto_targets(g.targeting["cons"].name, cards)}
+        return [s if s[-1] < n and lo <= len(s) <= hi and ok(s) else None for s in SUBSETS]
+    auto = {c.uid for c in g.auto_targets(name, cards)}
     order = sorted(range(n), key=lambda i: (cards[i].uid not in auto, -g.card_value(cards[i])))
     pool = sorted(order[:n if hi <= 2 else MAX_ENUM_CARDS])
-    subs = [s for r in range(lo, hi + 1) for s in combinations(pool, r)]
+    subs = [s for r in range(lo, hi + 1) for s in combinations(pool, r) if ok(s)]
     return subs[:N_SUB] + [None] * (N_SUB - min(N_SUB, len(subs)))
 
 
@@ -316,7 +321,8 @@ def legal_mask(g: Game, cnt: Counters, plays=None, discs=None) -> np.ndarray:
             m[A_BUY + i] = g.can_buy(it)
         for i, it in enumerate(g.shop_packs[:2]):
             m[A_BUY_PACK + i] = g.can_afford(it.cost)
-        m[A_VOUCHER] = g.shop_voucher is not None and g.can_afford(g.shop_voucher.cost)
+        for i, it in enumerate(g.shop_vouchers[:MAX_VOUCHERS]):
+            m[A_VOUCHER + i] = g.can_afford(it.cost)
         m[A_REROLL] = cnt.rerolls < MAX_REROLLS_PER_SHOP and (g.free_rerolls > 0 or g.can_afford(g.reroll_cost))
         m[A_LEAVE] = True
     elif st == "PACK":
@@ -422,8 +428,8 @@ def action_features(g: Game, mask: np.ndarray, plays, discs, preds):
             put(A_BUY + i, it.key, obj, it.cost)
         for i, it in enumerate(g.shop_packs[:2]):
             put(A_BUY_PACK + i, it.key, None, it.cost)
-        if g.shop_voucher is not None:
-            put(A_VOUCHER, g.shop_voucher.key, None, g.shop_voucher.cost)
+        for i, it in enumerate(g.shop_vouchers[:MAX_VOUCHERS]):
+            put(A_VOUCHER + i, it.key, None, it.cost)
         feats[A_REROLL, off_item] = (0 if g.free_rerolls else g.reroll_cost) / 10
     if g.state == "BLIND_SELECT":
         feats[A_REROLL_BOSS, off_item] = 1.0
@@ -508,8 +514,8 @@ def apply_action(g: Game, a: int, obs: dict):
         g.buy_card(a - A_BUY)
     elif A_BUY_PACK <= a < A_VOUCHER:
         g.buy_pack(a - A_BUY_PACK)
-    elif a == A_VOUCHER:
-        g.buy_voucher()
+    elif A_VOUCHER <= a < A_REROLL:
+        g.buy_voucher(a - A_VOUCHER)
     elif a == A_REROLL:
         g.reroll()
     elif a == A_LEAVE:
@@ -538,11 +544,13 @@ def describe_action(g: Game, a: int, obs: Optional[dict] = None) -> str:
         pos = subset_of(obs, a) if obs is not None else list(SUBSETS[(a - A_PLAY) if a < A_DISC else (a - A_DISC)])
         return verb + " " + " ".join(repr(g.hand[i]) for i in pos)
     names = {A_SELECT: "select blind", A_SKIP: "skip blind", A_REROLL_BOSS: "reroll boss",
-             A_VOUCHER: "buy voucher", A_REROLL: "reroll", A_LEAVE: "leave shop", A_PSKIP: "skip pack"}
+             A_REROLL: "reroll", A_LEAVE: "leave shop", A_PSKIP: "skip pack"}
     if a in names:
         return names[a]
     if a < A_BUY_PACK:
         return f"buy {g.shop[a - A_BUY].key}"
+    if A_VOUCHER <= a < A_REROLL:
+        return f"buy {g.shop_vouchers[a - A_VOUCHER].key}"
     if a < A_VOUCHER:
         return f"buy pack {g.shop_packs[a - A_BUY_PACK].key}"
     if A_SELL_J <= a < A_SELL_C:

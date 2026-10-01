@@ -109,8 +109,10 @@ def parse_joker(c) -> Joker:
     j.rental = bool(_mod(c, "rental"))
     j.debuffed = bool((c.get("state") or {}).get("debuff"))
     j.hidden = bool((c.get("state") or {}).get("hidden"))
-    sell = (c.get("cost") or {}).get("sell", 1)
-    j.base_cost = int(sell) * 2
+    cost = c.get("cost") or {}
+    sell = int(cost.get("sell", 1))
+    j.cost = 2 * sell                          # the price it counts as bought for: sell_value() == sell
+    j.base_cost = int(cost.get("buy", 2 * sell))
     eff = (c.get("value") or {}).get("effect", "") or ""
     m = _NUM.search(eff)
     if m:
@@ -145,11 +147,31 @@ def _tag_key(name: str) -> str:
     return k if k in TAGS else "economy"
 
 
+def _first_hand_type(g: Game, memory: dict | None) -> int:
+    """The first hand type played this round (the only one The Mouth allows), -1 before any play.
+    The API only gives per-type counts, and hands The Mouth blocked count as played too, so once a
+    second type shows up the first one has to be remembered from earlier calls. Without that memory
+    (the bridge joined mid-round) it falls back to the lowest type played."""
+    types = g.round_hand_types
+    if g.state != "SELECTING_HAND" or not types:
+        if memory is not None:
+            memory.pop("first_hand", None)
+        return -1
+    if len(types) == 1:
+        first = next(iter(types))
+        if memory is not None:
+            memory["first_hand"] = first
+        return first
+    first = memory.get("first_hand", -1) if memory is not None else -1
+    return first if first in types else min(types)
+
+
 def game_from_state(gs: dict, deck="RED", stake="GOLD", memory: dict | None = None):
     """Build a simulator Game from BalatroBot's gamestate. Returns (game, hand_index_map).
 
     `memory` (a dict you keep between calls) remembers the full deck seen outside of rounds,
-    because during a round the API only lists the cards still in the draw pile."""
+    because during a round the API only lists the cards still in the draw pile, and the first
+    hand type played in the round (for The Mouth)."""
     g = Game(seed=0, deck_type=gs.get("deck", deck) or deck, stake=gs.get("stake", stake) or stake)
     st = gs.get("state", "")
     g.state = {"BLIND_SELECT": "BLIND_SELECT", "SELECTING_HAND": "SELECTING_HAND", "SHOP": "SHOP",
@@ -190,8 +212,9 @@ def game_from_state(gs: dict, deck="RED", stake="GOLD", memory: dict | None = No
             g.hand_played_round[i] = int(h.get("played_this_round", 0))
     # The Eye / The Mouth remember hand types played this round
     g.round_hand_types = {i for i in range(len(HAND_NAMES)) if g.hand_played_round[i] > 0}
-    if g.round_hand_types:
-        g.mouth_hand = min(g.round_hand_types)
+    g.mouth_hand = _first_hand_type(g, memory)
+    # The Ox: the most played hand when the round started (ties to the higher-ranked hand)
+    g.ox_hand = max(range(len(HAND_NAMES)), key=lambda i: (g.hand_played[i] - g.hand_played_round[i], i))
 
     # cards
     real_hand = [parse_card(c) for c in _cards(gs.get("hand"))]
@@ -250,9 +273,9 @@ def game_from_state(gs: dict, deck="RED", stake="GOLD", memory: dict | None = No
         g.shop_packs.append(ShopItem("pack", f"p_{kind}_{size}", int((c.get("cost") or {}).get("buy", 4)),
                                      pack=(kind, size)))
     vs = _cards(gs.get("vouchers"))
-    g.shop_voucher = None
-    if vs:
-        g.shop_voucher = ShopItem("voucher", vs[0].get("key", "v_unknown"), int((vs[0].get("cost") or {}).get("buy", 10)))
+    g.shop_vouchers =[ShopItem("voucher", v.get("key", "v_unknown"), int((v.get("cost") or {}).get("buy", 10)))
+                       for v in vs[:2]]
+    g.ante_voucher = g.shop_vouchers[0] if g.shop_vouchers else None
 
     # opened pack
     g.pack_cards = []
@@ -308,8 +331,8 @@ def to_rpc(g: Game, a: int, hand_map: list[int], obs: dict, targets: list[int] |
         return "buy", {"card": a - A_BUY}
     if A_BUY_PACK <= a < A_VOUCHER:
         return "buy", {"pack": a - A_BUY_PACK}
-    if a == A_VOUCHER:
-        return "buy", {"voucher": 0}
+    if A_VOUCHER <= a < A_REROLL:
+        return "buy", {"voucher": a - A_VOUCHER}
     if a == A_REROLL:
         return "reroll", None
     if a == A_LEAVE:

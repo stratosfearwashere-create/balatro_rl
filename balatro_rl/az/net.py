@@ -27,7 +27,7 @@ import torch.nn.functional as F
 from ..sim.game import MAX_JOKERS
 from ..rewards.targets import N_ANTE_CLASSES
 from .features import (F_GLOBAL, F_HANDCARD, F_JOK, F_CONS, F_LEV, F_ITEM, F_CAND, N_TOKENS, OFFSET, VOCAB_SIZE,
-                       N_REF)
+                       N_REF, GROUPS)
 from .world import KINDS
 
 STATE_KEYS = ("glob", "hand", "deck", "phand", "jok", "jok_id", "cons", "cons_id", "lev", "shop", "shop_id",
@@ -61,8 +61,7 @@ class AZNet(nn.Module):
         self.p_item = nn.Linear(F_ITEM + emb, d)
         self.group = nn.Embedding(9, d)                       # which token group (hand, deck, pack hand ...)
         gid = []
-        for k, (name, n) in enumerate([("glob", 1), ("hand", 16), ("deck", 80), ("phand", 16), ("jok", 8),
-                                       ("cons", 6), ("lev", 12), ("shop", 7), ("pack", 5)]):
+        for k, (name, n) in enumerate(GROUPS):
             gid += [k] * n
         assert len(gid) == N_TOKENS
         self.register_buffer("gid", torch.tensor(gid, dtype=torch.long), persistent=False)

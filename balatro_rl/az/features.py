@@ -10,7 +10,7 @@ Token groups (fixed maximum sizes, padded, with masks):
     jokers      8   id + edition, stickers, sell value, position and runtime state (value, rank, suit, hand)
     cons        6   consumables in slots
     levels     12   hand types: level, times played (run / round), base chips x mult at that level
-    shop        7   shop cards 1-4, packs 1-2, voucher
+    shop        8   shop cards 1-4, packs 1-2, vouchers 1-2
     pack        5   the open pack's cards
 
 A candidate row holds its kind, the exact score features (A), the solver's P(clear) / expected chips (B),
@@ -33,7 +33,7 @@ from .world import KINDS, KIND_INDEX, PHASES, World, MAX_REROLLS_PER_SHOP, MAX_M
 
 N_DECK = 80
 N_CONS = 6
-N_SHOP = 7
+N_SHOP = 8                  # shop cards 1-4, packs 1-2, vouchers 1-2
 N_PACK = 5
 GROUPS = [("glob", 1), ("hand", MAX_HAND), ("deck", N_DECK), ("phand", MAX_HAND), ("jok", MAX_JOKERS),
           ("cons", N_CONS), ("lev", N_HANDS), ("shop", N_SHOP), ("pack", N_PACK)]
@@ -206,9 +206,9 @@ def encode_state(w: World) -> dict:
         for i, it in enumerate(g.shop_packs[:2]):
             shop[4 + i] = _item_row(g, None, it.key, "pack", it.cost)
             sid[4 + i] = item_id(it.key)
-        if g.shop_voucher is not None:
-            shop[6] = _item_row(g, None, g.shop_voucher.key, "voucher", g.shop_voucher.cost)
-            sid[6] = item_id(g.shop_voucher.key)
+        for i, it in enumerate(g.shop_vouchers[:2]):
+            shop[6 + i] = _item_row(g, None, it.key, "voucher", it.cost)
+            sid[6 + i] = item_id(it.key)
     out["shop"], out["shop_id"] = shop, sid
     pack = np.zeros((N_PACK, F_ITEM), np.float32)
     pid = np.zeros(N_PACK, np.int64)
@@ -257,7 +257,7 @@ def token_mask(g) -> np.ndarray:
     if g.state == "SHOP":
         m[o["shop"]:o["shop"] + min(len(g.shop), 4)] = True
         m[o["shop"] + 4:o["shop"] + 4 + min(len(g.shop_packs), 2)] = True
-        m[o["shop"] + 6] = g.shop_voucher is not None
+        m[o["shop"] + 6:o["shop"] + 6 + min(len(g.shop_vouchers), 2)] = True
     return m
 
 
@@ -321,7 +321,7 @@ def cand_refs(g, c) -> list[int]:
     elif a.kind == "buy_pack":
         refs.append(o["shop"] + 4 + a.idx)
     elif a.kind == "voucher":
-        refs.append(o["shop"] + 6)
+        refs.append(o["shop"] + 6 + max(a.idx, 0))
     elif a.kind == "pick":
         refs.append(o["pack"] + a.idx)
     refs = [r for r in refs if r < N_TOKENS][:N_REF]

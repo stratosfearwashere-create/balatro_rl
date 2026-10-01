@@ -26,7 +26,7 @@ HOT = ["blueprint", "brainstorm", "photograph", "vampire", "midas_mask", "lucky_
 ENH = ["", "", "", "BONUS", "MULT", "WILD", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"]
 EDS = ["", "", "", "FOIL", "HOLO", "POLYCHROME", "NEGATIVE"]
 SEALS = ["", "", "", "RED", "RED", "BLUE", "GOLD", "PURPLE"]
-BOSSES = ["", "flint", "arm", "psychic", "eye", "mouth", "crimson_heart", "club", "plant"]
+BOSSES = ["", "flint", "arm", "psychic", "eye", "mouth", "crimson_heart", "club", "plant", "hook", "hook"]
 
 
 def rand_card(rng, few_suits):

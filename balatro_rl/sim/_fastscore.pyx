@@ -113,6 +113,7 @@ cdef enum:
     HK_SHOOT = 1
     HK_BARON = 2
     HK_COPY = 3
+    HK_RAISED_FIST = 4
 cdef enum:
     MK_NONE = 0
     MK_CONST = 1       # add p_amt (p_kind)
@@ -163,7 +164,7 @@ CODES = dict(
     CK_COPY=CK_COPY,
     RK_NONE=RK_NONE, RK_CHAD=RK_CHAD, RK_HACK=RK_HACK, RK_DUSK=RK_DUSK, RK_SOCK=RK_SOCK,
     RK_SELZER=RK_SELZER, RK_COPY=RK_COPY,
-    HK_NONE=HK_NONE, HK_SHOOT=HK_SHOOT, HK_BARON=HK_BARON, HK_COPY=HK_COPY,
+    HK_NONE=HK_NONE, HK_SHOOT=HK_SHOOT, HK_BARON=HK_BARON, HK_COPY=HK_COPY, HK_RAISED_FIST=HK_RAISED_FIST,
     MK_NONE=MK_NONE, MK_CONST=MK_CONST, MK_CONTAINS=MK_CONTAINS, MK_HALF=MK_HALF, MK_BANNER=MK_BANNER,
     MK_MYSTIC=MK_MYSTIC, MK_RAISED_FIST=MK_RAISED_FIST, MK_ABSTRACT=MK_ABSTRACT,
     MK_SUPERNOVA=MK_SUPERNOVA, MK_VAL_MULT=MK_VAL_MULT, MK_VAL_CHIPS=MK_VAL_CHIPS, MK_VAL_X=MK_VAL_X,
@@ -179,6 +180,8 @@ HAND_BASE = [(5, 1, 10, 1), (10, 2, 15, 1), (20, 2, 20, 1), (30, 3, 20, 2), (30,
              (40, 4, 25, 2), (60, 7, 30, 3), (100, 8, 40, 4), (120, 12, 35, 3), (140, 14, 40, 4),
              (160, 16, 50, 3)]
 cdef int HB[12][4]
+cdef int FLOWER_ORDER[4]
+FLOWER_ORDER[0], FLOWER_ORDER[1], FLOWER_ORDER[2], FLOWER_ORDER[3] = 1, 3, 0, 2   # Hearts, Diamonds, Spades, Clubs
 for _h in range(12):
     for _i in range(4):
         HB[_h][_i] = HAND_BASE[_h][_i]
@@ -203,6 +206,7 @@ cdef struct Jkr:
     int has_val
     double val
     long long sell
+    int unc             # Uncommon (Baseball Card multiplies its effect)
 
 cdef struct Ctx:
     double chips, mult, lucky
@@ -367,7 +371,7 @@ cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
         contains |= 1 << QUADS
     if top >= 5:
         contains |= 1 << FIVE_KIND
-    if (top >= 2 and second >= 2) or top >= 4:
+    if top >= 2 and second >= 2:                   # two separate groups: Four / Five of a Kind don't count
         contains |= 1 << TWO_PAIR
     if is_straight:
         contains |= 1 << STRAIGHT
@@ -575,6 +579,7 @@ cdef class Scorer:
     cdef int mime
     cdef bint vff, vsc, vsm
     cdef int boss, vboss, round_types, mouth_hand
+    cdef bint hook, blackboard           # The Hook is the boss; a Blackboard is among the jokers
     cdef int levels[12]
     cdef int hplayed[12]
     cdef int hplayed_round[12]
@@ -600,7 +605,7 @@ cdef class Scorer:
             (self.jk[i].bk, self.jk[i].ck, self.jk[i].rk, self.jk[i].hk, self.jk[i].mk,
              self.jk[i].p_hand, self.jk[i].p_kind, self.jk[i].p_suit, self.jk[i].p_amt,
              self.jk[i].ed, self.jk[i].target, self.jk[i].st_rank, self.jk[i].st_suit,
-             self.jk[i].has_val, self.jk[i].val, self.jk[i].sell) = j
+             self.jk[i].has_val, self.jk[i].val, self.jk[i].sell, self.jk[i].unc) = j
         before, card, retrig, held, main = lists
         self.n_before = len(before)
         for i, x in enumerate(before):
@@ -618,7 +623,7 @@ cdef class Scorer:
         for i, x in enumerate(main):
             self.l_main[i] = x
         (self.ff, self.sc, self.sm, self.par, self.splash, self.mime, self.vff, self.vsc, self.vsm) = flags
-        self.boss, self.vboss, self.round_types, self.mouth_hand = boss
+        self.boss, self.vboss, self.round_types, self.mouth_hand, self.hook, self.blackboard = boss
         levels, hplayed, hplayed_round, obs = arrays
         for i in range(12):
             self.levels[i] = levels[i]
@@ -806,16 +811,14 @@ cdef class Scorer:
             if x.contains & (1 << TWO_PAIR):
                 self._set(x, j, self._get(x, j, 0) + 2)
         elif kind == BK_LOYALTY:
-            v = self._get(x, j, 5)
+            v = self._get(x, j, 6)            # hands to go; fires on hands 6, 12, 18 ...
             self._set(x, j, v - 1 if v > 0 else 5)
         elif kind == BK_OBELISK:
-            most = 0
-            for i in range(12):
+            most = 0                      # resets when this hand is played at least as often as any
+            for i in range(12):           # other (the first hand of a run included)
                 if self.hplayed[i] > most:
                     most = self.hplayed[i]
-            if most == 0:
-                most = -1
-            if most >= 0 and self.hplayed[x.hand] == most:
+            if self.hplayed[x.hand] == most:
                 self._set(x, j, 1.0)
             else:
                 self._set(x, j, self._get(x, j, 1.0) + 0.2)
@@ -916,9 +919,19 @@ cdef class Scorer:
         return 0
 
     cdef void _held(self, Ctx* x, int j, int h, bint allow_copy) noexcept:
-        cdef int kind = self.jk[j].hk, t
+        cdef int kind = self.jk[j].hk, t, p, q, low
         cdef const Crd* c = &self.cards[h]
-        if kind == HK_SHOOT:
+        if kind == HK_RAISED_FIST:
+            low = -1                      # lowest-ranked held card, the rightmost one if tied
+            for p in range(x.nh):
+                q = x.held[p]
+                if is_stone(self.cards[q].enh):
+                    continue
+                if low < 0 or self.cards[q].rank <= self.cards[low].rank:
+                    low = q
+            if low == h:
+                x.mult += 2 * chip_value(c)
+        elif kind == HK_SHOOT:
             if not is_stone(c.enh) and c.rank == 12:
                 x.mult += 13
         elif kind == HK_BARON:
@@ -997,15 +1010,20 @@ cdef class Scorer:
             if ok:
                 x.mult *= 3
         elif kind == MK_FLOWER:
-            need = 15                     # bitmask of suits still missing
-            wild = 0
-            for p in range(x.nsc):
-                c = &self.cards[x.pos[x.scoring[p]]]
-                if c.enh == E_WILD:
-                    wild += 1
-                elif not is_stone(c.enh) and 0 <= c.suit < 4:
-                    need &= ~(1 << c.suit)
-            if ((need & 1) + ((need >> 1) & 1) + ((need >> 2) & 1) + ((need >> 3) & 1)) <= wild:
+            # non-Wild cards, then Wild cards; each fills the first empty suit it matches, in the order
+            # Hearts, Diamonds, Spades, Clubs (suit indices 1, 3, 0, 2)
+            need = 0                      # bitmask of suits filled
+            for wild in range(2):
+                for p in range(x.nsc):
+                    c = &self.cards[x.pos[x.scoring[p]]]
+                    if (c.enh == E_WILD) != (wild == 1):
+                        continue
+                    for i in range(4):
+                        h = FLOWER_ORDER[i]
+                        if not (need & (1 << h)) and has_suit(c, h, self.sm):
+                            need |= 1 << h
+                            break
+            if need == 15:
                 x.mult *= 3
         elif kind == MK_SEEING:
             ncards = nclub = nother = 0
@@ -1024,7 +1042,7 @@ cdef class Scorer:
             m = self.slots - self.njokers + self.stencils
             x.mult *= m if m > 1 else 1
         elif kind == MK_LOYALTY:
-            if self._get(x, j, 5) == 0:
+            if self._get(x, j, 6) == 0:
                 x.mult *= 4
         elif kind == MK_STEEL:
             x.mult *= 1 + 0.2 * self.steel
@@ -1050,12 +1068,43 @@ cdef class Scorer:
 
     # ------------------------------------------------------------------ scoring
     cdef double _score(self, int* pos, int k, int* hand_out, bint* viol) noexcept:
+        # chips x mult of one play. Under The Hook, when the held cards can change the score, the mean
+        # over every pair of held cards it could discard first (scoring.hook_variants / _hook_expected).
+        cdef int nh = self.ncards - k, a, b, h, i, n = 0
+        cdef bint matters = False, in_play
+        cdef double total = 0.0, chips = 0.0, mult = 0.0
+        if self.hook and nh > 0:
+            matters = self.n_held > 0 or self.blackboard
+            if not matters:
+                for h in range(self.ncards):
+                    in_play = False
+                    for i in range(k):
+                        if pos[i] == h:
+                            in_play = True
+                    if not in_play and self.cards[h].enh == E_STEEL:
+                        matters = True
+        if not matters:
+            return self._score1(pos, k, hand_out, viol, -1, -1)
+        if nh <= 2:
+            return self._score1(pos, k, hand_out, viol, -2, -2)
+        for a in range(nh):
+            for b in range(a + 1, nh):
+                total += self._score1(pos, k, hand_out, viol, a, b)
+                chips += self.last_chips
+                mult += self.last_mult
+                n += 1
+        self.last_chips, self.last_mult = chips / n, mult / n
+        return total / n
+
+    cdef double _score1(self, int* pos, int k, int* hand_out, bint* viol, int skip_a, int skip_b) noexcept:
+        # One scoring pass. skip_a / skip_b: held cards (by their place among the held cards) The Hook
+        # discarded first; -1 for none, -2 for all of them.
         cdef Ctx x
         cdef const Crd* pl[5]
-        cdef int i, j, p, r, e, reps, smask, level, ch, mu, h, vh, vs, vc
+        cdef int i, j, p, r, e, reps, smask, level, ch, mu, h, vh, vs, vc, hi = 0
         cdef const Crd* c
         cdef bint in_play, steel_held
-        cdef double avg
+        cdef double avg, hc, hm
         x.k = k
         for i in range(k):
             x.pos[i] = pos[i]
@@ -1068,8 +1117,10 @@ cdef class Scorer:
                 if pos[i] == h:
                     in_play = True
             if not in_play:
-                x.held[x.nh] = h
-                x.nh += 1
+                if skip_a != -2 and hi != skip_a and hi != skip_b:
+                    x.held[x.nh] = h
+                    x.nh += 1
+                hi += 1
         evaluate(pl, k, self.ff, self.sc, self.sm, &x.hand, &smask, &x.contains)
         x.nsc = 0
         for i in range(k):
@@ -1124,16 +1175,16 @@ cdef class Scorer:
                     x.mult += 20 * self.p5
                     x.lucky += self.p5
                     x.lucky += self.p15
+                if e == E_GLASS:              # the card: chips, mult, Glass, then its edition ...
+                    x.mult *= 2
                 if c.ed == ED_FOIL:
                     x.chips += 50
                 elif c.ed == ED_HOLO:
                     x.mult += 10
-                for j in range(self.n_card):
-                    self._card(&x, self.l_card[j], i, True)
-                if e == E_GLASS:
-                    x.mult *= 2
-                if c.ed == ED_POLY:
+                elif c.ed == ED_POLY:
                     x.mult *= 1.5
+                for j in range(self.n_card):  # ... then the jokers' per-card effects
+                    self._card(&x, self.l_card[j], i, True)
 
         # held-in-hand effects
         steel_held = False
@@ -1146,18 +1197,21 @@ cdef class Scorer:
                 c = &self.cards[h]
                 if c.deb:
                     continue
-                reps = 1 + (1 if c.seal == S_RED else 0) + self.mime
+                hc, hm = x.chips, x.mult          # Red seals / Mime repeat it only if it had an effect
+                if c.enh == E_STEEL:
+                    x.mult *= 1.5
+                for j in range(self.n_held):
+                    self._held(&x, self.l_held[j], h, True)
+                if c.enh != E_STEEL and x.chips == hc and x.mult == hm:
+                    continue
+                reps = (1 if c.seal == S_RED else 0) + self.mime
                 for r in range(reps):
                     if c.enh == E_STEEL:
                         x.mult *= 1.5
                     for j in range(self.n_held):
                         self._held(&x, self.l_held[j], h, True)
 
-        # Observatory: held planets for this hand
-        for r in range(self.obs[x.hand]):
-            x.mult *= 1.5
-
-        # jokers (editions wrap each joker)
+        # jokers: edition Foil / Holo, effect, Baseball Card (per Baseball, on Uncommons), edition Polychrome
         for p in range(self.n_main):
             j = self.l_main[p]
             if self.jk[j].ed == ED_FOIL:
@@ -1165,8 +1219,15 @@ cdef class Scorer:
             elif self.jk[j].ed == ED_HOLO:
                 x.mult += 10
             self._main(&x, j, True)
+            if self.jk[j].unc:
+                for r in range(self.rare2):
+                    x.mult *= 1.5
             if self.jk[j].ed == ED_POLY:
                 x.mult *= 1.5
+
+        # Observatory: held planets for this hand, after the last joker
+        for r in range(self.obs[x.hand]):
+            x.mult *= 1.5
 
         if self.plasma:
             avg = (x.chips + x.mult) / 2

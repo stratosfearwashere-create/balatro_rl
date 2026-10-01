@@ -88,14 +88,14 @@ if _fs is not None:
         "hit_the_road": _row(mk="MK_VAL_X"), "caino": _row(mk="MK_VAL_X"), "yorick": _row(mk="MK_VAL_X"),
         # main effects that read the game
         "half": _row(mk="MK_HALF"), "banner": _row(mk="MK_BANNER"), "mystic_summit": _row(mk="MK_MYSTIC"),
-        "raised_fist": _row(mk="MK_RAISED_FIST"), "abstract": _row(mk="MK_ABSTRACT"),
+        "raised_fist": _row(hk="HK_RAISED_FIST"), "abstract": _row(mk="MK_ABSTRACT"),
         "supernova": _row(mk="MK_SUPERNOVA"), "blue_joker": _row(mk="MK_BLUE"), "swashbuckler": _row(mk="MK_SWASH"),
         "fortune_teller": _row(mk="MK_FORTUNE"), "card_sharp": _row(mk="MK_CARD_SHARP"), "bull": _row(mk="MK_BULL"),
         "bootstraps": _row(mk="MK_BOOTSTRAPS"), "acrobat": _row(mk="MK_ACROBAT"),
         "blackboard": _row(mk="MK_BLACKBOARD"), "flower_pot": _row(mk="MK_FLOWER"),
         "seeing_double": _row(mk="MK_SEEING"), "stencil": _row(mk="MK_STENCIL"), "steel_joker": _row(mk="MK_STEEL"),
         "erosion": _row(mk="MK_EROSION"), "stone": _row(mk="MK_STONE"), "lucky_cat": _row(mk="MK_LUCKY_CAT"),
-        "baseball": _row(mk="MK_BASEBALL"), "throwback": _row(mk="MK_THROWBACK"),
+        "throwback": _row(mk="MK_THROWBACK"),       # Baseball Card: Jkr.unc and the count below
         "drivers_license": _row(mk="MK_DRIVERS"),
         # copiers
         "blueprint": _row(ck="CK_COPY", rk="RK_COPY", hk="HK_COPY", mk="MK_COPY"),
@@ -106,6 +106,7 @@ if _fs is not None:
     NO_SCORE_EFFECT = {("todo_list", "before"), ("space", "before"), ("dna", "before"),
                        ("sixth_sense", "before"), ("superposition", "before"), ("seance", "before"),
                        ("vagabond", "before"), ("business", "card"), ("hiker", "card"), ("rough_gem", "card"),
+                       ("blueprint", "before"), ("brainstorm", "before"),   # copies of the money / event ones
                        ("8_ball", "card"), ("ticket", "card"), ("reserved_parking", "held")}
 
     def _check_rows():
@@ -150,13 +151,14 @@ def _context(g, plan) -> tuple:
         st = j.state
         v = st.get("val")
         jokers.append(row + (EDITION.get(j.edition, C["ED_OTHER"]), target, st.get("rank", 14), st.get("suit", 0),
-                             v is not None, 0.0 if v is None else v, j.sell_value()))
+                             v is not None, 0.0 if v is None else v, j.sell_value(), j.d.rarity == 2))
     lists = ([index[id(j)] for j, _ in plan.before], [index[id(j)] for j, _ in plan.card],
              [index[id(j)] for j, _ in plan.retrig], [index[id(j)] for j, _ in plan.held],
              [index[id(j)] for j, _, _ in plan.main])
     flags = (plan.four_fingers, plan.shortcut, plan.smeared, plan.pareidolia, plan.splash, plan.mime,
              g.has("four_fingers"), g.has("shortcut"), g.has("smeared"))
-    boss = (BOSS.get(plan.boss, 0), BOSS.get(g.boss_active(), 0), hand_types_mask(g.round_hand_types), g.mouth_hand)
+    boss = (BOSS.get(plan.boss, 0), BOSS.get(g.boss_active(), 0), hand_types_mask(g.round_hand_types), g.mouth_hand,
+            plan.boss == "hook", plan.blackboard)
     obs = [0] * N_HANDS
     if "observatory" in g.vouchers:
         for c in g.consumables:
@@ -171,7 +173,7 @@ def _context(g, plan) -> tuple:
                g.tarots_used, g.blinds_skipped, g.joker_slots, sum(1 for o in table if o.key == "stencil"),
                sum(1 for c in fd if c.enh == "STEEL"), sum(1 for c in fd if c.enh == "STONE"),
                sum(1 for c in fd if c.enh), len(fd), g.starting_deck_size,
-               sum(o.sell_value() for o in table), sum(1 for o in plan.jokers if o.d.rarity == 2))
+               sum(o.sell_value() for o in table), plan.baseball)       # (the "rare2" slot: Baseball count)
     return jokers, lists, flags, boss, arrays, probs, scalars
 
 

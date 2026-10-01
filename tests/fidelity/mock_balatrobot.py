@@ -131,8 +131,8 @@ class Mock:
             "cards": {"count": len(self.pile()), "cards": [card_json(c) for c in self.pile()]},
             "hand": {"count": len(g.hand), "limit": g.effective_hand_size(), "cards": [card_json(c) for c in self.api_hand()]},
             "shop": {"cards": shop},
-            "vouchers": {"cards": [{"key": g.shop_voucher.key, "set": "VOUCHER",
-                                    "cost": {"buy": g.shop_voucher.cost}}] if g.shop_voucher else []},
+            "vouchers": {"cards": [{"key": it.key, "set": "VOUCHER", "cost": {"buy": it.cost}}
+                                   for it in g.shop_vouchers]},
             "packs": {"cards": [{"key": it.key + "_1", "set": "BOOSTER", "cost": {"buy": it.cost}}
                                 for it in g.shop_packs]},
             "pack": {"cards": pack, "highlighted_limit": g.pack_picks},
@@ -178,7 +178,7 @@ class Mock:
             elif "pack" in p:
                 g.buy_pack(p["pack"])
             else:
-                g.buy_voucher()
+                g.buy_voucher(p.get("voucher", 0))
         elif method == "sell":
             if "joker" in p:
                 g.sell_joker(p["joker"])

@@ -320,7 +320,7 @@ def test_side_effect_free_fast_path_matches_full_analysis():
     enh, seals, eds = (sorted(A.PLAY_SAFE_ENHANCEMENTS - {"HIDDEN"}), sorted(A.PLAY_SAFE_SEALS),
                        sorted(A.PLAY_SAFE_EDITIONS))
     covered = set()
-    n_fast = n_full = 0
+    n_fast = n_full = n_hook = 0
     for t in range(220):
         keys = [safe[(t * 3 + k) % len(safe)] for k in range(3)] + rng.sample(safe, 2)
         if t % 4 == 0:                                   # conditional jokers, also copied by Blueprint / Brainstorm
@@ -340,6 +340,10 @@ def test_side_effect_free_fast_path_matches_full_analysis():
         plan = Plan(g)
         view = g.hand_view()
         filt = A.fast_play_filter(plan, view)
+        if plan.boss == "hook" and (plan.held or plan.blackboard or any(c.enh == "STEEL" for c in view)):
+            assert filt is None                          # The Hook's random discard can change the score
+            n_hook += 1
+            continue
         assert filt is not None
         need = max(g.target - g.chips, 1) if rng.random() < 0.5 else 1
         slot_of = {j.uid: i for i, j in enumerate(g.jokers)}
@@ -356,6 +360,7 @@ def test_side_effect_free_fast_path_matches_full_analysis():
                 n_full += 1
     assert covered == set(safe)
     assert n_fast > 1000 and n_full > 50                 # both branches of the conditions were exercised
+    assert n_hook > 0
 
 
 def test_unlisted_kinds_take_the_full_path():

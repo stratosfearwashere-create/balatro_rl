@@ -300,10 +300,10 @@ class HeuristicPolicy:
             if m[A_USE_C + i] and c.name in ("hermit", "temperance", "judgement", "black_hole"):
                 return A_USE_C + i
         # voucher
-        if m[A_VOUCHER]:
-            v = g.shop_voucher.key[2:]
-            if v in GOOD_VOUCHERS and len(g.jokers) >= 3 and g.money - g.shop_voucher.cost >= max(res, 5):
-                return A_VOUCHER
+        for i, it in enumerate(g.shop_vouchers[:2]):
+            if m[A_VOUCHER + i] and it.key[2:] in GOOD_VOUCHERS and len(g.jokers) >= 3 \
+                    and g.money - it.cost >= max(res, 5):
+                return A_VOUCHER + i
         # jokers
         shop_j = [(i, it) for i, it in enumerate(g.shop) if it.kind == "joker"]
         free_slot = len(g.jokers) < g.joker_slots

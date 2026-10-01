@@ -75,7 +75,7 @@ def apply(g: Game, a: Action):
     elif k == "buy_pack":
         g.buy_pack(a.idx)
     elif k == "voucher":
-        g.buy_voucher()
+        g.buy_voucher(max(a.idx, 0))
     elif k == "reroll":
         g.reroll()
     elif k == "leave":
@@ -188,7 +188,7 @@ def infoset_key(w: World) -> tuple:
         shop = (tuple((it.key, it.cost, joker_sig(it.joker) if it.joker else None,
                        card_sig(it.card) if it.card else None) for it in g.shop),
                 tuple((it.key, it.cost) for it in g.shop_packs),
-                (g.shop_voucher.key, g.shop_voucher.cost) if g.shop_voucher else None,
+                tuple((it.key, it.cost) for it in g.shop_vouchers),
                 g.reroll_cost, g.free_rerolls)
     pack = ()
     if g.state == "PACK":

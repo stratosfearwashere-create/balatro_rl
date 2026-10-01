@@ -45,8 +45,9 @@ class Joker:
     eternal: bool = False
     perishable: Optional[int] = None      # rounds left before debuff (None = not perishable)
     rental: bool = False
-    base_cost: int = 0
+    base_cost: int = 0                    # list price (with its edition)
     sell_bonus: int = 0
+    cost: Optional[int] = None            # price it counts as bought for (discounts, $1 Rental, $0 from tags)
     debuffed: bool = False
     hidden: bool = False                  # flipped face down (Amber Acorn)
     state: dict = field(default_factory=dict)
@@ -59,7 +60,9 @@ class Joker:
         return self.base_cost
 
     def sell_value(self) -> int:
-        return max(1, self.base_cost // 2) + self.sell_bonus
+        """As in the game: half the price paid (at least $1), plus what Egg / Gift Card added."""
+        paid = self.cost if self.cost is not None else self.base_cost
+        return max(1, paid // 2) + self.sell_bonus
 
 
 EDITION_COST = {"": 0, "FOIL": 2, "HOLO": 3, "POLYCHROME": 5, "NEGATIVE": 5}
@@ -144,15 +147,18 @@ J("misprint", "Misprint", 1, 4,
   main=lambda ctx, j, st: ctx.add_mult(11.5 if ctx.rng is None else ctx.rng.randint(0, 23)))
 
 
-def _raised_fist_main(ctx, j, st):
-    held = [c for c in ctx.held if not c.is_stone]
-    if held:
-        low = min(held, key=lambda c: (c.rank, -ctx.held.index(c)))
-        if not low.debuffed:
-            ctx.add_mult(2 * low.chip_value() if low.rank != 14 else 22)
+def _raised_fist_held(ctx, j, st, c):
+    """Held-card effect on the lowest-ranked held card (the rightmost one if tied): +2x its chips as mult.
+    Scored in the held-card step, so Red seals and Mime retrigger it."""
+    held = [x for x in ctx.held if not x.is_stone]
+    if not held:
+        return
+    low = min(range(len(held)), key=lambda i: (held[i].rank, -i))
+    if held[low] is c:
+        ctx.add_mult(2 * c.chip_value())
 
 
-J("raised_fist", "Raised Fist", 1, 5, main=_raised_fist_main)
+J("raised_fist", "Raised Fist", 1, 5, held=_raised_fist_held)
 J("scary_face", "Scary Face", 1, 4,
   card=lambda ctx, j, st, c: ctx.add_chips(30) if c.is_face(ctx.pareidolia) else None)
 J("abstract", "Abstract Joker", 1, 4, main=lambda ctx, j, st: ctx.add_mult(3 * len(ctx.g.jokers)))
@@ -402,16 +408,24 @@ J("blackboard", "Blackboard", 2, 6, main=_blackboard)
 J("mime", "Mime", 2, 5)                  # passive: retrigger held cards
 
 
+FLOWER_ORDER = (1, 3, 0, 2)          # Hearts, Diamonds, Spades, Clubs (cards.SUITS = S, H, C, D)
+
+
 def _flower(ctx, j, st):
+    """x3 if the scoring cards cover all four suits. As in the game: non-Wild cards first, then Wild cards;
+    each card fills the first still-empty suit it matches, in the order Hearts, Diamonds, Spades, Clubs
+    (with Smeared Joker a card matches both suits of its colour)."""
     cards = [ctx.played[i] for i in ctx.scoring]
-    need = set(range(4))
-    wild = 0
-    for c in cards:
-        if c.enh == "WILD":
-            wild += 1
-        elif not c.is_stone and c.suit in need:
-            need.discard(c.suit)
-    if len(need) <= wild:
+    filled = set()
+    for wild_pass in (False, True):
+        for c in cards:
+            if (c.enh == "WILD") != wild_pass:
+                continue
+            for s in FLOWER_ORDER:
+                if s not in filled and c.has_suit(s, ctx.smeared):
+                    filled.add(s)
+                    break
+    if len(filled) == 4:
         ctx.x_mult(3)
 
 
@@ -459,15 +473,16 @@ J("stencil", "Joker Stencil", 2, 8,
 
 
 def _loyal_before(ctx, j, st):
-    st["val"] = st.get("val", 5) - 1 if st.get("val", 5) > 0 else 5
+    # val = hands left until the x4 hand; starts at 6, so it fires on hands 6, 12, 18 ... since creation
+    st["val"] = st.get("val", 6) - 1 if st.get("val", 6) > 0 else 5
 
 
 def _loyal_main(ctx, j, st):
-    if st.get("val", 5) == 0:
+    if st.get("val", 6) == 0:
         ctx.x_mult(4)
 
 
-J("loyalty_card", "Loyalty Card", 2, 5, before=_loyal_before, main=_loyal_main, init=_init_val(5))
+J("loyalty_card", "Loyalty Card", 2, 5, before=_loyal_before, main=_loyal_main, init=_init_val(6))
 J("rough_gem", "Rough Gem", 2, 7, card=lambda ctx, j, st, c: ctx.money_now(1) if c.has_suit(3, ctx.smeared) else None)
 J("arrowhead", "Arrowhead", 2, 7, card=lambda ctx, j, st, c: ctx.add_chips(50) if c.has_suit(0, ctx.smeared) else None)
 J("onyx_agate", "Onyx Agate", 2, 7, card=lambda ctx, j, st, c: ctx.add_mult(7) if c.has_suit(2, ctx.smeared) else None)
@@ -519,9 +534,10 @@ J("ancient", "Ancient Joker", 3, 8, card=_ancient, end_round=_ancient_end,
 
 
 def _obelisk_before(ctx, j, st):
+    # the game counts this play first: it resets when this hand is played at least as often as any other,
+    # which includes the very first hand of a run (nothing played yet)
     hp = ctx.g.hand_played
-    most = max(hp) if max(hp) > 0 else -1
-    if most >= 0 and hp[ctx.hand] == most:
+    if hp[ctx.hand] == max(hp):
         st["val"] = 1.0
     else:
         st["val"] = st.get("val", 1.0) + 0.2
@@ -555,10 +571,39 @@ def _copier(which, hook):
     return f
 
 
+# effects the copies repeat beyond scoring (the game's scaling jokers don't scale from a copy, so their
+# "before" hooks are not in the list); Mime, Certificate and Hallucination are counted where they act
+COPY_BEFORE = frozenset({"space", "dna", "seance", "superposition", "vagabond", "todo_list"})
+COPY_DISCARD = frozenset({"faceless", "mail", "burnt"})
+COPY_BLIND_SELECT = frozenset({"cartomancer", "marble", "riff_raff", "burglar"})
+
+
+def _copier_limited(which, hook, allowed):
+    def f(ctx, j, st, *args):
+        t = _copy_target(ctx.g, j, which)
+        if t is None or t.key not in allowed:
+            return 0
+        return getattr(t.d, hook)(ctx, t, ctx.st(t), *args)
+    return f
+
+
+def _game_copier(which, hook, allowed):
+    """For game-event hooks (g, j, *args): run the copied joker's hook as that joker."""
+    def f(g, j, *args):
+        t = _copy_target(g, j, which)
+        if t is None or t.key not in allowed:
+            return 0
+        return getattr(t.d, hook)(g, t, *args)
+    return f
+
+
 for _k, _w in (("blueprint", "right"), ("brainstorm", "left")):
     J(_k, "Blueprint" if _k == "blueprint" else "Brainstorm", 3, 10,
+      before=_copier_limited(_w, "before", COPY_BEFORE),
       card=_copier(_w, "card"), retrig=_copier(_w, "retrig"),
-      held=_copier(_w, "held"), main=_copier(_w, "main"), copyable=False)
+      held=_copier(_w, "held"), main=_copier(_w, "main"),
+      discard=_game_copier(_w, "discard", COPY_DISCARD),
+      blind_select=_game_copier(_w, "blind_select", COPY_BLIND_SELECT), copyable=False)
 
 # ---------------------------------------------------------------- remaining jokers
 J("credit_card", "Credit Card", 1, 1)          # passive: go down to -$20 (game.debt_limit)
@@ -692,7 +737,7 @@ def _luchador_sell(g, j):
         g.disable_boss()
 
 
-J("luchador", "Luchador", 2, 5, on_sell=_luchador_sell)
+J("luchador", "Luchador", 2, 5, on_sell=_luchador_sell, eternal_ok=False)
 
 
 def _gift_end(g, j):
@@ -730,12 +775,7 @@ def _lucky_cat_main(ctx, j, st):
 J("lucky_cat", "Lucky Cat", 2, 6, main=_lucky_cat_main, init=_init_val(1.0))
 
 
-def _baseball(ctx, j, st):
-    n = sum(1 for o in ctx.plan.jokers if o.d.rarity == 2)
-    ctx.x_mult(1.5 ** n)
-
-
-J("baseball", "Baseball Card", 3, 8, main=_baseball)
+J("baseball", "Baseball Card", 3, 8)      # scoring.score_hand: x1.5 on each Uncommon joker's effect
 
 
 def _cola_sell(g, j):
@@ -810,7 +850,7 @@ def _invisible_sell(g, j):
         if cand:
             src = g.rng.choice(cand)
             g.add_joker(Joker(src.key, edition="" if src.edition == "NEGATIVE" else src.edition,
-                              base_cost=src.base_cost, state=dict(src.state)), force=True)
+                              base_cost=src.base_cost, state=dict(src.state), cost=src.cost), force=True)
 
 
 J("invisible", "Invisible Joker", 3, 8, end_round=_invisible_end, on_sell=_invisible_sell, init=_init_val(0),
@@ -854,6 +894,13 @@ J("chicot", "Chicot", 4, 20)                                        # passive: d
 J("perkeo", "Perkeo", 4, 20)                                        # game.leave_shop
 
 UNKNOWN = JokerDef("unknown", "Unknown Joker", 1, 5)
+
+# jokers that grow as the run goes on can't get the Perishable sticker (as in the game)
+NO_PERISHABLE = ("ride_the_bus", "green_joker", "runner", "square", "red_card", "constellation", "rocket",
+                 "trousers", "flash", "obelisk", "ceremonial", "madness", "vampire", "hologram", "lucky_cat",
+                 "castle", "glass", "wee")
+for _k in NO_PERISHABLE:
+    JOKERS[_k].perish_ok = False
 
 # Jokers that should not appear in the shop pool (for the simulator)
 NOT_IN_POOL = {"cavendish"}   # only after Gros Michel goes extinct

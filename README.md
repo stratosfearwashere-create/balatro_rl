@@ -7,7 +7,7 @@ This project has three parts:
 3. **A bridge to the real game** (`bridge.py`). It reads the real game's state through the [BalatroBot](https://github.com/coder/balatrobot) mod and sends back the model's moves.
 
 > **Expectations.** Nothing here beats Gold Stake out of the box. Balatro is very hard for RL:
-> runs last about 250 decisions, there are 475 possible actions, and the long-term shop decisions
+> runs last about 250 decisions, there are 476 possible actions, and the long-term shop decisions
 > only pay off antes later. The code is a complete, working base. How strong it gets depends on how
 > long you train it, and on how faithful you make the simulator (see *Limitations*).
 
@@ -72,6 +72,11 @@ and `win%` is the win rate. `ppo_best.pt` is saved whenever `blinds` reaches a n
 
 ## Included checkpoints and results so far
 
+> **These results are from the old simulator.** The table below was measured before the simulator's
+> rules were corrected against the game source (scoring order, boss blinds, shop, economy). Every
+> checkpoint in `checkpoints/` was trained on the old rules, and the action space has since grown
+> from 475 to 476, so they need retraining. The table will be replaced once that is done.
+
 `checkpoints/bc.pt` and `checkpoints/ppo.pt` come from a short demo run on 2 CPU cores:
 about 27 minutes of behaviour cloning, then 22 minutes of PPO (the best point of a longer run).
 They were evaluated on the same 100 unseen seeds (Red Deck, Gold Stake, greedy actions):
@@ -120,7 +125,7 @@ python -m balatro_rl.bridge --model heuristic --runs 3
 
 ## How it works
 
-**Action space (475).** Plays and discards each have 218 candidate slots. With 8 or fewer cards in hand, those are exactly every subset of 1–5 cards. With a bigger hand (up to 16 cards), the play slots hold the 218 highest-scoring plays and the discard slots the 218 most promising discards; the observation says which cards each slot holds. The rest are: select or skip the blind, reroll the boss (Director's Cut / Retcon), buy shop card 1–4, buy pack 1–2, buy the voucher, reroll, leave the shop, sell joker 1–8, sell or use consumable 1–3, pick pack card 1–5 or skip the pack, and swap two neighbouring jokers (to set joker order). Illegal actions are masked out, and rerolls and swaps are capped per shop so the agent can't loop forever.
+**Action space (476).** Plays and discards each have 218 candidate slots. With 8 or fewer cards in hand, those are exactly every subset of 1–5 cards. With a bigger hand (up to 16 cards), the play slots hold the 218 highest-scoring plays and the discard slots the 218 most promising discards; the observation says which cards each slot holds. The rest are: select or skip the blind, reroll the boss (Director's Cut / Retcon), buy shop card 1–4, buy pack 1–2, buy voucher 1–2 (the second comes from a Voucher tag), reroll, leave the shop, sell joker 1–8, sell or use consumable 1–3, pick pack card 1–5 or skip the pack, and swap two neighbouring jokers (to set joker order). Illegal actions are masked out, and rerolls and swaps are capped per shop so the agent can't loop forever.
 **Choosing targets.** Using or picking one of the 21 tarots and spectrals that act on chosen cards starts a targeting step: the play slots then mean "target these cards", limited to what the card allows (Death takes exactly 2, converting the left card into the right one; the suit tarots up to 3), and each slot is tagged with the consumable being applied. The network picks the cards; `Game.auto_targets` remains as the rule-based player's choice and as the fallback for other callers.
 
 **Observation.** The observation has these parts:
@@ -140,16 +145,21 @@ embeddings. A separate value head feeds PPO. It has about 0.4M parameters.
 
 ## What the simulator models
 
-- **Scoring:** Balatro's scoring order, with retriggers, editions, enhancements, seals and held-in-hand effects.
+- **Scoring:** the game's order, with retriggers, editions, enhancements, seals and held-in-hand effects:
+  1. each scored card's own effects (chips, Mult / Lucky, Gold seal and Lucky money, Glass, then its edition);
+  2. the jokers' per-card effects on that card, with retriggers repeating both steps;
+  3. the held cards (Steel, Raised Fist, Baron …), repeated by Red seals and Mime only if they had an effect;
+  4. each joker in turn: its Foil / Holo edition, its effect, Baseball Card's ×1.5 if it is Uncommon, then its Polychrome;
+  5. held consumables (Observatory's planets).
 - **Hand rules:** Four Fingers, Shortcut, Smeared, Splash and Pareidolia.
 - **Jokers:** all 150 (61 common, 64 uncommon, 20 rare, 5 legendary), with the real rarities and prices. Legendaries come only from The Soul.
 - **Consumables:** all 12 planets, 22 tarots and 18 spectrals. The Soul and Black Hole appear at the real 0.3% rate. Perkeo's Negative copies don't use slots.
 - **Vouchers, tags, decks, stakes:** all 32 vouchers, 24 tags, 15 decks and 8 stakes.
-- **Bosses:** all 23 boss blinds and 5 finishers. The House, Wheel, Fish and Mark deal cards face down, and the agent can't see them. Amber Acorn flips jokers face down.
+- **Bosses:** all 23 boss blinds and 5 finishers. The House, Wheel, Fish and Mark deal cards face down, and the agent can't see them. Amber Acorn flips jokers face down. A disabled boss (Chicot, or selling Luchador) behaves as in the game: hands, discards and hand size come back, The Wall's and Violet Vessel's targets drop, and face-down cards turn face up.
 - **Hand size:** up to 16 cards (Juggler, Turtle Bean, Troubadour, Paint Brush, Palette, Juggle Tag, Painted Deck), and down again for Stuntman, Merry Andy, Ouija, Ectoplasm and The Manacle.
 - **Gold Stake rules:** no Small Blind reward, faster blind scaling, −1 discard, and Eternal, Perishable and Rental stickers.
-- **Shop:** weights, rarities, edition odds, prices (including Balatro's discount rounding) and reroll costs match the wiki. The first shop guarantees a Buffoon pack. Magic Trick and Illusion put playing cards in the shop.
-- **Checks:** unit tests cover scoring and the new jokers, and a fuzz test plays 150 random games stuffed with random jokers, vouchers and consumables.
+- **Shop:** weights, rarities, edition odds, prices (including Balatro's discount rounding) and reroll costs match the game source. The first shop guarantees a Buffoon pack. Magic Trick and Illusion put playing cards in the shop.
+- **Checks:** unit tests cover scoring and the new jokers, `tests/fidelity/test_rules.py` has one test per rule checked against the game source, and a fuzz test plays 150 random games stuffed with random jokers, vouchers and consumables.
 
 ## Unified agent (`balatro_rl/az/`)
 
@@ -163,7 +173,7 @@ python -m balatro_rl.az.train eval --model checkpoints/az.pt --games 100
 python -m balatro_rl.az.train eval --model checkpoints/az.pt --verbose  # one game, move by move
 ```
 
-- **Actions (`actions.py`).** It lists every legal action: plays and discards of 1–5 cards, consumable uses with every valid target set, joker sells and moves, and every shop, pack and blind action. Plays are scored exactly by the simulator's own scoring code: chips, mult, score, whether the play clears, and whether it clears even if every chance effect fails. Card order is optimised where it changes the score (e.g. a Mult card before a Glass card). Each action also records what it changes besides the score: each joker's runtime state (Green Joker, Ride the Bus, Ice Cream …), money, hand levels, the deck, and consumables created. The network sees a pruned set that keeps the best few actions from each "side-effect group", so a lower-scoring play that keeps Ride the Bus going is never pruned away.
+- **Actions (`actions.py`).** It lists every legal action: plays and discards of 1–5 cards, consumable uses with every valid target set, joker sells and moves, and every shop, pack and blind action. Plays are scored exactly by the simulator's own scoring code: chips, mult, score, whether the play clears, and whether it clears even if every chance effect fails. Card order is optimised where it changes the score (e.g. a Mult card before a Glass card). Under The Hook, which discards two random held cards before the hand scores, the score is the average over those discards and "clears for certain" uses the worst of them. Each action also records what it changes besides the score: each joker's runtime state (Green Joker, Ride the Bus, Ice Cream …), money, hand levels, the deck, and consumables created. The network sees a pruned set that keeps the best few actions from each "side-effect group", so a lower-scoring play that keeps Ride the Bus going is never pruned away.
 - **Round solver (`solver.py`).** For each candidate it estimates P(clear the blind) and the expected score, by Monte Carlo over redraws of the unseen cards and a fixed playout policy. With depth 2 (used on boss blinds) it runs a shallow expectimax instead. It takes about 35 ms per decision at depth 1.
 - **Network (`net.py`, `features.py`).** A transformer over tokens: hand, unseen deck, pack hand, jokers with runtime state, consumables, hand levels, shop, pack, and one global token that holds the phase. The policy head scores candidates as `logit = prior + adjustment`. The adjustment's last layer starts at zero, so an untrained network plays exactly like its prior. The prior is the solver in rounds and the rule-based player elsewhere. The value is `V = Φ + R` (see *Rewards and value targets*). Auxiliary heads: P(clear the current blind), ante reached, log(final blind score / required), next blind's headroom.
 - **Search (`search.py`).** Gumbel AlphaZero search on the real simulator, with chance nodes for draws, shop and pack contents, and random consumables. Chance nodes widen progressively. The budget adapts per decision: 0 when the policy is already sure, 8 simulations in a normal round, 16 on a boss, 24 for shop and pack decisions, and 32 when a spectral is involved.
@@ -197,7 +207,7 @@ The objective is P(win the run). Every shaping term either leaves the optimal po
 ## Limitations (where to improve)
 
 - **Randomness differs.** The simulator uses Python's RNG, not Balatro's seeded one, so a given seed deals different cards and shops than the real game.
-- **Small rule approximations.** A few details are simplified: the order Baseball Card applies its ×1.5s, which boss effects count as "triggered" for Matador, the odds inside Standard packs, and Luchador on bosses that change hands or discards at the start of the round.
+- **Card order (PPO agent).** The PPO agent always plays its cards in rank order, while the real game lets you reorder them, which sometimes scores more (a Mult card before a Glass card). The unified agent does choose the order.
 - **Bridge reading.** Jokers with counters (Ride the Bus, Castle, Idol, To Do List …) are read from their description text. Hiker's bonus chips are read the same way. This is best-effort, because it depends on how BalatroBot words the text.
 - **Teacher quality.** The rule-based player used for warm-starting is only moderately good.
 

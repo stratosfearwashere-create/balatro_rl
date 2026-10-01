@@ -42,7 +42,7 @@ from ..sim.game import Game, Consumable, TARGETED, MAX_SHOP, MAX_PACK, MAX_JOKER
 from ..sim.hands import N_HANDS
 from ..sim.items import HAND_TO_PLANET
 from ..sim.jokers import Joker
-from ..sim.scoring import Plan, score_hand
+from ..sim.scoring import Plan, hook_variants, score_hand
 from .world import (Action, World, MAX_MOVES_PER_PHASE, MAX_REROLLS_PER_SHOP, apply, card_sig, determinize,
                     deck_sig)
 
@@ -279,6 +279,8 @@ def fast_play_filter(plan: Plan, view):
     whether a play can take the fast path (analyze_play would find no joker change and no side effect)."""
     if plan.boss not in PLAY_SAFE_BOSSES:
         return None
+    if plan.boss == "hook" and (plan.held or plan.blackboard or any(c.enh == "STEEL" for c in view)):
+        return None                 # The Hook's random discard changes the score: not deterministic
     if not all(c.enh in PLAY_SAFE_ENHANCEMENTS and c.seal in PLAY_SAFE_SEALS and c.edition in PLAY_SAFE_EDITIONS
                for c in view):
         return None
@@ -327,27 +329,28 @@ def analyze_play(g: Game, plan: Plan, view, pos: tuple, need: float, slot_of: di
     cand = Cand(Action("play", cards=tuple(pos)), score=float(sc), chips=ctx.chips, mult=ctx.mult, hand=ctx.hand,
                 analyzed=True)
     jd = []
-    for j in plan.jokers:
-        if j.uid in ctx.jstate:
-            jd += _state_diff(slot_of, j, ctx.jstate[j.uid])
     eff = Counter()
-    if ctx.money:
-        eff["money"] += ctx.money
-    if ctx.level_up:
-        eff["levels"] += ctx.level_up
-    if ctx.enh_override:
-        eff["deck"] += len(ctx.enh_override)
-    glass = sum(1 for i in ctx.scoring if played[i].enh == "GLASS" and not played[i].debuffed)
-    if glass:
-        eff["glass"] += glass
-    boss = plan.boss
+    if not violated:        # a hand the boss forbids scores nothing: no joker changes, money, Glass, creations
+        for j in plan.jokers:
+            if j.uid in ctx.jstate:
+                jd += _state_diff(slot_of, j, ctx.jstate[j.uid])
+        if ctx.money:
+            eff["money"] += ctx.money
+        if ctx.level_up:
+            eff["levels"] += ctx.level_up
+        if ctx.enh_override:
+            eff["deck"] += len(ctx.enh_override)
+        glass = sum(1 for i in ctx.scoring if played[i].enh == "GLASS" and not played[i].debuffed)
+        if glass:
+            eff["glass"] += glass
+    boss = plan.boss                                     # the boss's own effects apply either way
     if boss == "tooth":
         eff["money"] -= len(pos)
     if boss == "arm" and g.hand_levels[ctx.hand] > 1:
         eff["levels"] -= 1
-    if boss == "ox" and max(g.hand_played) > 0 and g.hand_played[ctx.hand] == max(g.hand_played):
+    if boss == "ox" and ctx.hand == g.ox_hand:
         eff["ox"] += 1
-    if real_only:                                        # effects that only a real (random) play produces
+    if real_only and not violated:                       # effects that only a real (random) play produces
         p2, h2 = _copies([view[i] for i in pos]), _copies([c for i, c in enumerate(view) if i not in pos])
         _, octx = score_hand(g, p2, h2, rng=OPTIMIST, commit=False, plan=plan)
         for e in octx.events:
@@ -360,14 +363,22 @@ def analyze_play(g: Game, plan: Plan, view, pos: tuple, need: float, slot_of: di
     cand.clears = sc >= need
     if cand.clears:
         # the round ends: cards still held pay out (Gold cards, Blue seals)
-        mime = sum(1 for j in plan.jokers if j.key == "mime")
-        for c in held:
-            if c.enh == "GOLD" and not c.debuffed:
-                eff["money"] += 3 * (1 + mime + (c.seal == "RED"))
-            if c.seal == "BLUE" and not c.debuffed:
-                eff["create"] += 1
-        p3, h3 = _copies([view[i] for i in pos]), _copies([c for i, c in enumerate(view) if i not in pos])
-        smin, _ = score_hand(g, p3, h3, rng=PESSIMIST, commit=False, plan=plan)
+        # (The Hook discards 2 of them first: each is still held with probability (n - 2) / n)
+        stay = max(0, len(held) - 2) / len(held) if boss == "hook" and held else 1
+        for c in held:                                   # each retriggered by Mime (and copies) and Red seals
+            if c.debuffed:
+                continue
+            triggers = 1 + plan.mime + (c.seal == "RED")
+            if c.enh == "GOLD":
+                eff["money"] += 3 * triggers * stay
+            if c.seal == "BLUE":
+                eff["create"] += triggers * stay
+        # the pessimistic score: every chance effect fails, and The Hook takes the worst pair of held cards
+        smin = None
+        for h in hook_variants(plan, held) or [held]:
+            s, _ = score_hand(g, _copies([view[i] for i in pos]), _copies(h), rng=PESSIMIST, commit=False,
+                              plan=plan, hooked=True)
+            smin = s if smin is None else min(smin, s)
         cand.score_min = 0.0 if violated else float(smin)
         cand.certain = cand.score_min >= need
     cand.jdiff = tuple(sorted(jd, key=repr))
@@ -473,9 +484,10 @@ def target_sets(g: Game, cons: Consumable, cards: list) -> list[tuple]:
     if n == 0 or hi == 0:
         return []
     sigs = [_sig(c, i) for i, c in enumerate(cards)]
+    ok = [cons.name != "aura" or c.edition == "" for c in cards]        # Aura: only cards without an edition
     subs, seen = [], set()
     for k in range(lo, min(hi, n) + 1):
-        for s in combinations(range(n), k):
+        for s in combinations([i for i in range(n) if ok[i]], k):
             key = tuple(sigs[i] for i in s) if cons.name == "death" else tuple(sorted(sigs[i] for i in s))
             if key not in seen:
                 seen.add(key)
@@ -662,8 +674,9 @@ def enumerate_candidates(w: World, rng: random.Random, cfg: Config = Config()) -
         for i, it in enumerate(g.shop_packs[:2]):
             if g.can_afford(it.cost):
                 cands.append(Cand(Action("buy_pack", i), analyzed=True, effects=(("money", -it.cost),)))
-        if g.shop_voucher is not None and g.can_afford(g.shop_voucher.cost):
-            cands.append(Cand(Action("voucher"), analyzed=True, effects=(("money", -g.shop_voucher.cost),)))
+        for i, it in enumerate(g.shop_vouchers[:2]):
+            if g.can_afford(it.cost):
+                cands.append(Cand(Action("voucher", i), analyzed=True, effects=(("money", -it.cost),)))
         if w.rerolls < MAX_REROLLS_PER_SHOP and (g.free_rerolls > 0 or g.can_afford(g.reroll_cost)):
             cands.append(Cand(Action("reroll"), analyzed=True,
                               effects=(("money", 0 if g.free_rerolls else -g.reroll_cost),)))
