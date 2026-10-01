@@ -546,6 +546,25 @@ def test_a_queued_double_tag_copies_the_next_tag():
     g.add_tag("economy")
     assert g.money == 40 and g.pending_tags == ["juggle"]
 
+    g = game()                                                       # it waits through shops for that tag
+    g.add_tag("double")
+    g.open_shop()
+    g.leave_shop()
+    assert g.pending_tags == ["double"]
+    g.money = 10
+    g.add_tag("economy")
+    assert g.money == 40 and not g.pending_tags
+
+    g = game(deck="ANAGLYPH")                                        # the Anaglyph Deck's tag after a boss
+    boss_round(g, "club", target=1)
+    g.play([0])
+    assert g.state == "SHOP" and g.pending_tags == ["double"]
+
+    g = game()                                                       # a third free joker waits for a slot
+    g.pending_tags = ["uncommon", "uncommon", "uncommon"]
+    g.open_shop()
+    assert [it.cost for it in g.shop] == [0, 0] and g.pending_tags == ["uncommon"]
+
 
 # ------------------------------------------------------------------ consumables
 def test_wheel_of_fortune_uses_the_game_odds():

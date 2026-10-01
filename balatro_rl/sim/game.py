@@ -950,9 +950,9 @@ class Game:
                 if opts and len(self.shop_vouchers) < MAX_VOUCHERS:
                     v = self.rng.choice(opts)
                     self.shop_vouchers.append(ShopItem("voucher", f"v_{v}", self.price(VOUCHER_COST)))
-            elif t in ("investment", "juggle"):
-                self.pending_tags.append(t)
-        self.shop = self.shop[:MAX_SHOP]
+            else:                                        # not a shop tag, or no room for it yet: it stays
+                self.pending_tags.append(t)              # queued (Investment, Juggle, a Double waiting for
+        self.shop = self.shop[:MAX_SHOP]                 # the next tag, an Uncommon / Rare tag past the slots)
 
     def can_buy(self, it: ShopItem) -> bool:
         if not self.can_afford(it.cost):
