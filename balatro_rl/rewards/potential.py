@@ -1,4 +1,5 @@
 """The potential Phi(s) = w_head * Phi_headroom(s) + w_prog * Phi_prog(s); Phi(terminal) = 0.
+(With head_term="strength" the strength score of rewards/strength.py takes Phi_headroom's place.)
 
 Phi_headroom = tanh(headroom / scale), headroom = log(E[best-hand score]) - log(target of the next boss).
   - Hands: K samples of a hand (current hand size) from the full deck, the build's cards whatever the
@@ -178,23 +179,48 @@ def fresh_round(g: Game) -> Game:
     return p
 
 
+HEAD_TERMS = ("headroom", "strength")
+
+
 class Potential:
-    """Phi(s) = w_head * Phi_headroom + w_prog * Phi_prog; 0 at terminal states."""
+    """Phi(s) = w_head * head term + w_prog * Phi_prog; 0 at terminal states. The head term is
+    Phi_headroom = tanh(headroom / scale), in [-1, 1] (so Phi is in [-w_head, w_head + w_prog]), or, with
+    head_term="strength", the strength score of rewards/strength.py, in [0, 1] (Phi in [0, w_head + w_prog])."""
 
     def __init__(self, cfg: PotentialConfig | None = None):
         self.cfg = cfg or PotentialConfig()
+        if self.cfg.head_term not in HEAD_TERMS:
+            raise ValueError(f"unknown head_term {self.cfg.head_term!r}")
         self.headroom = Headroom(self.cfg)
+        self._strength = None
+
+    @property
+    def strength(self):
+        """The strength calculator (rewards/strength.py); built on first use."""
+        if self._strength is None:
+            from .strength import Strength
+            self._strength = Strength(self.cfg.strength)
+        return self._strength
+
+    @property
+    def uses_strength(self) -> bool:
+        return self.cfg.head_term == "strength"
 
     def progress(self, g: Game) -> float:
         return g.furthest_blind / 24.0
 
+    def head(self, g: Game) -> float:
+        """Phi's first term for a live state."""
+        return self.strength.value(g) if self.uses_strength else self.headroom.value(g)
+
     def __call__(self, g: Game) -> float:
         if g.done:
             return 0.0
-        return self.cfg.w_head * self.headroom.value(g) + self.cfg.w_prog * self.progress(g)
+        return self.cfg.w_head * self.head(g) + self.cfg.w_prog * self.progress(g)
 
     def components(self, g: Game) -> dict:
+        """"headroom" is Phi's head term: tanh(headroom), or the strength score with head_term="strength"."""
         if g.done:
             return {"phi": 0.0, "headroom": 0.0, "prog": 0.0}
-        h, p = self.headroom.value(g), self.progress(g)
+        h, p = self.head(g), self.progress(g)
         return {"phi": self.cfg.w_head * h + self.cfg.w_prog * p, "headroom": h, "prog": p}

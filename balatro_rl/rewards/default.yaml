@@ -16,6 +16,27 @@ rewards:
     value_bound: none          # floor_sigmoid: V = lo + (1 - lo) * sigmoid(a * Phi + b + R), in [0, 1];
     value_init_scale: 1.0      #   lo = lambda * progress so far (what a game lost now is worth),
     value_init_bias: -1.9      #   a = value_init_scale, b = value_init_bias
+    head_term: headroom        # Phi = w_head * tanh(headroom) + w_prog * progress, range [-0.7, 1.0];
+                               #   strength: Phi = w_head * strength score + w_prog * progress, range [0, 1]
+                               #   (with value_bound: floor_sigmoid, refit value_init_scale / value_init_bias)
+    strength:                  # build strength against the upcoming bosses (rewards/strength.py)
+      samples: 32              # fresh-round hands sampled from the full deck (best play of each)
+      bootstrap: 1000          # resampled whole rounds for P(round total >= target)
+      score: horizon           # the scalar strength score, in [0, 1]:
+                               #   horizon: expected share survived of this ante and the next three
+                               #   expected_antes: the same over all the antes left (this one .. 8)
+                               #   expected_total: (antes already behind + expected antes survived) / 8
+                               #   current: the clear chance of this ante's boss
+      discards: extra_draws    # how discards enter a simulated round: none (hands-per-round independent
+      discard_weight: 1.0      #   best hands), or extra_draws (the best `hands` of hands + weight * discards
+                               #   draws). 1.0 matches the round solver's playouts; 2.0 matched the real
+                               #   outcomes of the untrained agent better (STAGE2_REPORT.md)
+      score_scale: 1.0         # multiplies every sampled best-hand score (a fitted correction; 1.0 = off)
+      growth: false            # project scaling jokers forward: val += table[key] * discounted rounds ahead
+      growth_discount: 0.9
+      growth_table: ""         # JSON {joker key: gain per round} from `python -m balatro_rl.rewards.growth`;
+                               #   "" uses the built-in table, which is empty (no growth)
+      aux_head: false          # give the network a head that predicts the strength (changes the network)
   novelty:
     beta: 0.02                 # set to 0 for the ablation against search's own exploration
     end_step: 3_000_000
@@ -28,3 +49,5 @@ rewards:
     ante_reached: 0.25
     blind_score_ratio: 0.25
     next_headroom: 0.1
+    strength_survive: 0.25     # used only with potential.strength.aux_head: "survives through ante" classes
+    strength_clear: 0.25       #   and the clear chance of each upcoming boss

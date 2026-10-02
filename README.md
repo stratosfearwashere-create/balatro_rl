@@ -193,6 +193,11 @@ The objective is P(win the run). Every shaping term either leaves the optimal po
   - E[best-hand score] averages 32 hands sampled from the full deck, scored by the simulator's scorer as the first hand of a fresh round, with no boss effect.
   - The samples are seeded from the build and cached, so the same build always gets the same Φ.
   - In the AlphaZero path, the network learns a residual on top of it: `V = Φ + R`. Set `value_residual: false` to turn that off. In the PPO path, `--shape-phi` adds `γΦ(s') − Φ(s)`.
+- **Build strength (optional, `rewards/strength.py`):** from the same 32 sampled hands, whole rounds are bootstrapped to get the chance of clearing this ante's boss (real target), the next three antes' and ante 8's, "survives through ante" (the last ante cleared with at least 50%), and a strength score in [0, 1].
+  - `potential.head_term: strength` uses that score in Φ instead of `tanh(headroom)`, so Φ lies in [0, 1].
+  - `potential.strength.aux_head: true` adds a network head that predicts it.
+  - `potential.strength.growth: true` projects scaling jokers forward with a table built by `python -m balatro_rl.rewards.growth`. The built-in table is empty.
+  - All three are off by default. `python -m balatro_rl.rewards.strength_check` measures calibration and cost.
 - **Temporary terms:**
   - A novelty bonus `β/√N(build)`, added to the value training target only and clipped to [0, 1]. It is gone by step 3M.
   - `κ·KL(π ‖ π_solver)` on in-round decisions, with κ starting at 1.0 and gone by step 1.5M.

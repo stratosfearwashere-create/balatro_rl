@@ -17,6 +17,21 @@ from dataclasses import dataclass, field, fields, is_dataclass, asdict
 
 
 @dataclass
+class StrengthConfig:
+    """Build strength against the upcoming bosses (rewards/strength.py)."""
+    samples: int = 32                 # K fresh-round hands (the same hands the headroom samples)
+    bootstrap: int = 1000             # B resampled rounds
+    score: str = "horizon"            # the scalar: "horizon", "expected_antes", "expected_total", "current"
+    discards: str = "extra_draws"     # "none": a round is `hands` independent best hands; "extra_draws": the
+    discard_weight: float = 1.0       #   best `hands` of hands + discard_weight * discards draws
+    score_scale: float = 1.0          # multiplies every best-hand score (fitted correction; 1.0: none)
+    growth: bool = False              # project scaling jokers forward (rewards/growth.py)
+    growth_discount: float = 0.9      #   per round: a joker gains table[key] * sum(discount^i, i < rounds)
+    growth_table: str = ""            #   JSON file {joker key: gain per round}; "": the built-in table (empty)
+    aux_head: bool = False            # the network gets a head predicting the strength (az/net.py)
+
+
+@dataclass
 class PotentialConfig:
     w_head: float = 0.7
     w_prog: float = 0.3
@@ -28,6 +43,8 @@ class PotentialConfig:
     value_bound: str = "none"         # "floor_sigmoid": V = lo + (1 - lo) * sigmoid(a * Phi + b + R), with
     value_init_scale: float = 1.0     #   lo = lam * progress so far, a = value_init_scale and
     value_init_bias: float = -1.9     #   b = value_init_bias (az/net.py); V stays in [0, 1]
+    head_term: str = "headroom"       # Phi's first term: "headroom" (tanh, in [-1, 1]) or "strength" (the
+    strength: StrengthConfig = field(default_factory=StrengthConfig)     # strength score, in [0, 1])
 
 
 @dataclass
@@ -49,6 +66,8 @@ class AuxWeights:
     ante_reached: float = 0.25
     blind_score_ratio: float = 0.25
     next_headroom: float = 0.1
+    strength_survive: float = 0.25    # only with potential.strength.aux_head: "survives through ante" (classes)
+    strength_clear: float = 0.25      #   and the clear chance of each upcoming boss
 
 
 @dataclass

@@ -10,7 +10,8 @@ iterations:
   + MSE(V, clip(z + novelty, 0, 1)), V = Phi + R                    (z = (1 - lam) win + lam progress)
         (with potential.value_bound = floor_sigmoid: cross-entropy on the bounded V's logit, az/net.py)
   + weighted auxiliary losses: P(clear), ante reached (8 classes), log(blind score / required),
-    next blind's headroom
+    next blind's headroom; with potential.strength.aux_head, the calculated build strength
+    ("survives through ante" classes and the clear chance of each upcoming boss; rewards/strength.py)
 Targets are computed at training time from the schedule at the current step (step = decisions played by
 self-play so far; lam on its own clock, which only runs while the recent self-play win rate clears
 lambda_gate_win_rate, see rewards.config.LambdaGate), so lam, beta and kappa always match
@@ -136,12 +137,25 @@ def _make_agent(model, search: bool, seed: int, cfg_over: dict | None = None, po
 def new_net(pcfg: PotentialConfig):
     from .net import AZNet
     return AZNet(value_residual=pcfg.value_residual, value_bound=pcfg.value_bound,
-                 value_init_scale=pcfg.value_init_scale, value_init_bias=pcfg.value_init_bias)
+                 value_init_scale=pcfg.value_init_scale, value_init_bias=pcfg.value_init_bias,
+                 strength_head=pcfg.strength.aux_head)
 
 
 def _headroom_stats(agent) -> dict:
+    """Time spent computing Phi's calculated terms: the headroom and, when it is in use, the strength."""
     st = agent.potential.headroom.stats
-    return {"headroom_calls": st["calls"], "headroom_sec": st["seconds"]}
+    out = {"headroom_calls": st["calls"], "headroom_sec": st["seconds"]}
+    if agent.potential._strength is not None:
+        st = agent.potential._strength.stats
+        out.update(strength_calls=st["calls"], strength_sec=st["seconds"])
+    return out
+
+
+def _strength_ms(stats) -> dict:
+    """{"strength_ms/decision": ...} when the strength was computed at all (else nothing: logs unchanged)."""
+    if not stats.get("strength_calls"):
+        return {}
+    return {"strength_ms/decision": round(1e3 * stats["strength_sec"] / max(1, stats["decisions"]), 3)}
 
 
 def _light(r: dict) -> dict:
@@ -262,6 +276,7 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
     res["autoplay%"] = 100.0 * stats["autoplay"] / max(1, stats["decisions"])
     res["sims/decision"] = stats["sims"] / max(1, stats["decisions"])
     res["headroom_ms/decision"] = 1e3 * stats["headroom_sec"] / max(1, stats["decisions"])
+    res.update(_strength_ms(stats))
     res["breakdown"] = breakdown(infos)
     res["override"] = override_summary(stats)
     res["decisions"] = stats["decisions"]
@@ -301,7 +316,8 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
              novelty: NoveltyCounter | None = None, opt=None):
     import torch
     import torch.nn.functional as F
-    from .net import collate
+    from .net import N_HEADS, collate
+    from ..rewards.strength import N_CLEAR, N_SURVIVE
     net.train()
     opt = opt or torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=1e-4)
     aw = rcfg.aux_loss_weights
@@ -363,6 +379,18 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
                 l = F.mse_loss(out[ok, col], t[ok])
                 aux = aux + wgt * l
                 logs[key] += l.item()
+        if net.strength_head is not None:                   # the calculated build strength (rewards/strength.py)
+            o = N_HEADS
+            sv = torch.tensor([r.get("str_survive", -100) for r in mb], dtype=torch.long, device=device)
+            ok = sv >= 0                                    # rows recorded without the targets are skipped
+            if ok.any():
+                sl = F.cross_entropy(out[:, o:o + N_SURVIVE], sv, ignore_index=-100)
+                ct = torch.tensor([r.get("str_clear") or [0.0] * N_CLEAR for r in mb], dtype=torch.float32,
+                                  device=device)
+                scl = F.binary_cross_entropy_with_logits(out[ok, o + N_SURVIVE:o + N_SURVIVE + N_CLEAR], ct[ok])
+                aux = aux + aw.strength_survive * sl + aw.strength_clear * scl
+                logs["strength_survive"] += sl.item()
+                logs["strength_clear"] += scl.item()
         loss = loss + aux
         opt.zero_grad()
         loss.backward()
@@ -497,6 +525,7 @@ def run(a):
                "autoplay%": round(100.0 * stats["autoplay"] / max(1, stats["decisions"]), 2),
                "sims/decision": round(stats["sims"] / max(1, stats["decisions"]), 2),
                "headroom_ms/decision": round(1e3 * stats["headroom_sec"] / max(1, stats["decisions"]), 3),
+               **_strength_ms(stats),
                "override": override_summary(stats),      # self-play: includes the exploration noise
                "samples": len(rows), "gen_min": round(t_gen / 60, 2),
                "train_min": round((time.time() - t0 - t_gen) / 60, 2),

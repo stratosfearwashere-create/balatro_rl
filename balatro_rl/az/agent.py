@@ -218,7 +218,7 @@ class Agent:
             s, c, m = collate([enc], self.device)
             logits, _, out = self.net(s, c, m)
         heads = self.net.split_heads(out[0], s["phi"][0], s["prog"][0], cfg.lam)
-        heads = {k: float(v) for k, v in heads.items() if k != "ante_probs"}
+        heads = {k: float(v) for k, v in heads.items() if v.dim() == 0}
         heads["phi"] = float(state["phi"])
         return Node(w, choice, enc, logits[0].float().cpu().numpy().astype(float), heads["value"], heads=heads)
 
