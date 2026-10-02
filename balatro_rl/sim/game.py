@@ -7,6 +7,7 @@ A re-implementation of Balatro's rules with all of its content: 150 jokers, 12 p
 from __future__ import annotations
 
 import copy
+import os
 import random
 from dataclasses import dataclass, field
 from typing import Optional
@@ -72,7 +73,9 @@ def _clone(v, memo: dict):
         memo[id(v)] = new
         new.extend(_clone(x, memo) for x in v)
         return new
-    if t is Card or t is Consumable:                 # dataclasses of immutable fields
+    if t is Card:
+        new = v._dup()
+    elif t is Consumable:                            # a dataclass of immutable fields
         new = object.__new__(t)
         new.__dict__ = dict(v.__dict__)
     elif t is Joker:
@@ -95,6 +98,16 @@ def _clone(v, memo: dict):
         new = copy.deepcopy(v)
     memo[id(v)] = new
     return new
+
+
+try:                                   # compiled copier (python setup_cython.py build); BALATRO_PURE=1 disables
+    if os.environ.get("BALATRO_PURE") == "1":
+        raise ImportError
+    from . import _clone as _cclone
+    _cclone.register(Consumable, Joker, ShopItem)
+    _clone_game = _cclone.clone_game
+except ImportError:
+    _clone_game = None
 
 
 class Game:
@@ -194,6 +207,8 @@ class Game:
         game constantly). Every card, joker, consumable and shop item is copied once, so objects shared
         between lists (a card in both the hand and the full deck) stay shared in the copy, and card / joker
         ids are kept. Anything of a type not handled here falls back to copy.deepcopy."""
+        if _clone_game is not None:
+            return _clone_game(self)
         memo: dict = {}
         new = object.__new__(Game)
         new.__dict__ = {k: _clone(v, memo) for k, v in self.__dict__.items()}

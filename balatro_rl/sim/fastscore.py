@@ -16,7 +16,7 @@ try:
 except ImportError:          # not built
     _fs = None
 
-ENABLED = _fs is not None and os.environ.get("BALATRO_PYSCORE") != "1"
+ENABLED = _fs is not None and os.environ.get("BALATRO_PYSCORE") != "1" and os.environ.get("BALATRO_PURE") != "1"
 
 if _fs is not None:
     C = _fs.CODES

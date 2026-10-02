@@ -263,6 +263,17 @@ class RoundSolver:
         c.e_chips = min(5.0, tot_c / n / target)
 
 
+PyRoundSolver, _PyRound = RoundSolver, _Round          # the reference implementation, always available
+try:                                   # compiled solver (python setup_cython.py build): same results
+    import os as _os
+    if _os.environ.get("BALATRO_PURE") == "1":
+        raise ImportError
+    from ._solver import RoundSolver, _Round, _subsets      # noqa: F811
+    COMPILED = True
+except ImportError:
+    COMPILED = False
+
+
 # ------------------------------------------------------------------ benchmark
 def bench(games: int = 20, samples: int = 12, depth: int = 1, stake: str = "GOLD", seed0: int = 30_000):
     """Time the solver on the in-round decisions of games played by the rule-based player, and check it:

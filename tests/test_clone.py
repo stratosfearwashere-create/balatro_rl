@@ -46,6 +46,15 @@ def _mirror(a, b, pairs: dict, ignore_uids: bool = False):
         for k in a:
             if not (ignore_uids and k in UID_KEYS):
                 _mirror(a[k], b[k], pairs, ignore_uids)
+    elif hasattr(type(a), "FIELDS"):               # the compiled Card keeps its fields outside __dict__:
+        assert a.FIELDS == b.FIELDS                # compared one by one (a temporary dict's id gets reused)
+        for k in a.FIELDS:
+            if not (ignore_uids and k in UID_KEYS):
+                _mirror(getattr(a, k), getattr(b, k), pairs, ignore_uids)
+        ea, eb = getattr(a, "__dict__", None) or {}, getattr(b, "__dict__", None) or {}   # ad-hoc attributes
+        assert ea.keys() == eb.keys()
+        for k in ea:
+            _mirror(ea[k], eb[k], pairs, ignore_uids)
     else:
         _mirror(vars(a), vars(b), pairs, ignore_uids)
 

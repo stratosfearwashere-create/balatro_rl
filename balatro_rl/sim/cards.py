@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 from dataclasses import dataclass, field
 
 SUITS = ["S", "H", "C", "D"]            # index 0..3, same letters as the BalatroBot API
@@ -21,7 +22,8 @@ def next_uid() -> int:
 
 
 @dataclass
-class Card:
+class _PyCard:
+    """The reference implementation; _cards.pyx is the same class with C fields (used when built)."""
     rank: int                  # 2..14 (14 = Ace)
     suit: int                  # 0..3 index into SUITS
     enh: str = ""
@@ -89,9 +91,34 @@ class Card:
             c.uid = self.uid
         return c
 
+    def _dup(self) -> "Card":
+        """An exact copy (every field, same uid): what Game.clone makes."""
+        c = object.__new__(Card)
+        c.__dict__ = dict(self.__dict__)
+        return c
+
     def __repr__(self) -> str:
         mods = "".join(f"[{m}]" for m in (self.enh, self.edition, self.seal) if m)
         return f"{RANK_CHARS[self.rank]}{SUITS[self.suit].lower()}{mods}"
+
+
+_PyCard.FIELDS = tuple(f.name for f in _PyCard.__dataclass_fields__.values())
+
+
+def _py_sort_hand(cards: list) -> list:
+    """Deterministic order used for the 8 hand slots: rank desc, then suit."""
+    return sorted(cards, key=lambda c: (-(0 if c.is_stone else c.rank), c.suit, c.uid))
+
+
+try:                                   # compiled card (python setup_cython.py build); BALATRO_PURE=1 disables
+    if os.environ.get("BALATRO_PURE") == "1":          # every compiled extension (cards, clone, solver, scorer)
+        raise ImportError
+    from ._cards import Card, next_uid, sort_hand       # noqa: F811  (one uid counter for cards and jokers)
+    COMPILED = True
+except ImportError:
+    Card = _PyCard
+    sort_hand = _py_sort_hand
+    COMPILED = False
 
 
 def standard_deck(deck_type: str = "RED", rng=None) -> list[Card]:
@@ -109,8 +136,3 @@ def standard_deck(deck_type: str = "RED", rng=None) -> list[Card]:
                 suit = 0 if s in (0, 2) else 1
             cards.append(Card(r, suit))
     return cards
-
-
-def sort_hand(cards: list[Card]) -> list[Card]:
-    """Deterministic order used for the 8 hand slots: rank desc, then suit."""
-    return sorted(cards, key=lambda c: (-(0 if c.is_stone else c.rank), c.suit, c.uid))

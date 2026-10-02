@@ -5,8 +5,9 @@ checkpoints/
 __pycache__/
 *.pyc
 
-# compiled scorer: rebuild with  cythonize -i -3 balatro_rl/sim/_fastscore.pyx
-balatro_rl/sim/_fastscore.c
+# compiled package: rebuild with  python setup_cython.py build  (clean: python setup_cython.py clean)
+balatro_rl/**/*.c
+balatro_rl/**/*.html
 *.pyd
 *.so
 build/

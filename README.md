@@ -30,14 +30,14 @@ python -m pip install -r requirements.txt      # Python 3.10+, numpy, torch
 python -m pytest -q tests                        # rules, content fuzzing, bridge consistency (~2 min)
 ```
 
-**Optional, about 5x faster simulator:** score predictions have a compiled version in `balatro_rl/sim/_fastscore.pyx`. Building it needs a C compiler (on Windows, the Microsoft C++ Build Tools: `winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"`):
+**Compiled extensions (recommended, about 1.4x faster games):** the hot paths have Cython versions: the scorer (`sim/_fastscore.pyx`), playing cards (`sim/_cards.pyx`), `Game.clone` (`sim/_clone.pyx`) and the round solver (`az/_solver.pyx`). Building them needs a C compiler (on Windows, the Microsoft C++ Build Tools: `winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"`):
 
 ```bash
 python -m pip install cython
-cythonize -i -3 balatro_rl/sim/_fastscore.pyx
+python setup_cython.py build          # python setup_cython.py clean  removes them
 ```
 
-It is used automatically once built, and gives exactly the same results as the Python code (`tests/test_fastscore.py` checks this). Rebuild it after changing the `.pyx` file. Set `BALATRO_PYSCORE=1` to force the pure-Python scorer.
+They are used automatically once built and give exactly the same results as the Python code (`tests/test_regression.py` compares every decision bit for bit, `tests/fidelity/test_fastscore.py` the scorer). Rebuild after changing a `.pyx` file. `BALATRO_PURE=1` forces the pure-Python versions (`BALATRO_PYSCORE=1` only the scorer). `python setup_cython.py build --pure` additionally compiles the plain Python modules as they are; that is worth about 3% and is off by default because Cython can change an int into a float where it types `len()` arithmetic as C (it breaks the golden regression test). With the extensions built, what is left of a game's time is almost all inside the compiled scorer itself (shop pricing scores 32 sampled hands per option; the solver scores every playout step), so further speed needs fewer scorings, not more compilation.
 
 ## Quick start
 
@@ -236,6 +236,35 @@ Past result: none. The one pipeline run (28 Sep) produced no build data, so `tra
 
 Both have smoke tests that need no checkpoints (`tests/test_shopsearch.py`, `tests/test_capacity.py`).
 
+## Build value (`balatro_rl/value/`)
+
+A value function of the *build* — V(jokers, deck, hand levels, money, ante, stake) = P(win the run) — learned by
+Monte Carlo from the outcomes of many games, instead of bootstrapped from the search. The round solver stays
+exact; the value only replaces the hand-built strength score where the shop, pack and blind-select decisions
+compare what each option leads to (`shop_eval: onestep` and the close-call rollouts in `az/agent.py`).
+
+```bash
+# 1. play games with the best fixed policy (the graded prior, no search), stakes drawn per game
+python -m balatro_rl.value.gen --games 50000 --workers 7 --out checkpoints/value_data
+# 2. train V; the report compares it with a logistic fit of Phi alone on held-out games, per ante
+python -m balatro_rl.value.train --data checkpoints/value_data --out checkpoints/value.pt --epochs 12
+# 3. use it: one-step evaluation of every option with V (needs search on for the agent's build decisions)
+python -m balatro_rl.az.train eval --model none --games 300 --cfg '{"shop_prior": "graded", "shop": {"rule_arcana": true}, "shop_eval": "onestep", "value_model": "checkpoints/value.pt", "budget_round": 0, "budget_boss": 0}'
+```
+
+- **Records** (`records.py`): about 2 KB each — global features, a deck summary (counts by rank, suit, rank x
+  suit, enhancements, editions, seals), the 8 joker rows and ids, consumables, hand levels and Phi — taken at
+  every blind start and at every decision outside a round whose build changed. Labels from the finished game:
+  win, ante reached (1..8, 9 = won), this and the next ante's boss beaten, blinds beaten afterwards, money at
+  the next ante. About 70 records and 5 KB (compressed) per game.
+- **Model** (`model.py`): a 3-layer transformer over 28 tokens with a *monotone ordinal head* P(reach ante k)
+  for k = 2..9 (so P(win) = P(reach 9) and E[antes] come from one head; wins are rare at Gold, antes are not),
+  trained only on the antes beyond the record's own, plus auxiliary heads for the next bosses and blinds after.
+- **Yardstick** (`train.py`): held-out log-loss of P(win) and P(reach the next ante) against a logistic fit of
+  Phi alone, per ante, with AUC and calibration. The model is only used by the agent if it beats that fit.
+- **Iterate**: regenerate games with the agent that uses V, retrain on the union; stop when a 300-seed paired
+  evaluation stops improving (policy iteration with Monte Carlo evaluation).
+
 ## Limitations (where to improve)
 
 - **Randomness differs.** The simulator uses Python's RNG, not Balatro's seeded one, so a given seed deals different cards and shops than the real game.
@@ -248,7 +277,10 @@ Both have smoke tests that need no checkpoints (`tests/test_shopsearch.py`, `tes
 ```
 balatro_rl/
   sim/cards.py hands.py scoring.py jokers.py items.py game.py   # the simulator
-  sim/_fastscore.pyx fastscore.py   # optional compiled score prediction (same results, ~60x faster per play)
+  sim/_fastscore.pyx fastscore.py   # compiled score prediction (same results, ~60x faster per play)
+  sim/_cards.pyx _clone.pyx         # compiled playing card and Game.clone (python setup_cython.py build)
+  az/_solver.pyx                    # compiled round solver (solver.py keeps the reference and the benchmark)
+  value/        # build value learned from outcomes: records, gen, model, train (see "Build value")
   env.py        # action space, observation + action features, reward
   strategic.py  # environment where PPO makes only strategic decisions (a frozen network plays the cards)
   tactical.py   # search over plays/discards with sampled redraws, benchmark, distillation

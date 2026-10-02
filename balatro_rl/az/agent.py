@@ -110,6 +110,8 @@ class AgentConfig:
     close_outcome: str = "value"
     close_weight: float = 300.0
     close_max_steps: int = 150
+    value_model: str = ""           # build-value checkpoint (value/model.py): replaces the network's V in
+    value_mode: str = "win"         #   one-step evaluation and close-call rollouts; win | antes | mix
 
     def __post_init__(self):
         if isinstance(self.shop, dict):
@@ -120,6 +122,8 @@ class AgentConfig:
             raise ValueError(f"unknown shop_eval {self.shop_eval!r}")
         if self.close_horizon not in ("boss", "blind") or self.close_outcome not in ("value", "blinds"):
             raise ValueError("close_horizon is 'boss' or 'blind'; close_outcome is 'value' or 'blinds'")
+        if self.value_mode not in ("win", "antes", "mix"):
+            raise ValueError(f"unknown value_mode {self.value_mode!r}")
 
 
 @dataclass
@@ -241,6 +245,10 @@ class Agent:
         self.pricer = ShopPricer(self.cfg.shop, self.potential)
         self.price_feats = getattr(self.net, "c_price", None) is not None
         self._last_steps = -1
+        self.build_value = None
+        if self.cfg.value_model:
+            from ..value.model import BuildValue
+            self.build_value = BuildValue(self.cfg.value_model, self.potential, device, self.cfg.value_mode)
 
     def reseed(self, seed: int):
         self.rng = random.Random(seed)
@@ -410,6 +418,10 @@ class Agent:
                 out[i] = self.terminal(w).value
             else:
                 live.append(i)
+        if self.build_value is not None:            # the learned build value (value/model.py)
+            for i, v in zip(live, self.build_value.value([worlds[i] for i in live])):
+                out[i] = float(v)
+            return out
         dummy = {"c_kind": np.zeros(1, np.int64), "c_f": np.zeros((1, F_CAND), np.float32),
                  "c_ref": np.full((1, N_REF), -1, np.int64), "c_jd": np.zeros((1, MAX_JOKERS), np.float32),
                  "c_prior": np.zeros(1, np.float32)}
