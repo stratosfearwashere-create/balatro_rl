@@ -20,7 +20,8 @@ changed  how often a variant decides differently from the base variant *in the s
 table  variant | games/hour | blinds +- SE | paired difference to the base +- SE | wins | % decisions
        changed | override rate. games/hour is 3600 x workers / CPU seconds per game, so it doesn't depend
        on what else the machine is doing; the override rate is the share of the decisions the network saw
-       whose final choice is not one of the prior's top choices (by phase with --detail).
+       whose final choice is not one of the prior's top choices, and in brackets the share where the prior
+       had the final choice at least 1 logit below its top (by phase with --detail).
 """
 from __future__ import annotations
 
@@ -140,17 +141,18 @@ def table(out: str, base: str | None, detail: bool = False, order=None) -> list[
             with open(cp) as fh:
                 row["changed%"] = json.load(fh)["changed%"]
         rows.append(row)
-    print(f"{'variant':<22} {'games/h':>8} {'blinds +- SE':>14} {'vs ' + (base or '-'):>16} {'wins':>9} "
-          f"{'changed%':>9} {'override%':>10}")
+    print(f"{'variant':<28} {'games/h':>8} {'blinds +- SE':>14} {'vs ' + (base or '-'):>16} {'wins':>9} "
+          f"{'changed%':>9} {'override%':>12}")
     for r in rows:
         d = f"{r['diff']:+.2f} +- {r['diff_se']:.2f}" if "diff" in r else ""
         ch = f"{r['changed%']:.1f}" if "changed%" in r else ""
-        ov = r["override"].get("all", {}).get("final%")
-        print(f"{r['variant']:<22} {r['games/hour']:>8.0f} {r['blinds']:>7.2f} +- {r['se']:.2f} {d:>16} "
-              f"{r['wins']:>3}/{r['games']:<5} {ch:>9} {'' if ov is None else format(ov, '.1f'):>10}")
+        al = r["override"].get("all", {})
+        ov = "" if "final%" not in al else f"{al['final%']:.1f}" + (f" ({al['strong%']:.1f})" if "strong%" in al else "")
+        print(f"{r['variant']:<28} {r['games/hour']:>8.0f} {r['blinds']:>7.2f} +- {r['se']:.2f} {d:>16} "
+              f"{r['wins']:>3}/{r['games']:<5} {ch:>9} {ov:>12}")
         if detail:
-            print("    " + "  ".join(f"{ph}: {v['final%']:.1f}% of {v['n']} (searched {v['searched%']:.0f}%)"
-                                     for ph, v in r["override"].items() if ph != "all"))
+            print("    " + "  ".join(f"{ph}: {v['final%']:.1f}%" + (f" ({v['strong%']:.1f})" if "strong%" in v else "")
+                                     + f" of {v['n']}" for ph, v in r["override"].items() if ph != "all"))
     return rows
 
 

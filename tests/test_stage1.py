@@ -46,6 +46,16 @@ def test_search_strength_comes_from_the_agent_config():
     finally:
         GumbelSearch.__init__ = real
     assert seen["c_scale"] == 0.7 and seen["c_visit"] == 20.0 and seen["crn"] is True
+    # a separate strength outside rounds (the interior nodes of a search use its root's strength)
+    GumbelSearch.__init__ = spy
+    try:
+        agent = Agent(AZNet().eval(), AgentConfig(c_scale=0.7, c_scale_build=2.0, autoplay=False, **SMALL), seed=0)
+        agent.decide(in_round(1))
+        assert seen["c_scale"] == 0.7
+        agent.decide(World(Game(seed=1, stake="WHITE")))            # blind select
+        assert seen["c_scale"] == 2.0
+    finally:
+        GumbelSearch.__init__ = real
 
 
 def _sweep_decks(crn: bool):

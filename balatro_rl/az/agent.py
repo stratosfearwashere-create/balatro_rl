@@ -18,6 +18,8 @@ all be overruled once the value network has learned what they cost.
 Override statistics (agent.stats, summarised by override_summary): per phase (round, boss, shop, pack,
 blind), how many decisions the network saw, how many were searched, and how often
   - the final choice is not one of the prior's top choices            ("final")
+  - ... and the prior had it at least 1 logit below its top choice    ("strong": a flat prior makes
+    "final" large by itself, since near-ties are overridden by anything)
   - the network alone (prior + adjustment) would not pick one of them  ("net")
   - the search changed the network's own choice                        ("search")
 """
@@ -56,6 +58,7 @@ class AgentConfig:
     m_root: int = 8
     c_visit: float = 50.0           # search vs prior: sigma = (c_visit + max N) * c_scale * Q
     c_scale: float = 0.1
+    c_scale_build: float | None = None   # c_scale outside rounds (shop, packs, blind select); None: c_scale
     crn: bool = False               # root candidates share each sweep's sampled future (search.py)
     value_range: tuple | None = (0.0, 1.0)   # fixed scale for Q in the search (None: per-tree min-max)
     solver_samples: int = 12        # root
@@ -257,7 +260,9 @@ class Agent:
         root = self.evaluate(w, True, rng, choice)         # simulations start from resamplings of w
         budget, reason = self.budget(root)
         cfg = self.cfg
-        search = GumbelSearch(self._expand_inner(rng), c_visit=cfg.c_visit, c_scale=cfg.c_scale, m_root=cfg.m_root,
+        build = w.g.state != "SELECTING_HAND" and cfg.c_scale_build is not None
+        search = GumbelSearch(self._expand_inner(rng), c_visit=cfg.c_visit,
+                              c_scale=cfg.c_scale_build if build else cfg.c_scale, m_root=cfg.m_root,
                               value_range=cfg.value_range, crn=cfg.crn)
         idx, pi = search.run(root, budget, rng, explore=explore)
         self.stats[f"budget_{reason}"] += 1
@@ -275,6 +280,7 @@ class Agent:
         st[f"ovr_{ph}_n"] += 1
         st[f"ovr_{ph}_searched"] += int(searched)
         st[f"ovr_{ph}_final"] += int(prior[idx] < top)
+        st[f"ovr_{ph}_strong"] += int(prior[idx] < top - 1.0)
         st[f"ovr_{ph}_net"] += int(prior[net_idx] < top)
         st[f"ovr_{ph}_search"] += int(idx != net_idx)
 
@@ -302,13 +308,14 @@ def override_summary(stats) -> dict:
     tot = Counter()
     for ph in OVERRIDE_PHASES + ("all",):
         if ph != "all":
-            c = {k: stats.get(f"ovr_{ph}_{k}", 0) for k in ("n", "searched", "final", "net", "search")}
+            c = {k: stats.get(f"ovr_{ph}_{k}", 0) for k in ("n", "searched", "final", "strong", "net", "search")}
             tot.update(c)
         else:
             c = tot
         n = c["n"]
         if n:
-            out[ph] = {"n": int(n), **{f"{k}%": round(100.0 * c[k] / n, 2) for k in ("searched", "final", "net", "search")}}
+            out[ph] = {"n": int(n), **{f"{k}%": round(100.0 * c[k] / n, 2)
+                                       for k in ("searched", "final", "strong", "net", "search")}}
     return out
 
 
