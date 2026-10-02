@@ -138,6 +138,8 @@ class ShopConfig:
     logit_scale: float = 100.0      # prior logit = (price - best price) x logit_scale, clipped at -30
     act_margin: float = 0.003       # an action must beat doing nothing (leave, select, skip the pack) by this
     use_bonus: float = 0.004        # using a consumable that costs nothing to use beats holding it
+    card_margin: float = 0.01       # a playing card added to the deck must gain this much: it lands in few of
+                                    #   the K hands, and a pack offers the best of several such noisy gains
     # ---- sampling
     pack_samples: int = 2           # sampled contents per pack priced
     pack_targets: int = 4           # target sets tried per tarot / spectral inside a sampled pack
@@ -568,6 +570,8 @@ class ShopPricer:
                 else:
                     a, b = self._w(ctx, g2)
                 v = (a - base[0]) + (b - base[1]) + self._created(ctx, g2)
+                if not isinstance(x, (Joker, Consumable)):
+                    v -= self.cfg.card_margin
                 if g2.state == "PACK" and depth < 1:
                     v += self.pack_value(ctx, g2, rng, depth + 1)
                 best = max(best, v)
@@ -692,7 +696,7 @@ class ShopPricer:
                 if it.kind != "planet" and not c.rule_arcana:
                     return -c.act_margin, d[1]
                 return d[0] + self.hold_value(ctx, g2, len(g2.consumables) - 1, rng) - c.act_margin, d[1]
-            return d[0] - c.act_margin, d[1]
+            return d[0] - c.card_margin - c.act_margin, d[1]
         if k == "buy_pack":
             v, money = self._pack_price(ctx, w, a.idx, rng)
             return v - c.act_margin, money
@@ -727,6 +731,8 @@ class ShopPricer:
             else:
                 d = self._mean_delta(ctx, games)
             extra = sum(self._created(ctx, g2) for g2 in games) / max(1, len(games))
+            if not isinstance(x, (Joker, Consumable)):
+                extra -= c.card_margin
             return d[0] + extra - 0.5 * c.act_margin, d[1]
         if k == "skip":
             return self._skip_price(ctx, rng)
