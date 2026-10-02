@@ -5,6 +5,7 @@ rewards:
   lambda_end_step: 2_000_000   # decisions on the lambda clock, which only runs while the agent wins:
   lambda_gate_win_rate: 0.10   #   win rate over the last lambda_gate_games self-play games >= this
   lambda_gate_games: 320
+  lambda_gate_source: selfplay # eval: use the held-out greedy evaluations' win rate instead
   potential:
     w_head: 0.7
     w_prog: 0.3
@@ -45,6 +46,7 @@ rewards:
     kappa: 1.0                 # at 0.1 run 1's in-round play drifted far from the solver
     end_step: 1_500_000
     all_phases: false          # true: the same penalty outside rounds, against the shop prior
+    gate_ece: 0.0              # > 0: kappa only fades while the value's held-out calibration error is <= this
   aux_loss_weights:
     p_clear_blind: 0.5
     ante_reached: 0.25

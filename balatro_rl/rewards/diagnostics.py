@@ -41,6 +41,31 @@ def calibration(values, wins, games=None, buckets: int = 8, min_wins: int = 5) -
     return out
 
 
+def value_calibration(values, targets, in_round=None, buckets: int = 8) -> dict:
+    """How well V predicts the value target z it is trained towards: rmse, and ece = the mean over
+    quantile buckets of V (weighted by size) of |mean V - mean z|. With `in_round` (one flag per state),
+    the rmse of in-round states and of the others (shop, packs, blind select) separately."""
+    v, z = np.asarray(values, float), np.asarray(targets, float)
+    if len(v) == 0:
+        return {"n": 0}
+    out = {"n": int(len(v)), "rmse": round(float(np.sqrt(np.mean((v - z) ** 2))), 4),
+           "bias": round(float(np.mean(v - z)), 4)}
+    edges = np.unique(np.quantile(v, np.linspace(0, 1, buckets + 1)))
+    idx = np.clip(np.searchsorted(edges, v, side="right") - 1, 0, max(0, len(edges) - 2))
+    ece = 0.0
+    for b in range(max(1, len(edges) - 1)):
+        m = idx == b
+        if m.any():
+            ece += m.mean() * abs(float(v[m].mean()) - float(z[m].mean()))
+    out["ece"] = round(float(ece), 4)
+    if in_round is not None:
+        r = np.asarray(in_round, bool)
+        for name, m in (("rmse_round", r), ("rmse_build", ~r)):
+            if m.any():
+                out[name] = round(float(np.sqrt(np.mean((v[m] - z[m]) ** 2))), 4)
+    return out
+
+
 def _spearman(a, b) -> float:
     ra, rb = np.argsort(np.argsort(a)), np.argsort(np.argsort(b))
     if ra.std() == 0 or rb.std() == 0:

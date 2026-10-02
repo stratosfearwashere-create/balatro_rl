@@ -45,6 +45,13 @@ def report(rows: list[dict], last: int = 0, detail: bool = False):
                     f"win rate {g['win_rate']} vs {g['threshold']})") if g else ""
             print(f"      lam {r['lam']:.3f}{gate}  beta {r['beta']:.4f}  kappa {r['kappa']:.3f}  sims/decision "
                   f"{r['sims/decision']}  autoplay {r['autoplay%']}%  headroom {r['headroom_ms/decision']} ms/decision")
+            ve = r.get("value_err")
+            if ve and ve.get("n"):
+                kg = r.get("kappa_gate")
+                print(f"      value error (rmse vs z): all {ve['rmse']:.3f}  rounds {ve.get('rmse_round', float('nan')):.3f}  "
+                      f"shop phases {ve.get('rmse_build', float('nan')):.3f}  calibration error {ve['ece']:.3f}"
+                      + (f"  | leash gate {'open' if kg['open'] else 'closed'} (held-out calibration {kg['ece']} vs "
+                         f"{kg['threshold']})" if kg else ""))
             for name, o in (("self-play", r.get("override")), ("held-out", (r.get("eval") or {}).get("override"))):
                 if o:
                     print(f"      override % ({name}; final choice not the prior's): "

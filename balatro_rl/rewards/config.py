@@ -59,6 +59,9 @@ class SolverKLConfig:
     kappa: float = 1.0                # 0.1 was too weak to keep early in-round targets near the solver
     end_step: int = 1_500_000
     all_phases: bool = False          # also outside rounds: KL(pi || prior) against the shop prior
+    gate_ece: float = 0.0             # > 0: kappa only fades while the value's held-out calibration error
+                                      #   (diagnostics.value_calibration, on the evaluation games) is at most
+                                      #   this; until then it stays where it is. 0: fades on the step count
 
 
 @dataclass
@@ -85,18 +88,21 @@ class RewardConfig:
     lambda_end_step: int = 2_000_000          # decisions on the lambda clock for lambda to reach 0
     lambda_gate_win_rate: float = 0.10        # the clock runs only while the recent win rate is at least this
     lambda_gate_games: int = 320              # over this many recent self-play games (0 rate: always runs)
+    lambda_gate_source: str = "selfplay"      # "eval": the win rate of the held-out greedy evaluations instead
+                                              #   (sampled self-play wins less often than greedy play)
     potential: PotentialConfig = field(default_factory=PotentialConfig)
     novelty: NoveltyConfig = field(default_factory=NoveltyConfig)
     solver_kl: SolverKLConfig = field(default_factory=SolverKLConfig)
     aux_loss_weights: AuxWeights = field(default_factory=AuxWeights)
 
-    def schedule(self, step: int, lambda_clock: int | None = None) -> Schedule:
+    def schedule(self, step: int, lambda_clock: int | None = None, kappa_clock: int | None = None) -> Schedule:
         """lambda_clock: decisions played while the win-rate gate was open (LambdaGate.clock); None uses
-        `step`, i.e. a fixed fade."""
+        `step`, i.e. a fixed fade. kappa_clock: the same for the leash (solver_kl.gate_ece)."""
         clock = step if lambda_clock is None else lambda_clock
         return Schedule(step, _decay(self.lambda_start, self.lambda_end_step, clock),
                         _decay(self.novelty.beta, self.novelty.end_step, step),
-                        _decay(self.solver_kl.kappa, self.solver_kl.end_step, step))
+                        _decay(self.solver_kl.kappa, self.solver_kl.end_step,
+                               step if kappa_clock is None else kappa_clock))
 
     # ------------------------------------------------------------------ loading
     @classmethod
@@ -138,9 +144,16 @@ class LambdaGate:
                 return wins / games
         return None                                   # not enough games yet
 
-    def update(self, wins: int, games: int, decisions: int) -> bool:
+    def observe(self, wins: int, games: int):
         self.recent.append((int(wins), int(games)))
         self.recent = self.recent[-50:]
+
+    def update(self, wins: int, games: int, decisions: int) -> bool:
+        self.observe(wins, games)
+        return self.tick(decisions)
+
+    def tick(self, decisions: int) -> bool:
+        """Advance the clock by `decisions` if the gate is open on the games observed so far."""
         r = self.rate()
         is_open = self.win_rate <= 0 or (r is not None and r >= self.win_rate)
         if is_open:

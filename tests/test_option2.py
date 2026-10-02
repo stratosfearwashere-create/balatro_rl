@@ -13,7 +13,8 @@ from balatro_rl.az.agent import Agent, AgentConfig, solver_prior
 from balatro_rl.az.net import AZNet
 from balatro_rl.az.train import ppo_prepare
 from balatro_rl.az.world import World
-from balatro_rl.rewards.config import RewardConfig
+from balatro_rl.rewards.config import LambdaGate, RewardConfig
+from balatro_rl.rewards.diagnostics import value_calibration
 from balatro_rl.sim.game import Game
 from balatro_rl.sim.jokers import Joker
 
@@ -93,9 +94,11 @@ def test_ppo_advantages():
 
 def test_ppo_training_run_without_search(tmp_path):
     cfgfile = tmp_path / "rewards.yaml"
-    cfgfile.write_text("rewards:\n  potential:\n    value_bound: floor_sigmoid\n"
-                       "  solver_kl:\n    kappa: 0.2\n    all_phases: true\n")
-    assert RewardConfig.load(str(cfgfile)).solver_kl.all_phases is True
+    cfgfile.write_text("rewards:\n  lambda_gate_source: eval\n  lambda_gate_games: 1\n"
+                       "  potential:\n    value_bound: floor_sigmoid\n"
+                       "  solver_kl:\n    kappa: 0.2\n    all_phases: true\n    gate_ece: 0.05\n")
+    rc = RewardConfig.load(str(cfgfile))
+    assert rc.solver_kl.all_phases is True and rc.solver_kl.gate_ece == 0.05 and rc.lambda_gate_source == "eval"
     out, data = tmp_path / "az.pt", tmp_path / "data"
     cfg = {"shop_prior": "graded", "round_growth": True, "shop": {"rule_arcana": True}}
     cmd = [sys.executable, "-m", "balatro_rl.az.train", "run", "--algo", "ppo", "--iters", "1", "--games", "2",
@@ -110,3 +113,30 @@ def test_ppo_training_run_without_search(tmp_path):
     assert row["override"]["all"]["searched%"] == 0 and row["eval"]["override"]["all"]["searched%"] == 0
     ck = torch.load(out, weights_only=False)
     assert ck["config"]["value_bound"] == "floor_sigmoid"
+    # the diagnostics and the gates
+    assert row["beta"] == 0.0 and row["shaping"]["novelty"] == 0.0            # no novelty bonus in PPO
+    ve = row["value_err"]
+    assert ve["n"] > 0 and ve["rmse"] >= 0 and "rmse_round" in ve and "rmse_build" in ve
+    assert row["kappa_gate"] == {"open": False, "clock": 0, "ece": None, "threshold": 0.05}   # no evaluation yet
+    assert row["kappa"] == 0.2                                                # so the leash has not faded
+    assert row["eval"]["value_cal"]["ece"] >= 0
+    extra = ck["extra"]
+    assert extra["kappa_gate"]["ece"] == row["eval"]["value_cal"]["ece"]      # read by the next iteration
+    assert [tuple(x) for x in extra["lambda_gate"]["recent"]] == [(round(row["eval"]["win%"] / 100), 1)]   # the
+    #                                                                           evaluation's game, not self-play's
+    assert row["lambda_gate"]["open"] is False and row["lam"] == 0.5
+
+
+def test_value_calibration_and_gate_clocks():
+    v = np.array([0.1, 0.1, 0.5, 0.5, 0.9, 0.9, 0.3, 0.7])
+    exact = value_calibration(v, v, [True, False] * 4)
+    assert exact["rmse"] == 0 and exact["ece"] == 0 and exact["rmse_round"] == 0 and exact["rmse_build"] == 0
+    off = value_calibration(v, v - 0.2, [True] * 4 + [False] * 4)
+    assert abs(off["ece"] - 0.2) < 1e-9 and abs(off["rmse"] - 0.2) < 1e-9 and abs(off["bias"] - 0.2) < 1e-9
+    cfg = RewardConfig()
+    assert cfg.schedule(10 ** 9, None, 0).kappa == cfg.solver_kl.kappa        # the leash's own clock
+    assert cfg.schedule(0, None, cfg.solver_kl.end_step).kappa == 0.0
+    gate = LambdaGate(0.10, 200)                                              # fed by evaluations only
+    assert gate.tick(1000) is False and gate.clock == 0
+    gate.observe(30, 200)
+    assert gate.tick(1000) is True and gate.tick(500) is True and gate.clock == 1500

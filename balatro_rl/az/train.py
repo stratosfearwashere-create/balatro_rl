@@ -22,7 +22,9 @@ play without search and train the heads first.
 adjustment), which before training is the prior itself. The learner then makes a clipped policy-gradient (PPO)
 step on exactly those decisions: the advantage of the action taken is how much the value rose afterwards
 (generalised advantage estimation over V(s') - V(s) along the game, ending in the game's value z; no
-discounting), so actions that turned out better than the value expected become more likely. The value and
+discounting; --gae near 1 leans on the actual outcome while V is weak), so actions that turned out better
+than the value expected become more likely. The novelty bonus is left out of the value target here unless
+--novelty is given: a bonus in the target that is not a reward would bias the advantages. The value and
 auxiliary losses are the same as above, and kappa * KL(pi || prior) keeps the policy near its priors while
 kappa lasts (solver_kl.all_phases extends it to decisions outside rounds). Each iteration trains only on its
 own games (the policy that played them is the one being improved). Evaluation is greedy, without search.
@@ -53,7 +55,7 @@ from collections import Counter
 import numpy as np
 
 from ..rewards.config import LambdaGate, RewardConfig, PotentialConfig
-from ..rewards.diagnostics import HackAlarm, breakdown, calibration, mean_or_nan
+from ..rewards.diagnostics import HackAlarm, breakdown, calibration, mean_or_nan, value_calibration
 from ..rewards.novelty import NoveltyCounter
 from ..rewards.targets import GameRecorder, N_ANTE_CLASSES, blind_index, z_target
 
@@ -168,7 +170,7 @@ def _strength_ms(stats) -> dict:
 
 
 def _light(r: dict) -> dict:
-    return {k: r[k] for k in ("phi", "value", "win", "headroom", "game")}
+    return {k: r[k] for k in ("phi", "value", "win", "headroom", "game", "progress", "in_round")}
 
 
 def _gen_worker(args):
@@ -297,6 +299,9 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
     games = [x["game"] for x in light]
     res["calibration_phi"] = calibration([x["phi"] for x in light], [x["win"] for x in light], games)
     res["calibration_v"] = calibration([x["value"] for x in light], [x["win"] for x in light], games)
+    res["value_cal"] = value_calibration([x["value"] for x in light],
+                                         [z_target(x["win"], x["progress"], cfg_over["lam"]) for x in light],
+                                         [x["in_round"] for x in light])
     return res
 
 
@@ -514,8 +519,14 @@ def run(a):
             torch.manual_seed(0)
             net = new_net(rcfg.potential, bool(cfg_over.get("price_feature"))).to(device)
     gate = LambdaGate.from_state(rcfg.lambda_gate_win_rate, rcfg.lambda_gate_games, gate_state)
+    eval_gate = rcfg.lambda_gate_source == "eval"          # lambda's gate reads the held-out evaluations
+    kgate = rcfg.solver_kl.gate_ece > 0                    # the leash fades only while V is calibrated
+    kstate = {"clock": 0 if kgate else None, "ece": None}
+    if a.resume and os.path.exists(a.out):
+        kstate.update(meta0.get("kappa_gate", {}))
+    kclock = lambda: kstate["clock"] if kgate else None
     meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict(), "lambda_clock": gate.clock,
-                       "lambda_gate": gate.state()}
+                       "lambda_gate": gate.state(), "kappa_gate": dict(kstate)}
     if first == 1:
         save_net(net, a.out, meta(0))
     novelty = NoveltyCounter(rcfg.novelty.window)
@@ -545,7 +556,7 @@ def run(a):
         t0 = time.time()
         ppo = a.algo == "ppo"
         search = it > a.warmup and not ppo
-        sched = rcfg.schedule(step, gate.clock)
+        sched = rcfg.schedule(step, gate.clock, kclock())
         seeds = list(range(GEN_SEED0 + (it - 1) * a.games, GEN_SEED0 + it * a.games))
         jobs = [(a.out, c, search, os.path.join(a.data, f"it{it:04d}_w{k}.pkl"), a.deck, a.stake,
                  {"lam": sched.lam, **cfg_over}, pot)
@@ -558,33 +569,49 @@ def run(a):
         for p in parts:
             stats.update(p[1])
         step += stats["decisions"]
-        gate_open = gate.update(sum(i["won"] for i in infos), len(infos), stats["decisions"])
+        if eval_gate:
+            gate_open = gate.tick(stats["decisions"])
+        else:
+            gate_open = gate.update(sum(i["won"] for i in infos), len(infos), stats["decisions"])
+        kappa_open = bool(kgate and kstate["ece"] is not None and kstate["ece"] <= rcfg.solver_kl.gate_ece)
+        if kappa_open:
+            kstate["clock"] += stats["decisions"]
         t_gen = time.time() - t0
         new_rows = load_rows(sorted(glob.glob(os.path.join(a.data, f"it{it:04d}_w*.pkl"))))
         novelty.add(r["sig"] for r in new_rows)
         shards = sorted(glob.glob(os.path.join(a.data, "it*_w*.pkl")))
         rows = load_rows([s for s in shards if it - a.window < int(os.path.basename(s)[2:6]) <= it])
-        sched = rcfg.schedule(step, gate.clock)
+        sched = rcfg.schedule(step, gate.clock, kclock())
+        if ppo and not a.novelty:
+            novelty_used = None
+        else:
+            novelty_used = novelty
         if ppo:                                 # on-policy: this iteration's games only
             adv = ppo_prepare(new_rows, sched.lam, a.gae)
             rows = new_rows
             steps = max(1, int(np.ceil(a.ppo_epochs * len(rows) / a.batch)))
-            losses, opt = train_on(net, rows, steps, a.batch, a.lr, device, rcfg, sched, novelty, opt,
+            losses, opt = train_on(net, rows, steps, a.batch, a.lr, device, rcfg, sched, novelty_used, opt,
                                    ppo={"clip": a.ppo_clip, "ent": a.ent})
             losses.update(adv_mean=adv["adv_mean"], adv_std=adv["adv_std"])
         else:
-            losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty, opt)
+            losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty_used, opt)
         save_net(net, a.out, meta(it), opt)
-        comp = shaping_components(new_rows, sched, novelty, rcfg.potential.w_head)
-        annealed = sched.lam == 0.0 and sched.beta == 0.0
-        exact = not annealed or all(value_target(r, sched, novelty)[0] == r["win"] for r in new_rows)
+        comp = shaping_components(new_rows, sched, novelty_used, rcfg.potential.w_head)
+        annealed = sched.lam == 0.0 and (sched.beta == 0.0 or novelty_used is None)
+        exact = not annealed or all(value_target(r, sched, novelty_used)[0] == r["win"] for r in new_rows)
+        value_err = value_calibration([r["value"] for r in new_rows],
+                                      [z_target(r["win"], r["progress"], sched.lam) for r in new_rows],
+                                      [r["in_round"] for r in new_rows])
         gate_rate = gate.rate()
         row = {"iter": it, "step": step, "search": search, "algo": a.algo, "lam": round(sched.lam, 5),
                "lambda_clock": gate.clock,
                "lambda_gate": {"open": gate_open, "win_rate": None if gate_rate is None else round(gate_rate, 4),
                                "threshold": gate.win_rate},
-               "beta": round(sched.beta, 5),
-               "kappa": round(sched.kappa, 5), **{k: round(v, 3) for k, v in summarize(infos).items()},
+               "beta": round(sched.beta, 5) if novelty_used is not None else 0.0,
+               "kappa": round(sched.kappa, 5),
+               "kappa_gate": ({"open": kappa_open, "clock": kstate["clock"], "ece": kstate["ece"],
+                               "threshold": rcfg.solver_kl.gate_ece} if kgate else None),
+               "value_err": value_err,                   # the playing network's V against z, by phase **{k: round(v, 3) for k, v in summarize(infos).items()},
                "autoplay%": round(100.0 * stats["autoplay"] / max(1, stats["decisions"]), 2),
                "sims/decision": round(stats["sims"] / max(1, stats["decisions"]), 2),
                "headroom_ms/decision": round(1e3 * stats["headroom_sec"] / max(1, stats["decisions"]), 3),
@@ -606,6 +633,10 @@ def run(a):
         if a.eval_every and it % a.eval_every == 0:
             ev = evaluate(a.out, a.eval_games, a.workers, not ppo, a.deck, a.stake, cfg_over=cfg_over, rcfg=rcfg)
             row["eval"] = ev
+            kstate["ece"] = ev["value_cal"].get("ece")
+            if eval_gate:
+                gate.observe(round(ev["win%"] * ev["games"] / 100), ev["games"])
+            save_net(net, a.out, meta(it), opt)             # the gates' new state
             warn = alarm.update(comp["value_target"], ev["breakdown"]["win_rate"])
             if warn:
                 row["ALARM"] = warn
@@ -653,8 +684,10 @@ def main():
                    help="search: targets from the search (default); ppo: no search, policy-gradient steps")
     r.add_argument("--ppo-epochs", type=float, default=3.0, help="ppo: passes over each iteration's decisions")
     r.add_argument("--ppo-clip", type=float, default=0.2)
-    r.add_argument("--ent", type=float, default=0.003, help="ppo: entropy bonus")
-    r.add_argument("--gae", type=float, default=0.9, help="ppo: advantage estimation lambda")
+    r.add_argument("--ent", type=float, default=0.001, help="ppo: entropy bonus (small: the priors are sharp)")
+    r.add_argument("--gae", type=float, default=0.95, help="ppo: advantage estimation lambda (near 1: leans on "
+                                                           "the actual outcome while the value is weak)")
+    r.add_argument("--novelty", action="store_true", help="ppo: keep the novelty bonus in the value target")
     b = sub.add_parser("bench", help="games/hour with search on fixed seeds and a fixed untrained network")
     b.add_argument("--games", type=int, default=14)
     b.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
