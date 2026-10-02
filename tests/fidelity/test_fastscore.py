@@ -22,7 +22,8 @@ KEYS = sorted(JOKERS)
 HOT = ["blueprint", "brainstorm", "photograph", "vampire", "midas_mask", "lucky_cat", "raised_fist",
        "splash", "four_fingers", "shortcut", "smeared", "pareidolia", "mime", "oops", "hanging_chad",
        "baseball", "flower_pot", "seeing_double", "blackboard", "wee", "idol", "ancient", "obelisk",
-       "loyalty_card", "swashbuckler", "stencil", "card_sharp", "sock_and_buskin", "ride_the_bus"]
+       "loyalty_card", "swashbuckler", "stencil", "card_sharp", "sock_and_buskin", "ride_the_bus",
+       "hiker", "dna", "hologram", "scary_face"]
 ENH = ["", "", "", "BONUS", "MULT", "WILD", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"]
 EDS = ["", "", "", "FOIL", "HOLO", "POLYCHROME", "NEGATIVE"]
 SEALS = ["", "", "", "RED", "RED", "BLUE", "GOLD", "PURPLE"]
@@ -67,6 +68,8 @@ def rand_state(rng):
     g.hand_levels = [rng.randint(0, 6) for _ in range(12)]
     g.hand_played = [rng.choice([0, 0, rng.randint(0, 12)]) for _ in range(12)]
     g.hand_played_round = [rng.choice([0, 0, 1, 2]) for _ in range(12)]
+    if rng.random() < 0.3:
+        g.hand_played_round = [0] * 12     # first hand of the round (DNA)
     g.discards_left = rng.randint(0, 4)
     g.hands_left = rng.randint(1, 4)
     g.money = rng.randint(-20, 80)

@@ -232,6 +232,8 @@ def best_orders(g: Game, plan: Plan, view, subs: list[tuple], preds: list, score
 
 
 # ------------------------------------------------------------------ plays without side effects
+# (DNA and Hiker are not on these lists: DNA's copy is held while its hand scores and grows Hologram, and
+# Hiker changes the cards, so their plays always take the full analysis.)
 # Kinds known to change nothing but the score when a hand is played and scored: jokers whose scoring hooks
 # only read state (no runtime-state writes, money, randomness, creations or level changes) or that have no
 # scoring hooks at all; card enhancements, seals and editions with deterministic, score-only effects; bosses
@@ -365,14 +367,15 @@ def analyze_play(g: Game, plan: Plan, view, pos: tuple, need: float, slot_of: di
         # the round ends: cards still held pay out (Gold cards, Blue seals)
         # (The Hook discards 2 of them first: each is still held with probability (n - 2) / n)
         stay = max(0, len(held) - 2) / len(held) if boss == "hook" and held else 1
-        for c in held:                                   # each retriggered by Mime (and copies) and Red seals
-            if c.debuffed:
+        made = [c for c in ctx.held if all(c is not h for h in held)]    # a copy DNA made stays in hand too
+        for c, keep in [(c, stay) for c in held] + [(c, 1) for c in made]:
+            if c.debuffed:                               # each retriggered by Mime (and copies) and Red seals
                 continue
             triggers = 1 + plan.mime + (c.seal == "RED")
             if c.enh == "GOLD":
-                eff["money"] += 3 * triggers * stay
+                eff["money"] += 3 * triggers * keep
             if c.seal == "BLUE":
-                eff["create"] += triggers * stay
+                eff["create"] += triggers * keep
         # the pessimistic score: every chance effect fails, and The Hook takes the worst pair of held cards
         smin = None
         for h in hook_variants(plan, held) or [held]:
