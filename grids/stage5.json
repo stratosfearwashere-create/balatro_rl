@@ -1,0 +1,2 @@
+{"bound_h1_csb10_crn_hard": {"cfg": {"heur_bonus": 1.0, "c_scale_build": 10.0, "crn": true, "round_search": "hard"},
+                             "rewards": {"potential": {"value_bound": "floor_sigmoid"}}}}
