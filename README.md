@@ -209,6 +209,33 @@ The objective is P(win the run). Every shaping term either leaves the optimal po
   - held-out win rate by ante reached and by boss;
   - an `ALARM` when the shaped return rises for 3 evaluations while held-out win rate doesn't.
 
+## Older PPO-pipeline tools: `shopsearch.py` and `capacity.py`
+
+Two experiments built on the PPO pipeline's split into a strategic network (blind select, shop, packs) and a frozen tactical network that plays the cards (`strategic.py`, `tactical.py`). Both need those two checkpoints. They run on the current simulator and action space, but **everything measured with them predates the rule corrections** (old rules, 475 actions, checkpoints trained on the old rules), so the numbers below are history, not a baseline.
+
+**`shopsearch.py`: search at strategic decisions, and expert iteration.** At each strategic decision the policy's top-k actions are each played to the end of the run on the same N re-drawn futures (fresh RNG, reshuffled draw pile, new face-down cards), and the search overrules the network only when the best candidate beats its choice by more than `z` standard errors. `iterate` then trains the network towards the search's choices and repeats.
+
+```bash
+python -m balatro_rl.shopsearch bench   --policy checkpoints/baseline_strategic.pt --games 100 --samples 16 --top-k 5
+python -m balatro_rl.shopsearch iterate --policy checkpoints/baseline_strategic.pt --iters 3 --out checkpoints/exit
+python -m balatro_rl.shopsearch compare checkpoints/baseline_strategic.pt checkpoints/exit/iter1.pt
+```
+
+Past result (28 Sep, old rules, Red Deck, Gold Stake, 16 samples, top 5, z = 2, evaluation seeds from 10000): the one `bench` run was stopped after 43 of its 100 games, before it printed its summary. On those 43 games (same seeds for both), the network alone beat 8.81 blinds [7.81, 9.77] and with search 9.56 [8.53, 10.53]; the paired difference is +0.74 [−0.02, +1.63] (95% bootstrap), better in 16 games, worse in 11, equal in 16, with no wins either way. The search overruled the network in 111 of 2,073 decisions (5%) and cost about 150 s per game per process. The 43 are the games that finished first, not a random sample, so treat this as "probably helps a little, not shown". `iterate` was never run.
+
+**`capacity.py`: a learned build-strength score.** `gen` makes random builds (ante, jokers, hand levels, modified deck, money) and has the tactical network play each through a boss-free blind with a target of 4× the ante's base; the label is the mean log10 of chips scored, capped at the target. `train` fits a small network from build features to that label. `check` compares its prediction with a fresh measurement on real builds from games, and with whether the run cleared that ante's boss. `shop` lets a shop or pack action that raises predicted capacity by more than a threshold overrule the strategic network. Known gaps: scaling jokers are generated at their initial values, and money and economy jokers count for nothing.
+
+```bash
+python -m balatro_rl.capacity gen   --builds 200000 --out checkpoints/capacity_data
+python -m balatro_rl.capacity train --data checkpoints/capacity_data --out checkpoints/capacity.pt
+python -m balatro_rl.capacity check --model checkpoints/capacity.pt --policy checkpoints/baseline_strategic.pt
+python -m balatro_rl.capacity shop  --model checkpoints/capacity.pt --policy checkpoints/baseline_strategic.pt
+```
+
+Past result: none. The one pipeline run (28 Sep) produced no build data, so `train` had nothing to fit, no `capacity.pt` was ever saved, and `check` and `shop` stopped at once for lack of it. Its accuracy on random or real builds, and whether capacity-guided shopping helps, have never been measured.
+
+Both have smoke tests that need no checkpoints (`tests/test_shopsearch.py`, `tests/test_capacity.py`).
+
 ## Limitations (where to improve)
 
 - **Randomness differs.** The simulator uses Python's RNG, not Balatro's seeded one, so a given seed deals different cards and shops than the real game.
@@ -225,6 +252,8 @@ balatro_rl/
   env.py        # action space, observation + action features, reward
   strategic.py  # environment where PPO makes only strategic decisions (a frozen network plays the cards)
   tactical.py   # search over plays/discards with sampled redraws, benchmark, distillation
+  shopsearch.py # search at strategic decisions with re-drawn futures, expert iteration (older tool)
+  capacity.py   # learned build-strength score from random builds (older tool, never trained)
   heuristic.py  # rule-based player (baseline + teacher)
   model.py      # actor-critic network
   vec_env.py    # parallel environments
