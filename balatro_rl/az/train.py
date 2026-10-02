@@ -130,15 +130,15 @@ def _make_agent(model, search: bool, seed: int, cfg_over: dict | None = None, po
         net = load_net(model, "cpu")
     else:                                   # untrained: the same weights in every worker and every run
         torch.manual_seed(0)
-        net = new_net(pcfg or PotentialConfig()).eval()
+        net = new_net(pcfg or PotentialConfig(), cfg.price_feature).eval()
     return Agent(net, cfg, seed=seed, potential=pcfg)
 
 
-def new_net(pcfg: PotentialConfig):
+def new_net(pcfg: PotentialConfig, price_feats: bool = False):
     from .net import AZNet
     return AZNet(value_residual=pcfg.value_residual, value_bound=pcfg.value_bound,
                  value_init_scale=pcfg.value_init_scale, value_init_bias=pcfg.value_init_bias,
-                 strength_head=pcfg.strength.aux_head)
+                 strength_head=pcfg.strength.aux_head, price_feats=price_feats)
 
 
 def _headroom_stats(agent) -> dict:
@@ -280,6 +280,8 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
     res["breakdown"] = breakdown(infos)
     res["override"] = override_summary(stats)
     res["decisions"] = stats["decisions"]
+    res["agent_stats"] = {k: int(v) for k, v in stats.items()
+                          if k.startswith(("budget_", "close_")) or k in ("sims", "autoplay")}
     res["cpu_sec/game"] = float(np.mean([i["cpu_sec"] for i in infos]))
     res["per_game"] = sorted(([i["seed"], i["blinds"], int(i["won"]), min(i["ante"], 8)] for i in infos))
     games = [x["game"] for x in light]
@@ -432,6 +434,7 @@ def run(a):
     done_path = a.out.replace(".pt", "_done.txt")
     opt = None
     first = 1
+    cfg_over = json.loads(a.cfg) if a.cfg else {}
     if os.path.exists(a.out) and not a.resume:
         raise SystemExit(f"{a.out} already exists: pass --resume to continue that run, or choose another --out")
     if a.resume and os.path.exists(a.out):
@@ -458,13 +461,12 @@ def run(a):
             step = _checkpoint_meta(a.init).get("step", 0)
         else:
             torch.manual_seed(0)
-            net = new_net(rcfg.potential).to(device)
+            net = new_net(rcfg.potential, bool(cfg_over.get("price_feature"))).to(device)
     gate = LambdaGate.from_state(rcfg.lambda_gate_win_rate, rcfg.lambda_gate_games, gate_state)
     meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict(), "lambda_clock": gate.clock,
                        "lambda_gate": gate.state()}
     if first == 1:
         save_net(net, a.out, meta(0))
-    cfg_over = json.loads(a.cfg) if a.cfg else {}
     novelty = NoveltyCounter(rcfg.novelty.window)
     alarm = HackAlarm(a.alarm_n)
     if first > 1:

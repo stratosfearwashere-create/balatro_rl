@@ -132,7 +132,8 @@ def table(out: str, base: str | None, detail: bool = False, order=None) -> list[
         blinds = [g[1] for g in r["per_game"]]
         row = {"variant": n, "games": len(blinds), "games/hour": 3600.0 * r["workers"] / r["cpu_sec/game"],
                "blinds": float(np.mean(blinds)), "se": _se(blinds), "wins": int(sum(g[2] for g in r["per_game"])),
-               "override": r["override"]}
+               "override": r["override"], "cpu_sec/game": r["cpu_sec/game"],
+               "sims/decision": r.get("sims/decision", 0.0)}
         if b is not None and n != base:
             d = [bl - b[s] for s, bl, _, _ in r["per_game"] if s in b]
             row["diff"], row["diff_se"] = float(np.mean(d)), _se(d)
@@ -141,14 +142,15 @@ def table(out: str, base: str | None, detail: bool = False, order=None) -> list[
             with open(cp) as fh:
                 row["changed%"] = json.load(fh)["changed%"]
         rows.append(row)
-    print(f"{'variant':<28} {'games/h':>8} {'blinds +- SE':>14} {'vs ' + (base or '-'):>16} {'wins':>9} "
-          f"{'changed%':>9} {'override%':>12}")
+    print(f"{'variant':<28} {'games/h':>8} {'cpu s/game':>10} {'blinds +- SE':>14} {'vs ' + (base or '-'):>16} "
+          f"{'wins':>9} {'changed%':>9} {'override%':>12}")
     for r in rows:
         d = f"{r['diff']:+.2f} +- {r['diff_se']:.2f}" if "diff" in r else ""
         ch = f"{r['changed%']:.1f}" if "changed%" in r else ""
         al = r["override"].get("all", {})
         ov = "" if "final%" not in al else f"{al['final%']:.1f}" + (f" ({al['strong%']:.1f})" if "strong%" in al else "")
-        print(f"{r['variant']:<28} {r['games/hour']:>8.0f} {r['blinds']:>7.2f} +- {r['se']:.2f} {d:>16} "
+        print(f"{r['variant']:<28} {r['games/hour']:>8.0f} {r['cpu_sec/game']:>10.1f} {r['blinds']:>7.2f} +- "
+              f"{r['se']:.2f} {d:>16} "
               f"{r['wins']:>3}/{r['games']:<5} {ch:>9} {ov:>12}")
         if detail:
             print("    " + "  ".join(f"{ph}: {v['final%']:.1f}%" + (f" ({v['strong%']:.1f})" if "strong%" in v else "")
@@ -165,6 +167,7 @@ def main():
     p.add_argument("--games", type=int, default=300)
     p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     p.add_argument("--only", default="", help="comma-separated variant names")
+    p.add_argument("--seed0", type=int, default=EVAL_SEED0, help="first seed (every variant plays the same ones)")
     p.add_argument("--detail", action="store_true")
     a = p.parse_args()
     grid = {}
@@ -173,9 +176,9 @@ def main():
             grid = json.load(f)
     only = [x for x in a.only.split(",") if x] or None
     if a.cmd == "grid":
-        run_grid(grid, a.out, a.games, a.workers, only=only)
+        run_grid(grid, a.out, a.games, a.workers, seed0=a.seed0, only=only)
     elif a.cmd == "changed":
-        changed(grid, a.out, a.base, a.games, a.workers, only=only)
+        changed(grid, a.out, a.base, a.games, a.workers, seed0=a.seed0, only=only)
     else:
         table(a.out, a.base, a.detail, order=list(grid))
 

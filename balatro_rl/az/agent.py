@@ -25,6 +25,7 @@ blind), how many decisions the network saw, how many were searched, and how ofte
 """
 from __future__ import annotations
 
+import math
 import random
 from collections import Counter
 from dataclasses import dataclass, field
@@ -35,16 +36,38 @@ import torch
 from ..rewards.config import PotentialConfig
 from ..rewards.potential import Potential
 from ..rewards.targets import z_target
+from ..sim.game import MAX_JOKERS
 from .actions import Choice, Config, enumerate_candidates
-from .features import encode_cands, encode_state
+from .features import F_CAND, N_PRICE, N_REF, encode_cands, encode_state
 from .net import AZNet, collate
 from .search import GumbelSearch, Node, _softmax
+from .shop import RANDOM_TAGS, RANDOM_USES, ShopConfig, ShopPricer
 from .solver import RoundSolver
 from .world import Action, World
 
 
 @dataclass
 class AgentConfig:
+    """Stage 3 options (all defaults leave the agent as it was):
+      shop_prior     "rule": the rule-based player's choice gets +heur_bonus (today). "graded": every option
+                     outside a round gets a price (az/shop.py) and the prior is the prices scaled to logits.
+      shop           the constants and rule switches of the graded prior (shop.ShopConfig; a dict is accepted)
+      price_feature  an untrained network is built with the price inputs (features.N_PRICE per candidate); a
+                     loaded network decides for itself. Changes the network, so never on by default.
+      shop_eval      how decisions outside a round are improved when `search` is on:
+                       "search"   the Gumbel search (today)
+                       "onestep"  each option is applied to a redrawn copy and the network's V is read there
+                                  (onestep_samples copies for options with a random outcome: packs, rerolls,
+                                  blind select, random consumables); score = logits + onestep_weight x V; no
+                                  search into later shops. Only the onestep_top options by logit are evaluated.
+                       "prior"    nothing: the network's logits (close calls can still apply)
+      close_calls    with shop_eval "onestep" or "prior": when the two best options are within close_margin
+                     logits, each is played out close_rollouts times by the agent's own no-search policy on
+                     the same sampled futures (common random numbers from the agent's generator) to the end
+                     of the next boss blind ("boss") or of the next blind ("blind"), at most close_max_steps
+                     decisions; outcome = V at the end ("value") or blinds cleared / 24 ("blinds"); the pair's
+                     scores move by close_weight x (outcome - the pair's mean outcome).
+    The improved choice is recorded like a search's: Decision.policy = softmax(scores), searched=True."""
     lam: float = 0.0                # value of a finished game: z = (1 - lam) * win + lam * blinds / 24
                                     # (set to the reward schedule's lambda at the network's training step)
     tau: float = 0.05               # solver prior: one logit per 0.05 of P(clear)
@@ -69,6 +92,30 @@ class AgentConfig:
     root_cfg: Config = field(default_factory=lambda: Config(max_analyzed=700))
     inner_cfg: Config = field(default_factory=lambda: Config(max_plays=24, max_discards=12, max_analyzed=160,
                                                              max_targets=8, use_samples=1))
+    shop_prior: str = "rule"
+    shop: ShopConfig = field(default_factory=ShopConfig)
+    price_feature: bool = False
+    shop_eval: str = "search"
+    onestep_weight: float = 300.0
+    onestep_samples: int = 2
+    onestep_top: int = 24
+    close_calls: bool = False
+    close_margin: float = 1.0
+    close_rollouts: int = 4
+    close_horizon: str = "boss"
+    close_outcome: str = "value"
+    close_weight: float = 300.0
+    close_max_steps: int = 150
+
+    def __post_init__(self):
+        if isinstance(self.shop, dict):
+            self.shop = ShopConfig(**self.shop)
+        if self.shop_prior not in ("rule", "graded"):
+            raise ValueError(f"unknown shop_prior {self.shop_prior!r}")
+        if self.shop_eval not in ("search", "onestep", "prior"):
+            raise ValueError(f"unknown shop_eval {self.shop_eval!r}")
+        if self.close_horizon not in ("boss", "blind") or self.close_outcome not in ("value", "blinds"):
+            raise ValueError("close_horizon is 'boss' or 'blind'; close_outcome is 'value' or 'blinds'")
 
 
 @dataclass
@@ -187,6 +234,9 @@ class Agent:
         self.solver = RoundSolver()
         self.stats = Counter()
         self.potential = Potential(potential)
+        self.pricer = ShopPricer(self.cfg.shop, self.potential)
+        self.price_feats = getattr(self.net, "c_price", None) is not None
+        self._last_steps = -1
 
     def reseed(self, seed: int):
         self.rng = random.Random(seed)
@@ -201,6 +251,7 @@ class Agent:
             choice = enumerate_candidates(w, rng, cfg.root_cfg if root else cfg.inner_cfg)
         if not choice.cands:                    # nothing legal (an empty hand): the run is lost
             return self.terminal(w, lost=True)
+        price = None
         if choice.phase == "SELECTING_HAND":
             depth = cfg.boss_depth if (root and w.g.blind_idx == 2) else 1
             samples = cfg.solver_samples if root else cfg.solver_samples_inner
@@ -208,12 +259,14 @@ class Agent:
                 samples = max(4, samples // 2)
             self.solver.solve(w.g, choice, rng, samples=samples, depth=depth)
             prior = solver_prior(choice, cfg.tau)
+        elif cfg.shop_prior == "graded":
+            prior, price = self.pricer.prior(w, choice, rng, root)
         else:
             prior = rule_prior(w, choice, cfg.heur_bonus)
         state = encode_state(w)
         state["phi"] = np.float32(self.potential(w.g))
         state["prog"] = np.float32(self.potential.progress(w.g))
-        enc = (state, encode_cands(w, choice, prior))
+        enc = (state, encode_cands(w, choice, prior, price, self.price_feats))
         with torch.no_grad():
             s, c, m = collate([enc], self.device)
             logits, _, out = self.net(s, c, m)
@@ -247,6 +300,9 @@ class Agent:
         """Choose an action for `w` (not modified). explore: Gumbel noise at the root (self-play)."""
         rng = self.rng
         self.stats["decisions"] += 1
+        if w.steps == 0 or w.steps < self._last_steps:      # a new game: the pricer forgets the shops it saw
+            self.pricer.reset()
+        self._last_steps = w.steps
         choice = enumerate_candidates(w, rng, self.cfg.root_cfg)
         if not choice.cands:
             return Decision(None, -1, choice, np.zeros(0), False, reason="no legal action")
@@ -258,8 +314,11 @@ class Agent:
                 self.stats["autoplay"] += 1
                 return Decision(best.action, -1, choice, np.zeros(0), False, reason="auto-play")
         root = self.evaluate(w, True, rng, choice)         # simulations start from resamplings of w
-        budget, reason = self.budget(root)
         cfg = self.cfg
+        if (cfg.search and cfg.shop_eval != "search" and w.g.state != "SELECTING_HAND"
+                and len(root.choice.cands) > 1):
+            return self._decide_build(w, root, rng, explore)
+        budget, reason = self.budget(root)
         build = w.g.state != "SELECTING_HAND" and cfg.c_scale_build is not None
         search = GumbelSearch(self._expand_inner(rng), c_visit=cfg.c_visit,
                               c_scale=cfg.c_scale_build if build else cfg.c_scale, m_root=cfg.m_root,
@@ -286,6 +345,140 @@ class Agent:
 
     def _expand_inner(self, rng):
         return lambda w, root: self.evaluate(w, root, rng)
+
+    # ------------------------------------------------------------------ Stage 3: one-step V and close calls
+    def values(self, worlds: list) -> list[float]:
+        """The network's V of each world (the game's value for finished ones), in batches; no candidates
+        are enumerated (V only reads the state)."""
+        out = [0.0] * len(worlds)
+        live = []
+        for i, w in enumerate(worlds):
+            if w.done:
+                out[i] = self.terminal(w).value
+            else:
+                live.append(i)
+        dummy = {"c_kind": np.zeros(1, np.int64), "c_f": np.zeros((1, F_CAND), np.float32),
+                 "c_ref": np.full((1, N_REF), -1, np.int64), "c_jd": np.zeros((1, MAX_JOKERS), np.float32),
+                 "c_prior": np.zeros(1, np.float32)}
+        if self.price_feats:
+            dummy["c_price"] = np.zeros((1, N_PRICE), np.float32)
+        for lo in range(0, len(live), 64):
+            part = live[lo:lo + 64]
+            encs = []
+            for i in part:
+                state = encode_state(worlds[i])
+                state["phi"] = np.float32(self.potential(worlds[i].g))
+                state["prog"] = np.float32(self.potential.progress(worlds[i].g))
+                encs.append((state, dummy))
+            with torch.no_grad():
+                s, c, m = collate(encs, self.device)
+                _, _, o = self.net(s, c, m)
+                v = self.net.value(o, s["phi"], s["prog"], self.cfg.lam).float().cpu().numpy()
+            for i, x in zip(part, v):
+                out[i] = float(x)
+        return out
+
+    def _decide_build(self, w: World, root: Node, rng: random.Random, explore: bool) -> Decision:
+        """A decision outside a round by one-step evaluation and / or paired rollouts (AgentConfig doc)."""
+        cfg = self.cfg
+        cands = root.choice.cands
+        k = len(cands)
+        score = np.array(root.logits, dtype=float)
+        sims, reason = 0, "prior"
+        if cfg.shop_eval == "onestep":
+            worlds, owner = [], []
+            for i in np.argsort(-score, kind="stable")[:cfg.onestep_top]:
+                n = cfg.onestep_samples if random_outcome(w.g, cands[i].action) else 1
+                for _ in range(max(1, n)):
+                    w2 = w.determinize(rng)
+                    try:
+                        w2.step(cands[i].action)
+                    except (AssertionError, IndexError):
+                        continue
+                    worlds.append(w2)
+                    owner.append(int(i))
+            vals = self.values(worlds)
+            tot, cnt = np.zeros(k), np.zeros(k)
+            for i, v in zip(owner, vals):
+                tot[i] += v
+                cnt[i] += 1
+            seen = cnt > 0
+            if seen.any():                              # options not evaluated count as the worst that was
+                q = tot / np.maximum(cnt, 1)
+                q = np.where(seen, q, q[seen].min())
+                score = score + cfg.onestep_weight * q
+            sims, reason = len(worlds), "onestep"
+        if cfg.close_calls:
+            top = [int(i) for i in np.argsort(-score, kind="stable")[:2]]
+            self.stats["close_checked"] += 1
+            if score[top[0]] - score[top[1]] <= cfg.close_margin:
+                m, n = self._paired_rollouts(w, cands, top, rng)
+                mean = 0.5 * (m[0] + m[1])
+                for j, i in enumerate(top):
+                    score[i] += cfg.close_weight * (m[j] - mean)
+                sims += n
+                reason = "close"
+                self.stats["close_calls"] += 1
+                self.stats["close_flipped"] += int(score[top[1]] > score[top[0]])
+        g = np.array([-math.log(-math.log(max(rng.random(), 1e-12))) for _ in range(k)]) if explore else np.zeros(k)
+        idx = int(np.argmax(g + score))
+        self.stats[f"budget_{reason}"] += 1
+        self.stats["sims"] += sims
+        self._count_override(w, root, idx, sims > 0)
+        return Decision(cands[idx].action, idx, root.choice, _softmax(score), sims > 0, enc=root.enc,
+                        value=root.value, heads=root.heads, sims=sims, reason=reason)
+
+    def _paired_rollouts(self, w: World, cands: list, pair: list, rng: random.Random) -> tuple[list, int]:
+        """Mean outcome of each of the two options over close_rollouts futures; both options get the same
+        redrawn copy and the same random generator for each future. Also returns the decisions played."""
+        cfg = self.cfg
+        tot = [0.0, 0.0]
+        steps = 0
+        n = max(1, cfg.close_rollouts)
+        for _ in range(n):
+            seed = rng.getrandbits(63)
+            for j, i in enumerate(pair):
+                r = random.Random(seed)
+                w2 = w.determinize(r)
+                try:
+                    w2.step(cands[i].action)
+                except (AssertionError, IndexError):
+                    continue
+                v, used = self._rollout(w2, r)
+                tot[j] += v
+                steps += used
+        return [t / n for t in tot], steps
+
+    def _rollout(self, w: World, rng: random.Random) -> tuple[float, int]:
+        """Play `w` (a redrawn copy) on with the no-search policy to the horizon; (outcome, decisions)."""
+        cfg = self.cfg
+        steps = 0
+        while not w.done and steps < cfg.close_max_steps:
+            g = w.g
+            beaten, boss = g.blinds_beaten, g.blind_idx == 2
+            a = self.policy_action(w, rng)
+            if a is None:
+                g.state = "GAME_OVER"
+                break
+            w.step(a)
+            steps += 1
+            if g.blinds_beaten > beaten and (boss or cfg.close_horizon == "blind"):
+                break
+        if cfg.close_outcome == "blinds":
+            return w.g.furthest_blind / 24.0, steps
+        return self.values([w])[0], steps
+
+    def policy_action(self, w: World, rng: random.Random) -> Action | None:
+        """The no-search policy's move: the network's best logit over the (inner) candidates."""
+        choice = enumerate_candidates(w, rng, self.cfg.inner_cfg)
+        if not choice.cands:
+            return None
+        if len(choice.cands) == 1:
+            return choice.cands[0].action
+        node = self.evaluate(w, False, rng, choice)
+        if node.terminal:
+            return None
+        return choice.cands[int(np.argmax(node.logits))].action
 
     def autoplay_rate(self) -> float:
         return self.stats["autoplay"] / max(1, self.stats["decisions"])
@@ -317,6 +510,23 @@ def override_summary(stats) -> dict:
             out[ph] = {"n": int(n), **{f"{k}%": round(100.0 * c[k] / n, 2)
                                        for k in ("searched", "final", "strong", "net", "search")}}
     return out
+
+
+def random_outcome(g, a: Action) -> bool:
+    """Whether carrying out `a` outside a round reveals something random (one-step evaluation averages
+    a few copies of these)."""
+    k = a.kind
+    if k in ("buy_pack", "reroll", "select", "reroll_boss"):
+        return True
+    if k == "skip":
+        return g.blind_idx < len(g.tags_offered) and g.tags_offered[g.blind_idx] in RANDOM_TAGS
+    if k == "use" and 0 <= a.idx < len(g.consumables):
+        return g.consumables[a.idx].name in RANDOM_USES
+    if k == "pick" and g.state == "PACK" and 0 <= a.idx < len(g.pack_cards):
+        return getattr(g.pack_cards[a.idx], "name", "") in RANDOM_USES
+    if k == "voucher" and 0 <= a.idx < len(g.shop_vouchers):
+        return g.shop_vouchers[a.idx].key[2:] in ("overstock_norm", "overstock_plus")
+    return False
 
 
 def _is_spectral(g, a: Action) -> bool:

@@ -28,6 +28,9 @@ With strength_head=True (rewards.config.StrengthConfig.aux_head) a second, separ
 calculated build strength (rewards/strength.py): "survives through ante" (9 classes, 0..8) and the clear
 chance of this ante's boss, the next three antes' and ante 8's. It is created after every other module and
 only when asked for, so a network without it has exactly the weights it had before the option existed.
+With price_feats=True (AgentConfig.price_feature, Stage 3) each candidate's embedding also gets a linear map
+of its price features (features.N_PRICE: the graded shop prior's price and its parts). That layer is created
+after everything else too, for the same reason.
 """
 from __future__ import annotations
 
@@ -40,7 +43,7 @@ from ..sim.game import MAX_JOKERS
 from ..rewards.targets import N_ANTE_CLASSES
 from ..rewards.strength import N_CLEAR, N_SURVIVE
 from .features import (F_GLOBAL, F_HANDCARD, F_JOK, F_CONS, F_LEV, F_ITEM, F_CAND, N_TOKENS, OFFSET, VOCAB_SIZE,
-                       N_REF, GROUPS)
+                       N_REF, N_PRICE, GROUPS)
 from .world import KINDS
 
 STATE_KEYS = ("glob", "hand", "deck", "phand", "jok", "jok_id", "cons", "cons_id", "lev", "shop", "shop_id",
@@ -63,7 +66,7 @@ def mlp(i, h, o, n=2):
 class AZNet(nn.Module):
     def __init__(self, d: int = 128, layers: int = 3, heads: int = 4, ff: int = 256, emb: int = 32,
                  value_residual: bool = True, value_bound: str = "none", value_init_scale: float = 1.0,
-                 value_init_bias: float = -1.9, strength_head: bool = False):
+                 value_init_bias: float = -1.9, strength_head: bool = False, price_feats: bool = False):
         super().__init__()
         if value_bound not in VALUE_BOUNDS:
             raise ValueError(f"unknown value_bound {value_bound!r}")
@@ -72,6 +75,8 @@ class AZNet(nn.Module):
                        "value_init_scale": value_init_scale, "value_init_bias": value_init_bias}
         if strength_head:                                     # (absent otherwise: old checkpoints load as is)
             self.config["strength_head"] = True
+        if price_feats:
+            self.config["price_feats"] = True
         self.value_residual = value_residual
         self.value_bound = value_bound
         self.value_init_scale, self.value_init_bias = value_init_scale, value_init_bias
@@ -110,6 +115,7 @@ class AZNet(nn.Module):
                 self.heads.bias[0].zero_()
         # last, so that the weights of everything above do not depend on whether it exists
         self.strength_head = nn.Linear(d, N_STRENGTH) if strength_head else None
+        self.c_price = nn.Linear(N_PRICE, d) if price_feats else None
 
     def encode(self, s: dict) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         B = s["glob"].shape[0]
@@ -140,6 +146,8 @@ class AZNet(nn.Module):
         h, state, _ = self.encode(s)
         B, A = cmask.shape
         e = self.kind(c["c_kind"]) + self.c_in(c["c_f"].float())
+        if self.c_price is not None:
+            e = e + self.c_price(c["c_price"].float())
         refs = c["c_ref"]
         valid = (refs >= 0).float().unsqueeze(-1)
         idx = refs.clamp(min=0).reshape(B, -1, 1).expand(-1, -1, h.shape[-1])
@@ -192,7 +200,7 @@ def collate(samples: list[tuple[dict, dict]], device="cpu"):
     A = max(len(x[1]["c_kind"]) for x in samples)
     B = len(samples)
     c = {}
-    for k in CAND_KEYS:
+    for k in CAND_KEYS + (("c_price",) if "c_price" in samples[0][1] else ()):
         first = samples[0][1][k]
         shape = (B, A) + first.shape[1:]
         fill = -1 if k == "c_ref" else 0

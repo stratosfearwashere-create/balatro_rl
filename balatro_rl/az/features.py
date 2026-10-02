@@ -50,6 +50,7 @@ ITEM_KINDS = ["joker", "tarot", "planet", "spectral", "card", "pack", "voucher"]
 EFFECT_KEYS = ["money", "levels", "levels_chance", "deck", "glass", "create", "jokers", "hand_size",
                "joker_slots", "ox", "destroy", "dna"]
 N_REF = 6
+N_PRICE = 4                 # Stage 3 price inputs per candidate (shop.py): price, strength part, money part, priced
 
 F_HANDCARD = F_CARD + 1
 F_JSTATE = 2 + 13 + 4 + N_HANDS + 1
@@ -328,7 +329,9 @@ def cand_refs(g, c) -> list[int]:
     return refs + [-1] * (N_REF - len(refs))
 
 
-def encode_cands(w: World, choice, priors) -> dict:
+def encode_cands(w: World, choice, priors, price=None, with_price: bool = False) -> dict:
+    """with_price: also "c_price" [n, N_PRICE], the graded shop prior's price features (zeros where no price
+    was computed). Only networks built with price inputs get it; the default encoding is unchanged."""
     g = w.g
     n = len(choice.cands)
     kind = np.zeros(n, np.int64)
@@ -340,7 +343,11 @@ def encode_cands(w: World, choice, priors) -> dict:
         feats[i] = cand_row(g, c, choice.need)
         refs[i] = cand_refs(g, c)
         jd[i] = _jd_vec(c)
-    return {"c_kind": kind, "c_f": feats, "c_ref": refs, "c_jd": jd, "c_prior": np.asarray(priors, np.float32)}
+    out = {"c_kind": kind, "c_f": feats, "c_ref": refs, "c_jd": jd, "c_prior": np.asarray(priors, np.float32)}
+    if with_price:
+        out["c_price"] = (np.zeros((n, N_PRICE), np.float32) if price is None
+                          else np.asarray(price, np.float32).reshape(n, N_PRICE))
+    return out
 
 
 def _global_size() -> int:
