@@ -90,6 +90,9 @@ def _worker(args):
 
 def generate(a):
     os.makedirs(a.out, exist_ok=True)
+    if a.log:                                   # a detached run writes its own log (no inherited pipes)
+        import sys
+        sys.stdout = sys.stderr = open(a.log, "a", buffering=1)
     stakes, weights = parse_stakes(a.stakes)
     rcfg = RewardConfig.load(a.reward_config)
     pot = dict(rcfg.potential.__dict__)
@@ -143,6 +146,7 @@ def main():
     p.add_argument("--cfg", default="", help="AgentConfig overrides as JSON (default: the graded prior + arcana)")
     p.add_argument("--reward-config", default=None)
     p.add_argument("--out", default="checkpoints/value_data")
+    p.add_argument("--log", default="", help="append progress to this file instead of stdout")
     generate(p.parse_args())
 
 
