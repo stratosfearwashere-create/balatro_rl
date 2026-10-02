@@ -138,8 +138,9 @@ class BuildValue:
     def value(self, worlds) -> np.ndarray:
         if not worlds:
             return np.zeros(0)
-        from .records import pack
-        batch = pack(self.records(worlds))
+        recs = self.records(worlds)
+        batch = {k: np.stack([r[k] for r in recs]) if k != "phi" else np.asarray([r[k] for r in recs], np.float32)
+                 for k in INPUT_KEYS}
         with torch.no_grad():
             out = self.net(to_tensors(batch, self.device))
             p = torch.sigmoid(out["ord"])

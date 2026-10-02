@@ -169,8 +169,10 @@ def train(a):
     net = BuildValueNet(d=a.d, layers=a.layers).to(device)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     steps_per_epoch = math.ceil(len(tr["game"]) / a.batch)
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.epochs * steps_per_epoch,
-                                                pct_start=0.1)
+    total = max(10, a.epochs * steps_per_epoch)
+    warm = max(1, total // 20)
+    sched = torch.optim.lr_scheduler.LambdaLR(            # linear warm-up, then cosine to 2% of the peak
+        opt, lambda s: (s + 1) / warm if s < warm else 0.02 + 0.98 * 0.5 * (1 + math.cos(math.pi * min(1.0, (s - warm) / max(1, total - warm)))))
     rng = np.random.default_rng(0)
     best = math.inf
     log_path = a.out.replace(".pt", "_log.jsonl")
