@@ -18,6 +18,12 @@ The improved policy softmax(logits + sigma(completed Q)) at the root is the poli
 Leaf value: the network's V(s) = Phi(s) + R(s), trained towards z = (1 - lam) * win + lam * progress
 (rewards/). Finished games: z itself, with lam from the reward schedule (0 once it has annealed, so
 the search then backs up P(win) alone).
+
+How strongly the search can overrule the prior: sigma = (c_visit + max N) * c_scale * Q, so with the
+defaults a Q difference of 1 is about 5 logits. crn (off by default): every candidate visited in one sweep
+of the root gets the same resampling of the hidden information (the same draw order and the same future
+random numbers), so candidates are compared on common futures and the noise of that sampling largely
+cancels in the differences between their Q values.
 """
 from __future__ import annotations
 
@@ -56,7 +62,7 @@ class Chance:
 class GumbelSearch:
     def __init__(self, expand, c_visit: float = 50.0, c_scale: float = 0.1, pw_c: float = 1.0,
                  pw_alpha: float = 0.5, m_root: int = 8, max_depth: int = 60,
-                 value_range: tuple[float, float] | None = (0.0, 1.0)):
+                 value_range: tuple[float, float] | None = (0.0, 1.0), crn: bool = False):
         """expand(world, root: bool) -> Node (evaluated by the network, or terminal).
         value_range: values are mapped to [0, 1] by this fixed range before sigma (values are win
         probabilities, so a difference means the same everywhere). None: min-max over the values seen in
@@ -68,6 +74,7 @@ class GumbelSearch:
         self.pw_c, self.pw_alpha = pw_c, pw_alpha
         self.m_root = m_root
         self.max_depth = max_depth
+        self.crn = crn
         self.vmin, self.vmax = math.inf, -math.inf
 
     # ------------------------------------------------------------------ value transforms
@@ -151,10 +158,12 @@ class GumbelSearch:
         for ph in range(phases):
             per = max(1, budget // (phases * len(live)))
             for _ in range(per):
+                sweep = rng.getrandbits(63) if self.crn else None
                 for a in live:
                     if used >= budget and ph > 0:
                         break
-                    self._visit(root, int(a), root.world.determinize(rng), rng, 0)
+                    r = random.Random(sweep) if self.crn else rng      # crn: the same future for each
+                    self._visit(root, int(a), root.world.determinize(r), r, 0)
                     used += 1
             if len(live) <= 1:
                 break

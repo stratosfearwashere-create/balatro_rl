@@ -13,7 +13,7 @@ from balatro_rl.bridge import game_from_state, parse_joker  # noqa: E402
 from balatro_rl.env import Counters, legal_mask, A_VOUCHER  # noqa: E402
 from balatro_rl.sim.cards import Card  # noqa: E402
 from balatro_rl.sim.game import Game, Consumable, ShopItem  # noqa: E402
-from balatro_rl.sim.hands import evaluate, HC, PAIR, TWO_PAIR, QUADS, FIVE_KIND, FULL_HOUSE, FLUSH_FIVE  # noqa: E402
+from balatro_rl.sim.hands import evaluate, HC, PAIR, TWO_PAIR, FLUSH, QUADS, FIVE_KIND, FULL_HOUSE, FLUSH_FIVE  # noqa: E402
 from balatro_rl.sim.jokers import JOKERS, Joker, EDITION_COST, NO_PERISHABLE  # noqa: E402
 from balatro_rl.sim.scoring import Plan, score_hand  # noqa: E402
 from mock_balatrobot import Mock, joker_json  # noqa: E402
@@ -709,6 +709,149 @@ def test_flower_pot_fills_suits_in_the_game_order():
     g = game("flower_pot", "smeared")                                # two red and two black cards are enough
     assert sc(g, _straight((H, ""), (H, ""), (S, ""), (S, ""), (H, ""))) == base * 4 * 3
     assert sc(g, _straight((H, ""), (S, ""), (S, ""), (S, ""), (C, ""))) == base * 4
+
+
+# ------------------------------------------------------------------ copies, DNA, debuffed cards
+def both(g, played, held=()):
+    """Score of a play by the Python scorer, checked against the compiled one."""
+    played, held = list(played), list(held)
+    s = sc(g, played, held)
+    assert g.predict_many([tuple(range(len(played)))], Plan(g), played + held)[0][0] == s
+    return s
+
+
+def deb(c):
+    c.debuffed = True
+    return c
+
+
+def test_copies_of_photograph_double_every_trigger():
+    # one King, High Card: 5 + 10 chips; Photograph x2 and Brainstorm's copy of it x2
+    assert both(game("photograph", "brainstorm"), [Card(13, S)]) == (5 + 10) * 2 * 2 == 60
+    assert both(game("blueprint", "photograph"), [Card(13, S)]) == 60
+    # Blueprint copies Hanging Chad (2 + 2 retriggers: 5 triggers), Brainstorm copies Photograph:
+    # chips 5 + 5 x 10, and x2 x2 on each of the 5 triggers
+    g = game("photograph", "blueprint", "hanging_chad", "brainstorm")
+    assert both(g, [Card(13, S)]) == (5 + 5 * 10) * 4 ** 5 == 56320
+    assert both(g, [Card(13, S, enh="GLASS")]) == (5 + 5 * 10) * 8 ** 5 == 1802240
+    g.jokers[0].debuffed = True                                      # no Photograph: its copy goes too
+    assert both(g, [Card(13, S, enh="GLASS")]) == (5 + 5 * 10) * 2 ** 5 == 1760
+
+
+def test_copier_chains_resolve_to_the_final_joker():
+    king = [Card(13, S)]                                             # 15 chips, mult 1
+    # Brainstorm copies Joker; Blueprint copies Brainstorm, so Joker too: +4 three times
+    assert both(game("joker", "blueprint", "brainstorm"), king) == 15 * (1 + 4 + 4 + 4) == 195
+    # Blueprint copies Joker; Brainstorm copies Blueprint (the leftmost), so Joker too
+    assert both(game("blueprint", "joker", "brainstorm"), king) == 195
+    # Blueprint -> Brainstorm -> the leftmost joker, that same Blueprint: a cycle copies nothing
+    assert both(game("blueprint", "brainstorm", "joker"), king) == 15 * (1 + 4) == 75
+    assert both(game("blueprint", "brainstorm"), king) == 15
+    g = game("joker", "blueprint", "brainstorm")
+    g.jokers[2].debuffed = True                                      # a debuffed link breaks the chain
+    assert both(g, king) == 15 * (1 + 4) == 75
+    g = game("mime", "egg", "blueprint", "brainstorm")               # passive effects follow the chain too
+    assert Plan(g).mime == 3 and g.count_with_copies("mime") == 3
+    # the joker Crimson Heart disabled gives nothing to copy
+    g = boss_round(game("joker", "brainstorm"), "crimson_heart")
+    g.crimson_disabled = g.jokers[0].uid
+    assert both(g, king) == 15
+    g.crimson_disabled = g.jokers[1].uid
+    assert both(g, king) == 15 * (1 + 4)
+
+
+def test_a_copy_never_grows_the_copied_joker():
+    # Wee Joker gains +8 chips once for the scored 2; it and Blueprint's copy then each give those 8 chips
+    g = game("blueprint", "wee")
+    assert both(g, [Card(2, S)]) == 5 + 2 + 8 + 8 == 23
+    assert commit(g, [Card(2, S)]) == 23 and g.jokers[1].state["val"] == 8
+    # Lucky Cat: one Lucky hit (the +20 mult; the $20 roll misses at 0.1) is +0.25 once, and the copy to its
+    # left already uses the grown value: 15 chips x (1 + 20) x 1.25 x 1.25 = 492.19
+    g = game("blueprint", "lucky_cat")
+    fix_rng(g, 0.1)
+    assert commit(g, [Card(13, S, enh="LUCKY")]) == 492
+    assert g.jokers[1].state["val"] == 1.25
+
+
+def test_dna_copy_is_held_while_its_hand_scores():
+    g = game("dna", "hologram")
+    g.select_blind()
+    g.target = FAR
+    g.hand = _eight(Card(13, H, enh="STEEL"))
+    deck = len(g.full_deck)
+    # first hand, one card: the Steel King's copy is held (x1.5) and Hologram has grown to x1.25
+    assert g.predict([0])[0] == g.predict_many([(0,)], Plan(g))[0][0] == 28      # 15 x 1.5 x 1.25 = 28.1
+    cand = next(c for c in enumerate_candidates(World(g), random.Random(0)).all_plays if c.action.cards == (0,))
+    assert cand.score == 28 and (1, "val", 1.0, 1.25) in cand.jdiff and ("dna", 1) in cand.effects
+    g.play([0])
+    assert g.chips == 28 and len(g.full_deck) == deck + 1
+    assert g.jokers[1].state["val"] == 1.25                          # grown once, not again when it lands
+    assert sum(1 for c in g.hand if c.enh == "STEEL" and c.rank == 13) == 1 and len(g.hand) == 8
+    g.play([len(g.hand) - 1])                                        # not the first hand any more: no copy
+    assert len(g.full_deck) == deck + 1 and g.jokers[1].state["val"] == 1.25
+
+
+def test_debuffed_cards_are_not_faces_and_have_no_suit_for_jokers():
+    # Ride the Bus: a debuffed King is not a face card, so it grows (+1); the card itself gives no chips
+    g = game("ride_the_bus")
+    assert both(g, [deb(Card(13, S))]) == 5 * (1 + 1) == 10
+    assert commit(g, [Card(13, S)]) == 15 * 1 and g.jokers[0].state["val"] == 0     # a live face resets it
+    # Photograph: the first face card is the first one that is not debuffed
+    assert both(game("photograph"), [deb(Card(13, S)), Card(13, H)]) == (10 + 10) * 2 * 2 == 80
+    # the boss's own check still sees them (The Plant debuffs every face card)
+    g = boss_round(game(), "plant")
+    faces = [c for c in g.full_deck if c.rank in (11, 12, 13)]
+    assert len(faces) == 12 and all(c.debuffed and not c.is_face() and c.is_face(from_boss=True) for c in faces)
+    # Seeing Double: a debuffed card has no suit
+    g = game("seeing_double")
+    assert both(g, [Card(14, C), Card(14, H)]) == PAIR_AA * 2 * 2
+    assert both(g, [Card(14, C), deb(Card(14, H))]) == (10 + 11) * 2
+    assert both(g, [Card(14, H, enh="WILD")]) == 16                  # a lone Wild card is only a Club
+    assert both(g, [Card(14, H, enh="WILD"), Card(14, S, enh="WILD")]) == PAIR_AA * 2 * 2
+    assert both(game("seeing_double", "smeared"), [Card(14, C)]) == 16 * 2      # a Club is also a Spade
+    # a debuffed Wild card is not wild in a flush or for Blackboard, but a debuffed card keeps its suit there
+    hearts = [Card(2, H), Card(5, H), Card(8, H), Card(11, H)]
+    assert evaluate(hearts + [Card(13, S, enh="WILD")]).hand == FLUSH
+    assert evaluate(hearts + [deb(Card(13, S, enh="WILD"))]).hand == HC
+    assert evaluate(hearts + [deb(Card(13, H))]).hand == FLUSH
+    g = game("blackboard")
+    assert both(g, aces(), [deb(Card(5, S))]) == PAIR_AA * 2 * 3
+    assert both(g, aces(), [Card(5, H, enh="WILD")]) == PAIR_AA * 2 * 3
+    assert both(g, aces(), [deb(Card(5, H, enh="WILD"))]) == PAIR_AA * 2
+    # Flower Pot ignores debuffs: the two debuffed Clubs (no chips) still complete the four suits
+    cards = _straight((H, ""), (D, ""), (S, ""), (C, ""), (C, ""))
+    deb(cards[3]), deb(cards[4])
+    assert both(game("flower_pot"), cards) == (30 + 5 + 6 + 7) * 4 * 3
+
+
+def test_four_fingers_flush_is_the_first_suit_that_has_four():
+    # four Wild cards make the Spade flush (suits are tried Spades, Hearts, Clubs, Diamonds), so the
+    # fifth card, a Heart, is not part of it and doesn't score
+    cards = [Card(2, D, enh="WILD"), Card(5, C, enh="WILD"), Card(8, H, enh="WILD"), Card(11, H, enh="WILD"),
+             Card(13, H)]
+    res = evaluate(cards, four_fingers=True)
+    assert res.hand == FLUSH and res.scoring == [0, 1, 2, 3]
+    assert both(game("four_fingers"), cards) == (35 + 2 + 5 + 8 + 10) * 4 == 240
+
+
+def test_hiker_chips_count_from_the_next_trigger():
+    # Red seal Ace: 5 + 11, Hiker +5, then the retrigger scores 11 + 5; the same in a prediction
+    g = game("hiker")
+    ace = Card(14, S, seal="RED")
+    assert both(g, [ace]) == 5 + 11 + (11 + 5) == 32 and ace.extra_chips == 0
+    assert commit(g, [ace]) == 32 and ace.extra_chips == 10
+    assert both(game("blueprint", "hiker"), [Card(14, S, seal="RED")]) == 5 + 11 + (11 + 10) == 37
+
+
+def test_vampire_turns_a_stone_card_back_into_its_rank():
+    assert both(game(), [Card(9, S, enh="STONE")]) == 5 + 50
+    # stripped before it scores: 9 chips instead of 50, and Vampire is at x1.1: 14 x 1.1 = 15.4
+    assert both(game("vampire"), [Card(9, S, enh="STONE")]) == 15
+
+
+def test_plasma_deck_floors_the_balanced_value():
+    # 16 chips and mult 1: both become floor(17 / 2) = 8
+    assert both(game(deck="PLASMA"), [Card(14, S)]) == 8 * 8
 
 
 # ------------------------------------------------------------------ bridge

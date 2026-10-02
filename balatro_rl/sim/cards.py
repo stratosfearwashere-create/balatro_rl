@@ -47,12 +47,16 @@ class Card:
             return 11
         return min(self.rank, 10)
 
-    def is_face(self, pareidolia: bool = False) -> bool:
-        if self.is_stone:
+    def is_face(self, pareidolia: bool = False, from_boss: bool = False) -> bool:
+        """A debuffed card is not a face card (Ride the Bus, Photograph, Midas Mask ...), except to the boss
+        blind's own check (The Plant, The Mark: from_boss)."""
+        if self.is_stone or (self.debuffed and not from_boss):
             return False
         return pareidolia or self.rank in (11, 12, 13)
 
     def has_suit(self, s: int, smeared: bool = False) -> bool:
+        """Suit test that ignores debuffs: the suit bosses' own check and Flower Pot (a debuffed Wild card is
+        still every suit here)."""
         if self.is_stone:
             return False
         if self.enh == "WILD":
@@ -60,6 +64,21 @@ class Card:
         if smeared:
             return (self.suit % 2) == (s % 2)   # S/C share parity 0, H/D parity 1
         return self.suit == s
+
+    def flush_suit(self, s: int, smeared: bool = False) -> bool:
+        """Suit test of flushes and Blackboard: a debuffed card keeps its suit, but a debuffed Wild card is
+        no longer wild."""
+        if self.is_stone:
+            return False
+        if self.enh == "WILD" and not self.debuffed:
+            return True
+        if smeared:
+            return (self.suit % 2) == (s % 2)
+        return self.suit == s
+
+    def live_suit(self, s: int, smeared: bool = False) -> bool:
+        """Suit test of the jokers that look at cards (Seeing Double ...): a debuffed card has no suit."""
+        return not self.debuffed and self.has_suit(s, smeared)
 
     def key(self) -> str:
         return f"{SUITS[self.suit]}_{RANK_CHARS[self.rank]}"

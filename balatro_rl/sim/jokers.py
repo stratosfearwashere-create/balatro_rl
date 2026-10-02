@@ -286,9 +286,10 @@ J("shoot_the_moon", "Shoot the Moon", 1, 5,
 
 
 def _photo(ctx, j, st, c):
+    """x2 on every trigger of the first face card among the scoring cards (debuffed cards are not faces).
+    A Blueprint / Brainstorm copying it gives its own x2 on each of those triggers."""
     first = next((ctx.played[i] for i in ctx.scoring if ctx.played[i].is_face(ctx.pareidolia)), None)
-    if first is c and st.get("_photo_done") != ctx.trigger_id:
-        st["_photo_done"] = ctx.trigger_id
+    if first is c:
         ctx.x_mult(2)
 
 
@@ -370,8 +371,12 @@ J("constellation", "Constellation", 2, 6, main=_val_x, init=_init_val(1.0))
 
 
 def _hiker(ctx, j, st, c):
+    """+5 chips on the card for good, from its next trigger on (so a retrigger in this hand already has it).
+    A prediction keeps the gain in the context instead of changing the card."""
     if ctx.rng is not None:
         c.extra_chips += 5
+    else:
+        ctx.hiked[c.uid] = ctx.hiked.get(c.uid, 0) + 5
 
 
 J("hiker", "Hiker", 2, 5, card=_hiker)
@@ -400,7 +405,8 @@ J("sock_and_buskin", "Sock and Buskin", 2, 6,
 
 
 def _blackboard(ctx, j, st):
-    if all(c.is_stone is False and (c.has_suit(0, ctx.smeared) or c.has_suit(2, ctx.smeared)) for c in ctx.held):
+    # the flush suit test: debuffed cards keep their suit, but a debuffed Wild card is not wild
+    if all(c.is_stone is False and (c.flush_suit(0, ctx.smeared) or c.flush_suit(2, ctx.smeared)) for c in ctx.held):
         ctx.x_mult(3)
 
 
@@ -432,11 +438,32 @@ def _flower(ctx, j, st):
 J("flower_pot", "Flower Pot", 2, 6, main=_flower)
 
 
+SEEING_WILD_ORDER = (2, 3, 0, 1)     # Clubs, Diamonds, Spades, Hearts
+
+
 def _seeing(ctx, j, st):
-    cards = [ctx.played[i] for i in ctx.scoring if not ctx.played[i].is_stone]
-    club = [c for c in cards if c.has_suit(2, ctx.smeared)]
-    other = [c for c in cards if any(c.has_suit(s, ctx.smeared) for s in (0, 1, 3))]
-    if club and other and (len(cards) >= 2):
+    """x2 if the scoring cards hold a Club and a card of another suit. As in the game: debuffed cards count
+    for nothing; every other non-Wild card counts for each suit it matches (both suits of its colour with
+    Smeared Joker, so one Club is then enough); then each Wild card fills the first suit still missing, in
+    the order Clubs, Diamonds, Spades, Hearts (so a lone Wild card is only a Club)."""
+    n = [0, 0, 0, 0]
+    wilds = 0
+    for i in ctx.scoring:
+        c = ctx.played[i]
+        if c.debuffed or c.is_stone:
+            continue
+        if c.enh == "WILD":
+            wilds += 1
+            continue
+        for s in range(4):
+            if c.has_suit(s, ctx.smeared):
+                n[s] += 1
+    for _ in range(wilds):
+        for s in SEEING_WILD_ORDER:
+            if n[s] == 0:
+                n[s] = 1
+                break
+    if n[2] and (n[0] or n[1] or n[3]):
         ctx.x_mult(2)
 
 
@@ -546,17 +573,32 @@ def _obelisk_before(ctx, j, st):
 J("obelisk", "Obelisk", 3, 8, before=_obelisk_before, main=_val_x, init=_init_val(1.0))
 
 
-def _copy_target(g, j, which):
+def _copy_target(g, j, which=None):
+    """The joker a Blueprint (the joker to its right) or Brainstorm (the leftmost joker) copies, or None.
+    A copier pointing at another copier copies what that one copies, down the chain; a chain that comes back
+    to a copier already on it (Blueprint -> Brainstorm -> the same Blueprint) copies nothing. A debuffed
+    joker, or the one Crimson Heart has disabled, gives nothing to copy, and neither does a chain through it.
+    `which` is kept for callers; the direction follows from each copier's own key."""
     js = g.jokers
-    if j not in js:
-        return None
-    i = js.index(j)
-    t = js[i + 1] if which == "right" and i + 1 < len(js) else (js[0] if which == "left" else None)
-    if t is None or t is j or not t.d.copyable or t.debuffed:
-        return None
-    if t.key in ("blueprint", "brainstorm"):
-        return _copy_target(g, t, "right" if t.key == "blueprint" else "left")
-    return t
+    crimson = g.crimson_disabled if g.boss_active() == "crimson_heart" else -1
+    seen = set()
+    cur = j
+    while True:
+        if cur.uid in seen:
+            return None
+        seen.add(cur.uid)
+        i = next((k for k, o in enumerate(js) if o is cur), -1)
+        if i < 0:
+            return None
+        if cur.key == "blueprint":
+            t = js[i + 1] if i + 1 < len(js) else None
+        else:
+            t = js[0]
+        if t is None or t is cur or t.debuffed or t.uid == crimson:
+            return None
+        if t.key not in ("blueprint", "brainstorm"):
+            return t if t.d.copyable else None
+        cur = t
 
 
 def _copier(which, hook):
@@ -567,7 +609,11 @@ def _copier(which, hook):
         h = getattr(t.d, hook)
         if h is None:
             return 0
-        return h(ctx, t, ctx.st(t), *args)
+        ctx.copy = True                   # the copy gives the joker's effect; it never grows the joker
+        try:
+            return h(ctx, t, ctx.st(t), *args)
+        finally:
+            ctx.copy = False
     return f
 
 
@@ -648,8 +694,18 @@ J("burglar", "Burglar", 2, 6, blind_select=_burglar_select)
 
 
 def _dna_before(ctx, j, st):
+    """First hand of the round, exactly one card played: a copy of it joins the deck and the hand before the
+    hand scores. So the copy is a held card of this very hand (rightmost), and Hologram has already grown."""
     if ctx.first_hand and len(ctx.played) == 1:
-        ctx.event("dna", ctx.played[0])
+        c = ctx.played[0]
+        cp = c.copy()
+        cp.enh = ctx.enh(c)
+        ctx.held = ctx.held + [cp]
+        for h in ctx.plan.jokers:
+            if h.key == "hologram":
+                hs = ctx.st(h)
+                hs["val"] = hs.get("val", 1.0) + 0.25
+        ctx.event("dna", cp)
 
 
 J("dna", "DNA", 3, 8, before=_dna_before)
@@ -767,12 +823,17 @@ J("stone", "Stone Joker", 2, 6,
   main=lambda ctx, j, st: ctx.add_chips(25 * sum(1 for c in ctx.g.full_deck if c.enh == "STONE")))
 
 
+def _lucky_cat_card(ctx, j, st, c):
+    """Grows as the Lucky cards trigger (before any joker's own effect); a copy of it doesn't grow it."""
+    if not ctx.copy and ctx.lucky_now:
+        st["val"] = st.get("val", 1.0) + 0.25 * ctx.lucky_now
+
+
 def _lucky_cat_main(ctx, j, st):
-    st["val"] = st.get("val", 1.0) + 0.25 * ctx.lucky_hits
-    ctx.x_mult(st["val"])
+    ctx.x_mult(st.get("val", 1.0))
 
 
-J("lucky_cat", "Lucky Cat", 2, 6, main=_lucky_cat_main, init=_init_val(1.0))
+J("lucky_cat", "Lucky Cat", 2, 6, card=_lucky_cat_card, main=_lucky_cat_main, init=_init_val(1.0))
 
 
 J("baseball", "Baseball Card", 3, 8)      # scoring.score_hand: x1.5 on each Uncommon joker's effect
@@ -816,7 +877,7 @@ J("ring_master", "Showman", 2, 5)                                   # passive: d
 
 
 def _wee(ctx, j, st, c):
-    if not c.is_stone and c.rank == 2:
+    if not ctx.copy and not c.is_stone and c.rank == 2:      # a copy gives its chips but doesn't grow it
         st["val"] = st.get("val", 0) + 8
 
 

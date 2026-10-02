@@ -4,16 +4,30 @@ Iteration: worker processes play games with the agent (search on, Gumbel noise a
 each decision the network's inputs (with the potential Phi), the search's improved policy and, once the
 game is over, the raw outcomes (rewards/targets.py). The learner then trains on a window of recent
 iterations:
-    cross-entropy to the improved policy (searched decisions only)
+    cross-entropy to the improved policy (searched decisions only; logged as loss_policy, and as
+        loss_policy_kl = KL(improved policy || network), which is the part the network can remove)
   + kappa * KL(pi || pi_solver) on in-round decisions            (kappa anneals to exactly 0)
   + MSE(V, clip(z + novelty, 0, 1)), V = Phi + R                    (z = (1 - lam) win + lam progress)
+        (with potential.value_bound = floor_sigmoid: cross-entropy on the bounded V's logit, az/net.py)
   + weighted auxiliary losses: P(clear), ante reached (8 classes), log(blind score / required),
-    next blind's headroom
+    next blind's headroom; with potential.strength.aux_head, the calculated build strength
+    ("survives through ante" classes and the clear chance of each upcoming boss; rewards/strength.py)
 Targets are computed at training time from the schedule at the current step (step = decisions played by
 self-play so far; lam on its own clock, which only runs while the recent self-play win rate clears
 lambda_gate_win_rate, see rewards.config.LambdaGate), so lam, beta and kappa always match
 rewards.RewardConfig.schedule. Warm-up iterations
 play without search and train the heads first.
+
+--algo ppo (no search anywhere): self-play samples every decision from the network's policy, softmax(prior +
+adjustment), which before training is the prior itself. The learner then makes a clipped policy-gradient (PPO)
+step on exactly those decisions: the advantage of the action taken is how much the value rose afterwards
+(generalised advantage estimation over V(s') - V(s) along the game, ending in the game's value z; no
+discounting; --gae near 1 leans on the actual outcome while V is weak), so actions that turned out better
+than the value expected become more likely. The novelty bonus is left out of the value target here unless
+--novelty is given: a bonus in the target that is not a reward would bias the advantages. The value and
+auxiliary losses are the same as above, and kappa * KL(pi || prior) keeps the policy near its priors while
+kappa lasts (solver_kl.all_phases extends it to decisions outside rounds). Each iteration trains only on its
+own games (the policy that played them is the one being improved). Evaluation is greedy, without search.
 
 Diagnostics (one JSON line per iteration, *_log.jsonl): the schedule, each shaping component per episode,
 calibration of Phi and V against actual wins, headroom cost per decision, losses; with --eval-every, the
@@ -41,7 +55,7 @@ from collections import Counter
 import numpy as np
 
 from ..rewards.config import LambdaGate, RewardConfig, PotentialConfig
-from ..rewards.diagnostics import HackAlarm, breakdown, calibration, mean_or_nan
+from ..rewards.diagnostics import HackAlarm, breakdown, calibration, mean_or_nan, value_calibration
 from ..rewards.novelty import NoveltyCounter
 from ..rewards.targets import GameRecorder, N_ANTE_CLASSES, blind_index, z_target
 
@@ -52,7 +66,8 @@ STAKE = "WHITE"
 
 def _compact(enc):
     s, c = enc
-    s = {k: (v.astype(np.float16) if (v.dtype == np.float32 and k != "phi") else v) for k, v in s.items()}
+    s = {k: (v.astype(np.float16) if (v.dtype == np.float32 and k not in ("phi", "prog")) else v)
+         for k, v in s.items()}
     c = {k: (v.astype(np.float16) if (v.dtype == np.float32 and k != "c_prior") else v) for k, v in c.items()}
     return s, c
 
@@ -75,7 +90,7 @@ def play_game(agent, seed: int, deck: str = "RED", stake: str = STAKE, explore: 
         if verbose:
             print(f"  ante {g.ante} {g.state:15s} ${g.money:<4} {d.reason:10s} {describe(w, d.action)}")
         if d.enc is not None:
-            extra = {"value": d.value, "searched": d.searched}
+            extra = {"value": d.value, "searched": d.searched, "a": d.index}
             if record:
                 extra.update(enc=_compact(d.enc), pi=d.policy.astype(np.float32))
             rec.decision(w, **extra)
@@ -84,7 +99,7 @@ def play_game(agent, seed: int, deck: str = "RED", stake: str = STAKE, explore: 
         rec.transition(*prev, w)
     g = w.g
     rows = rec.finish(g)
-    info = {"won": g.state == "WON", "blinds": g.furthest_blind, "ante": g.ante, "steps": w.steps,
+    info = {"seed": seed, "won": g.state == "WON", "blinds": g.furthest_blind, "ante": g.ante, "steps": w.steps,
             "bosses": rec.bosses}
     return rows, info
 
@@ -121,17 +136,41 @@ def _make_agent(model, search: bool, seed: int, cfg_over: dict | None = None, po
     from .agent import Agent, AgentConfig
     from .net import AZNet, load_net
     cfg = AgentConfig(search=search, **(cfg_over or {}))
-    net = load_net(model, "cpu") if model and model != "none" else AZNet().eval()
-    return Agent(net, cfg, seed=seed, potential=PotentialConfig(**pot) if pot else None)
+    pcfg = PotentialConfig(**pot) if pot else None
+    if model and model != "none":
+        net = load_net(model, "cpu")
+    else:                                   # untrained: the same weights in every worker and every run
+        torch.manual_seed(0)
+        net = new_net(pcfg or PotentialConfig(), cfg.price_feature).eval()
+    return Agent(net, cfg, seed=seed, potential=pcfg)
+
+
+def new_net(pcfg: PotentialConfig, price_feats: bool = False):
+    from .net import AZNet
+    return AZNet(value_residual=pcfg.value_residual, value_bound=pcfg.value_bound,
+                 value_init_scale=pcfg.value_init_scale, value_init_bias=pcfg.value_init_bias,
+                 strength_head=pcfg.strength.aux_head, price_feats=price_feats)
 
 
 def _headroom_stats(agent) -> dict:
+    """Time spent computing Phi's calculated terms: the headroom and, when it is in use, the strength."""
     st = agent.potential.headroom.stats
-    return {"headroom_calls": st["calls"], "headroom_sec": st["seconds"]}
+    out = {"headroom_calls": st["calls"], "headroom_sec": st["seconds"]}
+    if agent.potential._strength is not None:
+        st = agent.potential._strength.stats
+        out.update(strength_calls=st["calls"], strength_sec=st["seconds"])
+    return out
+
+
+def _strength_ms(stats) -> dict:
+    """{"strength_ms/decision": ...} when the strength was computed at all (else nothing: logs unchanged)."""
+    if not stats.get("strength_calls"):
+        return {}
+    return {"strength_ms/decision": round(1e3 * stats["strength_sec"] / max(1, stats["decisions"]), 3)}
 
 
 def _light(r: dict) -> dict:
-    return {k: r[k] for k in ("phi", "value", "win", "headroom", "game")}
+    return {k: r[k] for k in ("phi", "value", "win", "headroom", "game", "progress", "in_round")}
 
 
 def _gen_worker(args):
@@ -150,11 +189,13 @@ def _gen_worker(args):
 
 
 def _eval_worker(args):
-    model, seeds, search, deck, stake, cfg_over, pot = args
+    model, seeds, search, deck, stake, cfg_over, pot, explore = args
     agent = _make_agent(model, search, seeds[0], cfg_over, pot)
     infos, light = [], []
     for s in seeds:
-        rows, info = play_game(agent, s, deck, stake, explore=False, record=False)
+        t = time.process_time()
+        rows, info = play_game(agent, s, deck, stake, explore=explore, record=False)
+        info["cpu_sec"] = time.process_time() - t
         infos.append(info)
         light += [_light({**r, "game": s}) for r in rows]
     return infos, {**dict(agent.stats), **_headroom_stats(agent)}, light
@@ -224,15 +265,18 @@ def _checkpoint_meta(model) -> dict:
 
 
 def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=STAKE, seed0=EVAL_SEED0,
-             cfg_over=None, rcfg: RewardConfig | None = None) -> dict:
-    """Held-out games (greedy, no exploration). The value of a finished game in the search uses lam from
+             cfg_over=None, rcfg: RewardConfig | None = None, explore: bool = False) -> dict:
+    """Held-out games (greedy, no exploration; explore=True plays them as self-play does, sampling). The value of a finished game in the search uses lam from
     the reward schedule at the checkpoint's training step and lambda clock, matching what its value head
-    was trained on."""
+    was trained on. Also returns the override rates by phase (agent.override_summary), the result of each
+    game (per_game, for paired comparisons on the same seeds) and the cost in CPU seconds per game."""
+    from .agent import override_summary
     meta = _checkpoint_meta(model)
     rcfg = rcfg or RewardConfig.from_dict(meta.get("rewards"))
     cfg_over = {"lam": rcfg.schedule(meta.get("step", 0), meta.get("lambda_clock")).lam, **(cfg_over or {})}
     seeds = list(range(seed0, seed0 + games))
-    jobs = [(model, c, search, deck, stake, cfg_over, dict(rcfg.potential.__dict__)) for c in _split(seeds, workers)]
+    jobs = [(model, c, search, deck, stake, cfg_over, dict(rcfg.potential.__dict__), explore)
+            for c in _split(seeds, workers)]
     with mp.get_context("spawn").Pool(len(jobs)) as pool:
         parts = pool.map(_eval_worker, jobs)
     infos = sum((p[0] for p in parts), [])
@@ -244,10 +288,20 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
     res["autoplay%"] = 100.0 * stats["autoplay"] / max(1, stats["decisions"])
     res["sims/decision"] = stats["sims"] / max(1, stats["decisions"])
     res["headroom_ms/decision"] = 1e3 * stats["headroom_sec"] / max(1, stats["decisions"])
+    res.update(_strength_ms(stats))
     res["breakdown"] = breakdown(infos)
+    res["override"] = override_summary(stats)
+    res["decisions"] = stats["decisions"]
+    res["agent_stats"] = {k: int(v) for k, v in stats.items()
+                          if k.startswith(("budget_", "close_")) or k in ("sims", "autoplay")}
+    res["cpu_sec/game"] = float(np.mean([i["cpu_sec"] for i in infos]))
+    res["per_game"] = sorted(([i["seed"], i["blinds"], int(i["won"]), min(i["ante"], 8)] for i in infos))
     games = [x["game"] for x in light]
     res["calibration_phi"] = calibration([x["phi"] for x in light], [x["win"] for x in light], games)
     res["calibration_v"] = calibration([x["value"] for x in light], [x["win"] for x in light], games)
+    res["value_cal"] = value_calibration([x["value"] for x in light],
+                                         [z_target(x["win"], x["progress"], cfg_over["lam"]) for x in light],
+                                         [x["in_round"] for x in light])
     return res
 
 
@@ -275,11 +329,40 @@ def value_target(r: dict, sched, novelty: NoveltyCounter | None) -> tuple[float,
     return min(1.0, max(0.0, z + bonus)), bonus
 
 
+def ppo_prepare(rows, lam: float, gae: float = 0.9) -> dict:
+    """Adds to each row of one iteration's games what the PPO step needs: "logp" (log-probability the
+    playing policy gave the action taken) and "adv" (its advantage, normalised over the iteration).
+    Advantage: along a game, delta_t = V(s_t+1) - V(s_t), with the game's value z after the last decision;
+    adv_t = sum_k gae^k delta_t+k. V are the values the playing network gave (row["value"])."""
+    games = {}
+    for r in rows:
+        games.setdefault(r["game"], []).append(r)
+    advs = []
+    for rs in games.values():
+        rs.sort(key=lambda r: r["step"])
+        z = z_target(rs[-1]["win"], rs[-1]["progress"], lam)
+        nxt, acc = z, 0.0
+        for r in reversed(rs):
+            acc = (nxt - r["value"]) + gae * acc
+            r["adv_raw"] = acc
+            nxt = r["value"]
+            p = float(r["pi"][r["a"]]) if 0 <= r.get("a", -1) < len(r["pi"]) else 1.0
+            r["logp"] = float(np.log(max(p, 1e-8)))
+            advs.append(acc)
+    mean, std = float(np.mean(advs)) if advs else 0.0, float(np.std(advs)) if advs else 1.0
+    for r in rows:
+        r["adv"] = (r["adv_raw"] - mean) / (std + 1e-8)
+    return {"adv_mean": mean, "adv_std": std, "games": len(games)}
+
+
 def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: RewardConfig, sched,
-             novelty: NoveltyCounter | None = None, opt=None):
+             novelty: NoveltyCounter | None = None, opt=None, ppo: dict | None = None):
+    """ppo: {"clip": .., "ent": ..} switches the policy loss from cross-entropy to the search's policy to
+    the clipped PPO objective on rows prepared by ppo_prepare."""
     import torch
     import torch.nn.functional as F
-    from .net import collate
+    from .net import N_HEADS, collate
+    from ..rewards.strength import N_CLEAR, N_SURVIVE
     net.train()
     opt = opt or torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=1e-4)
     aw = rcfg.aux_loss_weights
@@ -300,12 +383,27 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
             pi[i, :len(r["pi"])] = r["pi"]
         pi = torch.from_numpy(pi).to(device)
         searched = torch.tensor([bool(r["searched"]) and len(r["pi"]) > 0 for r in mb], device=device)
-        if searched.any():
+        if ppo is not None:
+            act = torch.tensor([max(int(r["a"]), 0) for r in mb], dtype=torch.long, device=device)
+            lp = logp.gather(1, act[:, None]).squeeze(1)
+            lp_old = torch.tensor([r["logp"] for r in mb], dtype=torch.float32, device=device)
+            adv = torch.tensor([r["adv"] for r in mb], dtype=torch.float32, device=device)
+            ratio = torch.exp(lp - lp_old)
+            pl = -torch.min(ratio * adv, ratio.clamp(1.0 - ppo["clip"], 1.0 + ppo["clip"]) * adv).mean()
+            entropy = -(logp.exp() * logp).masked_fill(~m, 0.0).sum(-1).mean()
+            loss = loss + pl - ppo["ent"] * entropy
+            logs["ppo_policy"] += pl.item()
+            logs["entropy"] += entropy.item()
+            logs["approx_kl"] += (lp_old - lp).mean().item()
+            logs["clip_frac"] += ((ratio - 1.0).abs() > ppo["clip"]).float().mean().item()
+        elif searched.any():
             pl = -(pi[searched] * logp[searched]).sum(-1).mean()
             loss = loss + pl
             logs["policy"] += pl.item()
+            ent = -(pi[searched] * torch.log(pi[searched].clamp(min=1e-12))).sum(-1).mean()
+            logs["policy_kl"] += (pl - ent).item()          # KL(target || network) = cross-entropy - H(target)
         # closeness to the solver, in-round decisions only, while kappa > 0
-        in_round = torch.tensor([bool(r["in_round"]) for r in mb], device=device)
+        in_round = torch.tensor([bool(r["in_round"]) or rcfg.solver_kl.all_phases for r in mb], device=device)
         if sched.kappa > 0 and in_round.any():
             lps = torch.log_softmax(c["c_prior"].float().masked_fill(~m, -1e9), -1)
             kl = (logp.exp() * (logp - lps)).masked_fill(~m, 0.0).sum(-1)[in_round].mean()
@@ -314,7 +412,14 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
         # value: V = Phi + R towards clip(z + novelty, 0, 1)
         tg = [value_target(r, sched, novelty) for r in mb]
         zt = torch.tensor([t[0] for t in tg], dtype=torch.float32, device=device)
-        vl = F.mse_loss(net.value(out, s["phi"]), zt)
+        v = net.value(out, s["phi"], s["prog"], sched.lam)
+        if net.value_bound == "none":
+            vl = F.mse_loss(v, zt)
+        else:                                               # V = lo + (1 - lo) sigmoid(u): cross-entropy on u
+            lo = sched.lam * s["prog"].float()              # towards where the target sits between lo and 1
+            t01 = ((zt - lo) / (1.0 - lo).clamp(min=1e-6)).clamp(0.0, 1.0)
+            vl = F.binary_cross_entropy_with_logits(net.value_logit(out, s["phi"]), t01)
+            logs["value_mse"] += F.mse_loss(v, zt).item()
         loss = loss + vl
         logs["value"] += vl.item()
         # auxiliary heads (predicted, never rewarded)
@@ -332,6 +437,18 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
                 l = F.mse_loss(out[ok, col], t[ok])
                 aux = aux + wgt * l
                 logs[key] += l.item()
+        if net.strength_head is not None:                   # the calculated build strength (rewards/strength.py)
+            o = N_HEADS
+            sv = torch.tensor([r.get("str_survive", -100) for r in mb], dtype=torch.long, device=device)
+            ok = sv >= 0                                    # rows recorded without the targets are skipped
+            if ok.any():
+                sl = F.cross_entropy(out[:, o:o + N_SURVIVE], sv, ignore_index=-100)
+                ct = torch.tensor([r.get("str_clear") or [0.0] * N_CLEAR for r in mb], dtype=torch.float32,
+                                  device=device)
+                scl = F.binary_cross_entropy_with_logits(out[ok, o + N_SURVIVE:o + N_SURVIVE + N_CLEAR], ct[ok])
+                aux = aux + aw.strength_survive * sl + aw.strength_clear * scl
+                logs["strength_survive"] += sl.item()
+                logs["strength_clear"] += scl.item()
         loss = loss + aux
         opt.zero_grad()
         loss.backward()
@@ -365,13 +482,15 @@ def shaping_components(rows, sched, novelty, w_head: float) -> dict:
 
 def run(a):
     import torch
-    from .net import AZNet, load_net, save_net
+    from .agent import override_summary
+    from .net import load_net, save_net
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(a.data, exist_ok=True)
     log_path = a.out.replace(".pt", "_log.jsonl")
     done_path = a.out.replace(".pt", "_done.txt")
     opt = None
     first = 1
+    cfg_over = json.loads(a.cfg) if a.cfg else {}
     if os.path.exists(a.out) and not a.resume:
         raise SystemExit(f"{a.out} already exists: pass --resume to continue that run, or choose another --out")
     if a.resume and os.path.exists(a.out):
@@ -398,13 +517,18 @@ def run(a):
             step = _checkpoint_meta(a.init).get("step", 0)
         else:
             torch.manual_seed(0)
-            net = AZNet(value_residual=rcfg.potential.value_residual).to(device)
+            net = new_net(rcfg.potential, bool(cfg_over.get("price_feature"))).to(device)
     gate = LambdaGate.from_state(rcfg.lambda_gate_win_rate, rcfg.lambda_gate_games, gate_state)
+    eval_gate = rcfg.lambda_gate_source == "eval"          # lambda's gate reads the held-out evaluations
+    kgate = rcfg.solver_kl.gate_ece > 0                    # the leash fades only while V is calibrated
+    kstate = {"clock": 0 if kgate else None, "ece": None}
+    if a.resume and os.path.exists(a.out):
+        kstate.update(meta0.get("kappa_gate", {}))
+    kclock = lambda: kstate["clock"] if kgate else None
     meta = lambda it: {"iter": it, "step": step, "rewards": rcfg.to_dict(), "lambda_clock": gate.clock,
-                       "lambda_gate": gate.state()}
+                       "lambda_gate": gate.state(), "kappa_gate": dict(kstate)}
     if first == 1:
         save_net(net, a.out, meta(0))
-    cfg_over = json.loads(a.cfg) if a.cfg else {}
     novelty = NoveltyCounter(rcfg.novelty.window)
     alarm = HackAlarm(a.alarm_n)
     if first > 1:
@@ -430,8 +554,9 @@ def run(a):
         for stale in glob.glob(os.path.join(a.data, f"it{it:04d}_w*.pkl")):
             os.remove(stale)                    # games of an iteration that was cut off: played again
         t0 = time.time()
-        search = it > a.warmup
-        sched = rcfg.schedule(step, gate.clock)
+        ppo = a.algo == "ppo"
+        search = it > a.warmup and not ppo
+        sched = rcfg.schedule(step, gate.clock, kclock())
         seeds = list(range(GEN_SEED0 + (it - 1) * a.games, GEN_SEED0 + it * a.games))
         jobs = [(a.out, c, search, os.path.join(a.data, f"it{it:04d}_w{k}.pkl"), a.deck, a.stake,
                  {"lam": sched.lam, **cfg_over}, pot)
@@ -444,27 +569,55 @@ def run(a):
         for p in parts:
             stats.update(p[1])
         step += stats["decisions"]
-        gate_open = gate.update(sum(i["won"] for i in infos), len(infos), stats["decisions"])
+        if eval_gate:
+            gate_open = gate.tick(stats["decisions"])
+        else:
+            gate_open = gate.update(sum(i["won"] for i in infos), len(infos), stats["decisions"])
+        kappa_open = bool(kgate and kstate["ece"] is not None and kstate["ece"] <= rcfg.solver_kl.gate_ece)
+        if kappa_open:
+            kstate["clock"] += stats["decisions"]
         t_gen = time.time() - t0
         new_rows = load_rows(sorted(glob.glob(os.path.join(a.data, f"it{it:04d}_w*.pkl"))))
         novelty.add(r["sig"] for r in new_rows)
         shards = sorted(glob.glob(os.path.join(a.data, "it*_w*.pkl")))
         rows = load_rows([s for s in shards if it - a.window < int(os.path.basename(s)[2:6]) <= it])
-        sched = rcfg.schedule(step, gate.clock)
-        losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty, opt)
+        sched = rcfg.schedule(step, gate.clock, kclock())
+        if ppo and not a.novelty:
+            novelty_used = None
+        else:
+            novelty_used = novelty
+        if ppo:                                 # on-policy: this iteration's games only
+            adv = ppo_prepare(new_rows, sched.lam, a.gae)
+            rows = new_rows
+            steps = max(1, int(np.ceil(a.ppo_epochs * len(rows) / a.batch)))
+            losses, opt = train_on(net, rows, steps, a.batch, a.lr, device, rcfg, sched, novelty_used, opt,
+                                   ppo={"clip": a.ppo_clip, "ent": a.ent})
+            losses.update(adv_mean=adv["adv_mean"], adv_std=adv["adv_std"])
+        else:
+            losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty_used, opt)
         save_net(net, a.out, meta(it), opt)
-        comp = shaping_components(new_rows, sched, novelty, rcfg.potential.w_head)
-        annealed = sched.lam == 0.0 and sched.beta == 0.0
-        exact = not annealed or all(value_target(r, sched, novelty)[0] == r["win"] for r in new_rows)
+        comp = shaping_components(new_rows, sched, novelty_used, rcfg.potential.w_head)
+        annealed = sched.lam == 0.0 and (sched.beta == 0.0 or novelty_used is None)
+        exact = not annealed or all(value_target(r, sched, novelty_used)[0] == r["win"] for r in new_rows)
+        value_err = value_calibration([r["value"] for r in new_rows],
+                                      [z_target(r["win"], r["progress"], sched.lam) for r in new_rows],
+                                      [r["in_round"] for r in new_rows])
         gate_rate = gate.rate()
-        row = {"iter": it, "step": step, "search": search, "lam": round(sched.lam, 5), "lambda_clock": gate.clock,
+        row = {"iter": it, "step": step, "search": search, "algo": a.algo, "lam": round(sched.lam, 5),
+               "lambda_clock": gate.clock,
                "lambda_gate": {"open": gate_open, "win_rate": None if gate_rate is None else round(gate_rate, 4),
                                "threshold": gate.win_rate},
-               "beta": round(sched.beta, 5),
-               "kappa": round(sched.kappa, 5), **{k: round(v, 3) for k, v in summarize(infos).items()},
+               "beta": round(sched.beta, 5) if novelty_used is not None else 0.0,
+               "kappa": round(sched.kappa, 5),
+               "kappa_gate": ({"open": kappa_open, "clock": kstate["clock"], "ece": kstate["ece"],
+                               "threshold": rcfg.solver_kl.gate_ece} if kgate else None),
+               "value_err": value_err,                   # the playing network's V against z, by phase
+               **{k: round(v, 3) for k, v in summarize(infos).items()},
                "autoplay%": round(100.0 * stats["autoplay"] / max(1, stats["decisions"]), 2),
                "sims/decision": round(stats["sims"] / max(1, stats["decisions"]), 2),
                "headroom_ms/decision": round(1e3 * stats["headroom_sec"] / max(1, stats["decisions"]), 3),
+               **_strength_ms(stats),
+               "override": override_summary(stats),      # self-play: includes the exploration noise
                "samples": len(rows), "gen_min": round(t_gen / 60, 2),
                "train_min": round((time.time() - t0 - t_gen) / 60, 2),
                "shaping": comp, "value_target_is_win": annealed and exact,
@@ -479,8 +632,12 @@ def run(a):
             if row[name]["status"] == "FLAT_OR_FALLING":
                 row.setdefault("flags", []).append(f"{name}: actual win rate does not rise with it")
         if a.eval_every and it % a.eval_every == 0:
-            ev = evaluate(a.out, a.eval_games, a.workers, True, a.deck, a.stake, cfg_over=cfg_over, rcfg=rcfg)
+            ev = evaluate(a.out, a.eval_games, a.workers, not ppo, a.deck, a.stake, cfg_over=cfg_over, rcfg=rcfg)
             row["eval"] = ev
+            kstate["ece"] = ev["value_cal"].get("ece")
+            if eval_gate:
+                gate.observe(round(ev["win%"] * ev["games"] / 100), ev["games"])
+            save_net(net, a.out, meta(it), opt)             # the gates' new state
             warn = alarm.update(comp["value_target"], ev["breakdown"]["win_rate"])
             if warn:
                 row["ALARM"] = warn
@@ -490,9 +647,11 @@ def run(a):
                     row.setdefault("flags", []).append(f"held-out {name}: actual win rate does not rise with it")
         with open(log_path, "a") as f:
             f.write(json.dumps(row, default=float) + "\n")
-        short = {k: v for k, v in row.items() if not k.startswith("calibration") and k != "eval"}
+        short = {k: v for k, v in row.items() if not k.startswith("calibration") and k not in ("eval", "override")}
+        short["override%"] = {ph: v["final%"] for ph, v in row["override"].items()}
         if "eval" in row:
             short["eval"] = {k: row["eval"][k] for k in ("games", "win%", "blinds", "ante")}
+            short["eval"]["override%"] = {ph: v["final%"] for ph, v in row["eval"]["override"].items()}
         print(json.dumps(short, default=float), flush=True)
     with open(done_path, "w") as f:
         f.write(f"finished {a.iters} iterations, {step} decisions\n")
@@ -522,6 +681,14 @@ def main():
     r.add_argument("--eval-games", type=int, default=100)
     r.add_argument("--alarm-n", type=int, default=3, help="evaluations of rising shaped return before the alarm")
     r.add_argument("--cfg", default="", help="AgentConfig overrides as JSON, e.g. '{\"budget_shop\": 16}'")
+    r.add_argument("--algo", choices=["search", "ppo"], default="search",
+                   help="search: targets from the search (default); ppo: no search, policy-gradient steps")
+    r.add_argument("--ppo-epochs", type=float, default=3.0, help="ppo: passes over each iteration's decisions")
+    r.add_argument("--ppo-clip", type=float, default=0.2)
+    r.add_argument("--ent", type=float, default=0.001, help="ppo: entropy bonus (small: the priors are sharp)")
+    r.add_argument("--gae", type=float, default=0.95, help="ppo: advantage estimation lambda (near 1: leans on "
+                                                           "the actual outcome while the value is weak)")
+    r.add_argument("--novelty", action="store_true", help="ppo: keep the novelty bonus in the value target")
     b = sub.add_parser("bench", help="games/hour with search on fixed seeds and a fixed untrained network")
     b.add_argument("--games", type=int, default=14)
     b.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))

@@ -17,6 +17,21 @@ from dataclasses import dataclass, field, fields, is_dataclass, asdict
 
 
 @dataclass
+class StrengthConfig:
+    """Build strength against the upcoming bosses (rewards/strength.py)."""
+    samples: int = 32                 # K fresh-round hands (the same hands the headroom samples)
+    bootstrap: int = 1000             # B resampled rounds
+    score: str = "horizon"            # the scalar: "horizon", "expected_antes", "expected_total", "current"
+    discards: str = "extra_draws"     # "none": a round is `hands` independent best hands; "extra_draws": the
+    discard_weight: float = 1.0       #   best `hands` of hands + discard_weight * discards draws
+    score_scale: float = 1.0          # multiplies every best-hand score (fitted correction; 1.0: none)
+    growth: bool = False              # project scaling jokers forward (rewards/growth.py)
+    growth_discount: float = 0.9      #   per round: a joker gains table[key] * sum(discount^i, i < rounds)
+    growth_table: str = ""            #   JSON file {joker key: gain per round}; "": the built-in table (empty)
+    aux_head: bool = False            # the network gets a head predicting the strength (az/net.py)
+
+
+@dataclass
 class PotentialConfig:
     w_head: float = 0.7
     w_prog: float = 0.3
@@ -25,6 +40,11 @@ class PotentialConfig:
     aggregate: str = "mean"           # "mean": log of the mean best-hand score; "geomean": mean of the logs
     round_hands: bool = False         # compare E[best hand] x hands per round with the target
     value_residual: bool = True       # V(s) = Phi(s) + R(s); False: V(s) = R(s) (ablation)
+    value_bound: str = "none"         # "floor_sigmoid": V = lo + (1 - lo) * sigmoid(a * Phi + b + R), with
+    value_init_scale: float = 1.0     #   lo = lam * progress so far, a = value_init_scale and
+    value_init_bias: float = -1.9     #   b = value_init_bias (az/net.py); V stays in [0, 1]
+    head_term: str = "headroom"       # Phi's first term: "headroom" (tanh, in [-1, 1]) or "strength" (the
+    strength: StrengthConfig = field(default_factory=StrengthConfig)     # strength score, in [0, 1])
 
 
 @dataclass
@@ -38,6 +58,10 @@ class NoveltyConfig:
 class SolverKLConfig:
     kappa: float = 1.0                # 0.1 was too weak to keep early in-round targets near the solver
     end_step: int = 1_500_000
+    all_phases: bool = False          # also outside rounds: KL(pi || prior) against the shop prior
+    gate_ece: float = 0.0             # > 0: kappa only fades while the value's held-out calibration error
+                                      #   (diagnostics.value_calibration, on the evaluation games) is at most
+                                      #   this; until then it stays where it is. 0: fades on the step count
 
 
 @dataclass
@@ -46,6 +70,8 @@ class AuxWeights:
     ante_reached: float = 0.25
     blind_score_ratio: float = 0.25
     next_headroom: float = 0.1
+    strength_survive: float = 0.25    # only with potential.strength.aux_head: "survives through ante" (classes)
+    strength_clear: float = 0.25      #   and the clear chance of each upcoming boss
 
 
 @dataclass
@@ -62,18 +88,21 @@ class RewardConfig:
     lambda_end_step: int = 2_000_000          # decisions on the lambda clock for lambda to reach 0
     lambda_gate_win_rate: float = 0.10        # the clock runs only while the recent win rate is at least this
     lambda_gate_games: int = 320              # over this many recent self-play games (0 rate: always runs)
+    lambda_gate_source: str = "selfplay"      # "eval": the win rate of the held-out greedy evaluations instead
+                                              #   (sampled self-play wins less often than greedy play)
     potential: PotentialConfig = field(default_factory=PotentialConfig)
     novelty: NoveltyConfig = field(default_factory=NoveltyConfig)
     solver_kl: SolverKLConfig = field(default_factory=SolverKLConfig)
     aux_loss_weights: AuxWeights = field(default_factory=AuxWeights)
 
-    def schedule(self, step: int, lambda_clock: int | None = None) -> Schedule:
+    def schedule(self, step: int, lambda_clock: int | None = None, kappa_clock: int | None = None) -> Schedule:
         """lambda_clock: decisions played while the win-rate gate was open (LambdaGate.clock); None uses
-        `step`, i.e. a fixed fade."""
+        `step`, i.e. a fixed fade. kappa_clock: the same for the leash (solver_kl.gate_ece)."""
         clock = step if lambda_clock is None else lambda_clock
         return Schedule(step, _decay(self.lambda_start, self.lambda_end_step, clock),
                         _decay(self.novelty.beta, self.novelty.end_step, step),
-                        _decay(self.solver_kl.kappa, self.solver_kl.end_step, step))
+                        _decay(self.solver_kl.kappa, self.solver_kl.end_step,
+                               step if kappa_clock is None else kappa_clock))
 
     # ------------------------------------------------------------------ loading
     @classmethod
@@ -115,9 +144,16 @@ class LambdaGate:
                 return wins / games
         return None                                   # not enough games yet
 
-    def update(self, wins: int, games: int, decisions: int) -> bool:
+    def observe(self, wins: int, games: int):
         self.recent.append((int(wins), int(games)))
         self.recent = self.recent[-50:]
+
+    def update(self, wins: int, games: int, decisions: int) -> bool:
+        self.observe(wins, games)
+        return self.tick(decisions)
+
+    def tick(self, decisions: int) -> bool:
+        """Advance the clock by `decisions` if the gate is open on the games observed so far."""
         r = self.rate()
         is_open = self.win_rate <= 0 or (r is not None and r >= self.win_rate)
         if is_open:

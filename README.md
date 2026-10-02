@@ -159,7 +159,7 @@ embeddings. A separate value head feeds PPO. It has about 0.4M parameters.
 - **Hand size:** up to 16 cards (Juggler, Turtle Bean, Troubadour, Paint Brush, Palette, Juggle Tag, Painted Deck), and down again for Stuntman, Merry Andy, Ouija, Ectoplasm and The Manacle.
 - **Gold Stake rules:** no Small Blind reward, faster blind scaling, −1 discard, and Eternal, Perishable and Rental stickers.
 - **Shop:** weights, rarities, edition odds, prices (including Balatro's discount rounding) and reroll costs match the game source. The first shop guarantees a Buffoon pack. Magic Trick and Illusion put playing cards in the shop.
-- **Checks:** unit tests cover scoring and the new jokers, `tests/fidelity/test_rules.py` has one test per rule checked against the game source, and a fuzz test plays 150 random games stuffed with random jokers, vouchers and consumables.
+- **Checks:** unit tests cover scoring and the new jokers, `tests/fidelity/test_rules.py` has one test per rule checked against the game source, `tests/fidelity/test_real_plays.py` scores 316 hands recorded from the real game (data derived from the trajectories published in [Attol8/balatro-ai](https://github.com/Attol8/balatro-ai), CC BY 4.0) and requires every hand without a chance effect to match, and a fuzz test plays 150 random games stuffed with random jokers, vouchers and consumables.
 
 ## Unified agent (`balatro_rl/az/`)
 
@@ -193,6 +193,11 @@ The objective is P(win the run). Every shaping term either leaves the optimal po
   - E[best-hand score] averages 32 hands sampled from the full deck, scored by the simulator's scorer as the first hand of a fresh round, with no boss effect.
   - The samples are seeded from the build and cached, so the same build always gets the same Φ.
   - In the AlphaZero path, the network learns a residual on top of it: `V = Φ + R`. Set `value_residual: false` to turn that off. In the PPO path, `--shape-phi` adds `γΦ(s') − Φ(s)`.
+- **Build strength (optional, `rewards/strength.py`):** from the same 32 sampled hands, whole rounds are bootstrapped to get the chance of clearing this ante's boss (real target), the next three antes' and ante 8's, "survives through ante" (the last ante cleared with at least 50%), and a strength score in [0, 1].
+  - `potential.head_term: strength` uses that score in Φ instead of `tanh(headroom)`, so Φ lies in [0, 1].
+  - `potential.strength.aux_head: true` adds a network head that predicts it.
+  - `potential.strength.growth: true` projects scaling jokers forward with a table built by `python -m balatro_rl.rewards.growth`. The built-in table is empty.
+  - All three are off by default. `python -m balatro_rl.rewards.strength_check` measures calibration and cost.
 - **Temporary terms:**
   - A novelty bonus `β/√N(build)`, added to the value training target only and clipped to [0, 1]. It is gone by step 3M.
   - `κ·KL(π ‖ π_solver)` on in-round decisions, with κ starting at 1.0 and gone by step 1.5M.
@@ -203,6 +208,33 @@ The objective is P(win the run). Every shaping term either leaves the optimal po
   - headroom time per decision;
   - held-out win rate by ante reached and by boss;
   - an `ALARM` when the shaped return rises for 3 evaluations while held-out win rate doesn't.
+
+## Older PPO-pipeline tools: `shopsearch.py` and `capacity.py`
+
+Two experiments built on the PPO pipeline's split into a strategic network (blind select, shop, packs) and a frozen tactical network that plays the cards (`strategic.py`, `tactical.py`). Both need those two checkpoints. They run on the current simulator and action space, but **everything measured with them predates the rule corrections** (old rules, 475 actions, checkpoints trained on the old rules), so the numbers below are history, not a baseline.
+
+**`shopsearch.py`: search at strategic decisions, and expert iteration.** At each strategic decision the policy's top-k actions are each played to the end of the run on the same N re-drawn futures (fresh RNG, reshuffled draw pile, new face-down cards), and the search overrules the network only when the best candidate beats its choice by more than `z` standard errors. `iterate` then trains the network towards the search's choices and repeats.
+
+```bash
+python -m balatro_rl.shopsearch bench   --policy checkpoints/baseline_strategic.pt --games 100 --samples 16 --top-k 5
+python -m balatro_rl.shopsearch iterate --policy checkpoints/baseline_strategic.pt --iters 3 --out checkpoints/exit
+python -m balatro_rl.shopsearch compare checkpoints/baseline_strategic.pt checkpoints/exit/iter1.pt
+```
+
+Past result (28 Sep, old rules, Red Deck, Gold Stake, 16 samples, top 5, z = 2, evaluation seeds from 10000): the one `bench` run was stopped after 43 of its 100 games, before it printed its summary. On those 43 games (same seeds for both), the network alone beat 8.81 blinds [7.81, 9.77] and with search 9.56 [8.53, 10.53]; the paired difference is +0.74 [−0.02, +1.63] (95% bootstrap), better in 16 games, worse in 11, equal in 16, with no wins either way. The search overruled the network in 111 of 2,073 decisions (5%) and cost about 150 s per game per process. The 43 are the games that finished first, not a random sample, so treat this as "probably helps a little, not shown". `iterate` was never run.
+
+**`capacity.py`: a learned build-strength score.** `gen` makes random builds (ante, jokers, hand levels, modified deck, money) and has the tactical network play each through a boss-free blind with a target of 4× the ante's base; the label is the mean log10 of chips scored, capped at the target. `train` fits a small network from build features to that label. `check` compares its prediction with a fresh measurement on real builds from games, and with whether the run cleared that ante's boss. `shop` lets a shop or pack action that raises predicted capacity by more than a threshold overrule the strategic network. Known gaps: scaling jokers are generated at their initial values, and money and economy jokers count for nothing.
+
+```bash
+python -m balatro_rl.capacity gen   --builds 200000 --out checkpoints/capacity_data
+python -m balatro_rl.capacity train --data checkpoints/capacity_data --out checkpoints/capacity.pt
+python -m balatro_rl.capacity check --model checkpoints/capacity.pt --policy checkpoints/baseline_strategic.pt
+python -m balatro_rl.capacity shop  --model checkpoints/capacity.pt --policy checkpoints/baseline_strategic.pt
+```
+
+Past result: none. The one pipeline run (28 Sep) produced no build data, so `train` had nothing to fit, no `capacity.pt` was ever saved, and `check` and `shop` stopped at once for lack of it. Its accuracy on random or real builds, and whether capacity-guided shopping helps, have never been measured.
+
+Both have smoke tests that need no checkpoints (`tests/test_shopsearch.py`, `tests/test_capacity.py`).
 
 ## Limitations (where to improve)
 
@@ -220,6 +252,8 @@ balatro_rl/
   env.py        # action space, observation + action features, reward
   strategic.py  # environment where PPO makes only strategic decisions (a frozen network plays the cards)
   tactical.py   # search over plays/discards with sampled redraws, benchmark, distillation
+  shopsearch.py # search at strategic decisions with re-drawn futures, expert iteration (older tool)
+  capacity.py   # learned build-strength score from random builds (older tool, never trained)
   heuristic.py  # rule-based player (baseline + teacher)
   model.py      # actor-critic network
   vec_env.py    # parallel environments

@@ -140,6 +140,7 @@ def measure(g: Game, tactics, draws: int, rng: random.Random):
         env = BalatroEnv.__new__(BalatroEnv)
         env.g, env.steps, env.cnt = h, 0, Counters()
         env.weights, env.win_bonus = blind_weights(), 0.0
+        env.shape_chips = env.shape_phi = 0.0                  # no reward shaping (BalatroEnv.step reads these)
         env.obs = encode(h, env.cnt)
         best, target, before = 0.0, h.target, h.blinds_beaten
         while env.obs is not None and h.state == "SELECTING_HAND":

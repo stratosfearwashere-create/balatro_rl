@@ -9,6 +9,9 @@ Auxiliary targets (predicted, never rewarded):
     ante_cls    ante reached, 8 classes: ante 1..7, and "8+" (reached ante 8 or won)
     ratio       log(final chips / required) of that blind; missing if it was skipped
     next_head   Phi_headroom at the start of the next blind that begins after this decision; missing if none
+    str_survive, str_clear   (only with potential.strength.aux_head) the calculated strength of the build
+                at this decision (rewards/strength.py): "survives through ante" as a class 0..8, and the
+                clear chances of this ante's boss, the next three antes' and ante 8's
 Missing targets are NaN and masked out of the loss.
 """
 from __future__ import annotations
@@ -49,7 +52,12 @@ class GameRecorder:
         g = w.g
         comp = self.potential.components(g)
         row = {"step": w.steps, "blind": blind_index(g), "in_round": g.state == "SELECTING_HAND",
-               "sig": build_signature(g), "phi": comp["phi"], "headroom": comp["headroom"], **extra}
+               "sig": build_signature(g), "phi": comp["phi"], "headroom": comp["headroom"],
+               "prog": comp["prog"], **extra}
+        if self.potential.cfg.strength.aux_head:
+            rep = self.potential.strength.report(g)
+            row["str_survive"] = rep["survives"]
+            row["str_clear"] = list(rep["clear"])
         self.rows.append(row)
         return row
 
