@@ -611,7 +611,8 @@ def run(a):
                "kappa": round(sched.kappa, 5),
                "kappa_gate": ({"open": kappa_open, "clock": kstate["clock"], "ece": kstate["ece"],
                                "threshold": rcfg.solver_kl.gate_ece} if kgate else None),
-               "value_err": value_err,                   # the playing network's V against z, by phase **{k: round(v, 3) for k, v in summarize(infos).items()},
+               "value_err": value_err,                   # the playing network's V against z, by phase
+               **{k: round(v, 3) for k, v in summarize(infos).items()},
                "autoplay%": round(100.0 * stats["autoplay"] / max(1, stats["decisions"]), 2),
                "sims/decision": round(stats["sims"] / max(1, stats["decisions"]), 2),
                "headroom_ms/decision": round(1e3 * stats["headroom_sec"] / max(1, stats["decisions"]), 3),

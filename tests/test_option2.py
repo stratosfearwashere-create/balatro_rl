@@ -107,6 +107,7 @@ def test_ppo_training_run_without_search(tmp_path):
     subprocess.run(cmd, check=True, capture_output=True)
     row = json.loads(open(tmp_path / "az_log.jsonl").readline())
     assert row["algo"] == "ppo" and row["search"] is False and row["sims/decision"] == 0
+    assert row["games"] == 2 and 0 <= row["win%"] <= 100 and row["blinds"] >= 0 and row["ante"] >= 1
     for k in ("loss_ppo_policy", "loss_entropy", "loss_approx_kl", "loss_clip_frac", "loss_value", "loss_solver_kl"):
         assert k in row and np.isfinite(row[k])
     assert row["loss_entropy"] > 0 and "loss_policy" not in row
