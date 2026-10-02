@@ -280,7 +280,7 @@ class Agent:
         st[f"ovr_{ph}_n"] += 1
         st[f"ovr_{ph}_searched"] += int(searched)
         st[f"ovr_{ph}_final"] += int(prior[idx] < top)
-        st[f"ovr_{ph}_strong"] += int(prior[idx] < top - 1.0)
+        st[f"ovr_{ph}_strong"] += int(prior[idx] < top - 0.99)
         st[f"ovr_{ph}_net"] += int(prior[net_idx] < top)
         st[f"ovr_{ph}_search"] += int(idx != net_idx)
 
