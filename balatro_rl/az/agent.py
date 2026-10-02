@@ -92,6 +92,10 @@ class AgentConfig:
     root_cfg: Config = field(default_factory=lambda: Config(max_analyzed=700))
     inner_cfg: Config = field(default_factory=lambda: Config(max_plays=24, max_discards=12, max_analyzed=160,
                                                              max_targets=8, use_samples=1))
+    round_growth: bool = False      # in rounds, options the solver rates within growth_margin logits of its
+    growth_margin: float = 1.0      #   best get growth_scale x (change in build strength they cause: joker
+    growth_scale: float = 100.0     #   state, money), capped at +-growth_cap logits (see growth_bonus)
+    growth_cap: float = 2.0
     shop_prior: str = "rule"
     shop: ShopConfig = field(default_factory=ShopConfig)
     price_feature: bool = False
@@ -259,6 +263,8 @@ class Agent:
                 samples = max(4, samples // 2)
             self.solver.solve(w.g, choice, rng, samples=samples, depth=depth)
             prior = solver_prior(choice, cfg.tau)
+            if cfg.round_growth:
+                prior = prior + self.growth_bonus(w, choice, prior)
         elif cfg.shop_prior == "graded":
             prior, price = self.pricer.prior(w, choice, rng, root)
         else:
@@ -274,6 +280,53 @@ class Agent:
         heads = {k: float(v) for k, v in heads.items() if v.dim() == 0}
         heads["phi"] = float(state["phi"])
         return Node(w, choice, enc, logits[0].float().cpu().numpy().astype(float), heads["value"], heads=heads)
+
+    def growth_bonus(self, w: World, choice: Choice, prior: np.ndarray) -> np.ndarray:
+        """The solver only asks "does this clear the blind". Where several plays or discards are about
+        equally good by that measure (within growth_margin logits of its best), this adds what each does to
+        the build beyond the round: the change in build strength (shop.ShopPricer: the same measure that
+        prices shop options) from the joker state it changes -- Green Joker, Ride the Bus, Runner, Square
+        Joker, Wee Joker, Castle, Hit the Road, Ramen, Ice Cream ... -- and the money it brings. So with a
+        blind that is safe either way, the hand that grows the build is preferred, and a discard that costs
+        Green Joker its mult has to be worth it. Options outside the margin keep the solver's logit."""
+        cfg = self.cfg
+        bonus = np.zeros(len(choice.cands))
+        near = [i for i, c in enumerate(choice.cands)
+                if c.kind in ("play", "discard") and c.analyzed and prior[i] >= -cfg.growth_margin]
+        if len({(choice.cands[i].kind == "play", choice.cands[i].jdiff, choice.cands[i].effects) for i in near}) < 2:
+            return bonus                                    # nothing to choose between
+        g = w.g
+        ctx = self.pricer.context(g)
+        cache = {}
+        for i in near:
+            c = choice.cands[i]
+            jd = c.jdiff + (choice.after_jdiff if c.kind == "play" else ())
+            money = sum(v for k, v in c.effects if k == "money")
+            key = (jd, round(money, 3))
+            d = cache.get(key)
+            if d is None:
+                g2 = g.clone()
+                gone = []
+                for slot, k, _, new in jd:
+                    if not 0 <= slot < len(g2.jokers):
+                        continue
+                    if k == "_removed":
+                        gone.append(g2.jokers[slot])
+                    else:
+                        g2.jokers[slot].state[k] = new
+                for j in gone:
+                    g2.destroy_joker(j)
+                g2.money = g.money + int(round(money))
+                a, b = self.pricer._delta(ctx, g2)
+                d = cache[key] = a + b
+            bonus[i] = d
+        if near:
+            bonus[near] -= max(bonus[i] for i in near)      # relative to the best: the top logit stays 0
+            self.stats["growth_decisions"] += 1
+            before = max(near, key=lambda i: prior[i])
+            after = max(near, key=lambda i: prior[i] + np.clip(bonus[i] * cfg.growth_scale, -cfg.growth_cap, 0.0))
+            self.stats["growth_changed"] += int(after != before)
+        return np.clip(bonus * cfg.growth_scale, -cfg.growth_cap, 0.0)
 
     def terminal(self, w: World, lost: bool = False) -> Node:
         g = w.g

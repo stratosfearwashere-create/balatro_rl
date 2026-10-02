@@ -18,6 +18,15 @@ lambda_gate_win_rate, see rewards.config.LambdaGate), so lam, beta and kappa alw
 rewards.RewardConfig.schedule. Warm-up iterations
 play without search and train the heads first.
 
+--algo ppo (no search anywhere): self-play samples every decision from the network's policy, softmax(prior +
+adjustment), which before training is the prior itself. The learner then makes a clipped policy-gradient (PPO)
+step on exactly those decisions: the advantage of the action taken is how much the value rose afterwards
+(generalised advantage estimation over V(s') - V(s) along the game, ending in the game's value z; no
+discounting), so actions that turned out better than the value expected become more likely. The value and
+auxiliary losses are the same as above, and kappa * KL(pi || prior) keeps the policy near its priors while
+kappa lasts (solver_kl.all_phases extends it to decisions outside rounds). Each iteration trains only on its
+own games (the policy that played them is the one being improved). Evaluation is greedy, without search.
+
 Diagnostics (one JSON line per iteration, *_log.jsonl): the schedule, each shaping component per episode,
 calibration of Phi and V against actual wins, headroom cost per decision, losses; with --eval-every, the
 held-out win rate (the measure of success) by ante reached and boss type, calibration on held-out games,
@@ -79,7 +88,7 @@ def play_game(agent, seed: int, deck: str = "RED", stake: str = STAKE, explore: 
         if verbose:
             print(f"  ante {g.ante} {g.state:15s} ${g.money:<4} {d.reason:10s} {describe(w, d.action)}")
         if d.enc is not None:
-            extra = {"value": d.value, "searched": d.searched}
+            extra = {"value": d.value, "searched": d.searched, "a": d.index}
             if record:
                 extra.update(enc=_compact(d.enc), pi=d.policy.astype(np.float32))
             rec.decision(w, **extra)
@@ -178,12 +187,12 @@ def _gen_worker(args):
 
 
 def _eval_worker(args):
-    model, seeds, search, deck, stake, cfg_over, pot = args
+    model, seeds, search, deck, stake, cfg_over, pot, explore = args
     agent = _make_agent(model, search, seeds[0], cfg_over, pot)
     infos, light = [], []
     for s in seeds:
         t = time.process_time()
-        rows, info = play_game(agent, s, deck, stake, explore=False, record=False)
+        rows, info = play_game(agent, s, deck, stake, explore=explore, record=False)
         info["cpu_sec"] = time.process_time() - t
         infos.append(info)
         light += [_light({**r, "game": s}) for r in rows]
@@ -254,8 +263,8 @@ def _checkpoint_meta(model) -> dict:
 
 
 def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=STAKE, seed0=EVAL_SEED0,
-             cfg_over=None, rcfg: RewardConfig | None = None) -> dict:
-    """Held-out games (greedy, no exploration). The value of a finished game in the search uses lam from
+             cfg_over=None, rcfg: RewardConfig | None = None, explore: bool = False) -> dict:
+    """Held-out games (greedy, no exploration; explore=True plays them as self-play does, sampling). The value of a finished game in the search uses lam from
     the reward schedule at the checkpoint's training step and lambda clock, matching what its value head
     was trained on. Also returns the override rates by phase (agent.override_summary), the result of each
     game (per_game, for paired comparisons on the same seeds) and the cost in CPU seconds per game."""
@@ -264,7 +273,8 @@ def evaluate(model, games: int, workers: int, search: bool, deck="RED", stake=ST
     rcfg = rcfg or RewardConfig.from_dict(meta.get("rewards"))
     cfg_over = {"lam": rcfg.schedule(meta.get("step", 0), meta.get("lambda_clock")).lam, **(cfg_over or {})}
     seeds = list(range(seed0, seed0 + games))
-    jobs = [(model, c, search, deck, stake, cfg_over, dict(rcfg.potential.__dict__)) for c in _split(seeds, workers)]
+    jobs = [(model, c, search, deck, stake, cfg_over, dict(rcfg.potential.__dict__), explore)
+            for c in _split(seeds, workers)]
     with mp.get_context("spawn").Pool(len(jobs)) as pool:
         parts = pool.map(_eval_worker, jobs)
     infos = sum((p[0] for p in parts), [])
@@ -314,8 +324,36 @@ def value_target(r: dict, sched, novelty: NoveltyCounter | None) -> tuple[float,
     return min(1.0, max(0.0, z + bonus)), bonus
 
 
+def ppo_prepare(rows, lam: float, gae: float = 0.9) -> dict:
+    """Adds to each row of one iteration's games what the PPO step needs: "logp" (log-probability the
+    playing policy gave the action taken) and "adv" (its advantage, normalised over the iteration).
+    Advantage: along a game, delta_t = V(s_t+1) - V(s_t), with the game's value z after the last decision;
+    adv_t = sum_k gae^k delta_t+k. V are the values the playing network gave (row["value"])."""
+    games = {}
+    for r in rows:
+        games.setdefault(r["game"], []).append(r)
+    advs = []
+    for rs in games.values():
+        rs.sort(key=lambda r: r["step"])
+        z = z_target(rs[-1]["win"], rs[-1]["progress"], lam)
+        nxt, acc = z, 0.0
+        for r in reversed(rs):
+            acc = (nxt - r["value"]) + gae * acc
+            r["adv_raw"] = acc
+            nxt = r["value"]
+            p = float(r["pi"][r["a"]]) if 0 <= r.get("a", -1) < len(r["pi"]) else 1.0
+            r["logp"] = float(np.log(max(p, 1e-8)))
+            advs.append(acc)
+    mean, std = float(np.mean(advs)) if advs else 0.0, float(np.std(advs)) if advs else 1.0
+    for r in rows:
+        r["adv"] = (r["adv_raw"] - mean) / (std + 1e-8)
+    return {"adv_mean": mean, "adv_std": std, "games": len(games)}
+
+
 def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: RewardConfig, sched,
-             novelty: NoveltyCounter | None = None, opt=None):
+             novelty: NoveltyCounter | None = None, opt=None, ppo: dict | None = None):
+    """ppo: {"clip": .., "ent": ..} switches the policy loss from cross-entropy to the search's policy to
+    the clipped PPO objective on rows prepared by ppo_prepare."""
     import torch
     import torch.nn.functional as F
     from .net import N_HEADS, collate
@@ -340,14 +378,27 @@ def train_on(net, rows, steps: int, batch: int, lr: float, device: str, rcfg: Re
             pi[i, :len(r["pi"])] = r["pi"]
         pi = torch.from_numpy(pi).to(device)
         searched = torch.tensor([bool(r["searched"]) and len(r["pi"]) > 0 for r in mb], device=device)
-        if searched.any():
+        if ppo is not None:
+            act = torch.tensor([max(int(r["a"]), 0) for r in mb], dtype=torch.long, device=device)
+            lp = logp.gather(1, act[:, None]).squeeze(1)
+            lp_old = torch.tensor([r["logp"] for r in mb], dtype=torch.float32, device=device)
+            adv = torch.tensor([r["adv"] for r in mb], dtype=torch.float32, device=device)
+            ratio = torch.exp(lp - lp_old)
+            pl = -torch.min(ratio * adv, ratio.clamp(1.0 - ppo["clip"], 1.0 + ppo["clip"]) * adv).mean()
+            entropy = -(logp.exp() * logp).masked_fill(~m, 0.0).sum(-1).mean()
+            loss = loss + pl - ppo["ent"] * entropy
+            logs["ppo_policy"] += pl.item()
+            logs["entropy"] += entropy.item()
+            logs["approx_kl"] += (lp_old - lp).mean().item()
+            logs["clip_frac"] += ((ratio - 1.0).abs() > ppo["clip"]).float().mean().item()
+        elif searched.any():
             pl = -(pi[searched] * logp[searched]).sum(-1).mean()
             loss = loss + pl
             logs["policy"] += pl.item()
             ent = -(pi[searched] * torch.log(pi[searched].clamp(min=1e-12))).sum(-1).mean()
             logs["policy_kl"] += (pl - ent).item()          # KL(target || network) = cross-entropy - H(target)
         # closeness to the solver, in-round decisions only, while kappa > 0
-        in_round = torch.tensor([bool(r["in_round"]) for r in mb], device=device)
+        in_round = torch.tensor([bool(r["in_round"]) or rcfg.solver_kl.all_phases for r in mb], device=device)
         if sched.kappa > 0 and in_round.any():
             lps = torch.log_softmax(c["c_prior"].float().masked_fill(~m, -1e9), -1)
             kl = (logp.exp() * (logp - lps)).masked_fill(~m, 0.0).sum(-1)[in_round].mean()
@@ -492,7 +543,8 @@ def run(a):
         for stale in glob.glob(os.path.join(a.data, f"it{it:04d}_w*.pkl")):
             os.remove(stale)                    # games of an iteration that was cut off: played again
         t0 = time.time()
-        search = it > a.warmup
+        ppo = a.algo == "ppo"
+        search = it > a.warmup and not ppo
         sched = rcfg.schedule(step, gate.clock)
         seeds = list(range(GEN_SEED0 + (it - 1) * a.games, GEN_SEED0 + it * a.games))
         jobs = [(a.out, c, search, os.path.join(a.data, f"it{it:04d}_w{k}.pkl"), a.deck, a.stake,
@@ -513,13 +565,22 @@ def run(a):
         shards = sorted(glob.glob(os.path.join(a.data, "it*_w*.pkl")))
         rows = load_rows([s for s in shards if it - a.window < int(os.path.basename(s)[2:6]) <= it])
         sched = rcfg.schedule(step, gate.clock)
-        losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty, opt)
+        if ppo:                                 # on-policy: this iteration's games only
+            adv = ppo_prepare(new_rows, sched.lam, a.gae)
+            rows = new_rows
+            steps = max(1, int(np.ceil(a.ppo_epochs * len(rows) / a.batch)))
+            losses, opt = train_on(net, rows, steps, a.batch, a.lr, device, rcfg, sched, novelty, opt,
+                                   ppo={"clip": a.ppo_clip, "ent": a.ent})
+            losses.update(adv_mean=adv["adv_mean"], adv_std=adv["adv_std"])
+        else:
+            losses, opt = train_on(net, rows, a.steps, a.batch, a.lr, device, rcfg, sched, novelty, opt)
         save_net(net, a.out, meta(it), opt)
         comp = shaping_components(new_rows, sched, novelty, rcfg.potential.w_head)
         annealed = sched.lam == 0.0 and sched.beta == 0.0
         exact = not annealed or all(value_target(r, sched, novelty)[0] == r["win"] for r in new_rows)
         gate_rate = gate.rate()
-        row = {"iter": it, "step": step, "search": search, "lam": round(sched.lam, 5), "lambda_clock": gate.clock,
+        row = {"iter": it, "step": step, "search": search, "algo": a.algo, "lam": round(sched.lam, 5),
+               "lambda_clock": gate.clock,
                "lambda_gate": {"open": gate_open, "win_rate": None if gate_rate is None else round(gate_rate, 4),
                                "threshold": gate.win_rate},
                "beta": round(sched.beta, 5),
@@ -543,7 +604,7 @@ def run(a):
             if row[name]["status"] == "FLAT_OR_FALLING":
                 row.setdefault("flags", []).append(f"{name}: actual win rate does not rise with it")
         if a.eval_every and it % a.eval_every == 0:
-            ev = evaluate(a.out, a.eval_games, a.workers, True, a.deck, a.stake, cfg_over=cfg_over, rcfg=rcfg)
+            ev = evaluate(a.out, a.eval_games, a.workers, not ppo, a.deck, a.stake, cfg_over=cfg_over, rcfg=rcfg)
             row["eval"] = ev
             warn = alarm.update(comp["value_target"], ev["breakdown"]["win_rate"])
             if warn:
@@ -588,6 +649,12 @@ def main():
     r.add_argument("--eval-games", type=int, default=100)
     r.add_argument("--alarm-n", type=int, default=3, help="evaluations of rising shaped return before the alarm")
     r.add_argument("--cfg", default="", help="AgentConfig overrides as JSON, e.g. '{\"budget_shop\": 16}'")
+    r.add_argument("--algo", choices=["search", "ppo"], default="search",
+                   help="search: targets from the search (default); ppo: no search, policy-gradient steps")
+    r.add_argument("--ppo-epochs", type=float, default=3.0, help="ppo: passes over each iteration's decisions")
+    r.add_argument("--ppo-clip", type=float, default=0.2)
+    r.add_argument("--ent", type=float, default=0.003, help="ppo: entropy bonus")
+    r.add_argument("--gae", type=float, default=0.9, help="ppo: advantage estimation lambda")
     b = sub.add_parser("bench", help="games/hour with search on fixed seeds and a fixed untrained network")
     b.add_argument("--games", type=int, default=14)
     b.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))

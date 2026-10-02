@@ -58,6 +58,7 @@ class NoveltyConfig:
 class SolverKLConfig:
     kappa: float = 1.0                # 0.1 was too weak to keep early in-round targets near the solver
     end_step: int = 1_500_000
+    all_phases: bool = False          # also outside rounds: KL(pi || prior) against the shop prior
 
 
 @dataclass

@@ -44,6 +44,7 @@ rewards:
   solver_kl:
     kappa: 1.0                 # at 0.1 run 1's in-round play drifted far from the solver
     end_step: 1_500_000
+    all_phases: false          # true: the same penalty outside rounds, against the shop prior
   aux_loss_weights:
     p_clear_blind: 0.5
     ante_reached: 0.25

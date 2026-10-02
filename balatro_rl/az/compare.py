@@ -52,7 +52,8 @@ def run_grid(grid: dict, out: str, games: int, workers: int, seed0: int = EVAL_S
             continue
         model, cfg, search, rcfg = _variant(v)
         t = time.time()
-        res = evaluate(model, games, workers, search, stake=STAKE, seed0=seed0, cfg_over=cfg, rcfg=rcfg)
+        res = evaluate(model, games, workers, search, stake=STAKE, seed0=seed0, cfg_over=cfg, rcfg=rcfg,
+                       explore=bool(v.get("explore", False)))
         res.update(name=name, variant=v, workers=workers, wall_min=round((time.time() - t) / 60, 2))
         with open(path, "w") as f:
             json.dump(res, f, default=float)
