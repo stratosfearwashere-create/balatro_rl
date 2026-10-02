@@ -16,6 +16,8 @@
                    "rewards": {"potential": {"value_bound": "floor_sigmoid"}}},
  "graded+boss": {"cfg": {"shop_prior": "graded", "shop": {"rule_boss": true}}, "search": false,
                  "rewards": {"potential": {"value_bound": "floor_sigmoid"}}},
+ "graded+arcana+hold": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "rule_hold": true}},
+                        "search": false, "rewards": {"potential": {"value_bound": "floor_sigmoid"}}},
  "shop_gumbel": {"cfg": {"c_scale_build": 10, "heur_bonus": 1, "crn": true, "budget_round": 0, "budget_boss": 0},
                  "rewards": {"potential": {"value_bound": "floor_sigmoid"}}},
  "shop_onestep": {"cfg": {"shop_prior": "graded", "shop_eval": "onestep", "budget_round": 0, "budget_boss": 0},
