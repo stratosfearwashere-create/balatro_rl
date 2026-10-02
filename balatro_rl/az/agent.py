@@ -15,6 +15,17 @@ adds its own adjustment on top, and the search compares actions by the network's
 Green Joker, resetting Ride the Bus, spending Mystic Summit's discards or a tarot a build needs later can
 all be overruled once the value network has learned what they cost.
 
+In-round search only on hard decisions (round_search="hard"; the default "all" searches every in-round
+decision that isn't clear-cut). A decision is hard when any of these holds; otherwise the network's own
+choice is taken without search (agent.stats["budget_easy"] counts them):
+  - it is a boss blind (hard_boss);
+  - the network's top two options are within hard_margin logits of each other (off at 0, the default:
+    the solver prior ties its top options so often -- 88% of non-boss in-round decisions have the top two
+    within 1 logit, mostly equivalent plays -- that this alone marks nearly everything as hard);
+  - an accumulating joker or a consumable is involved (hard_side_effects): a consumable can be used, or the
+    options within hard_side_margin logits of the top don't all change the jokers' runtime state and the
+    other lasting things (money, hand levels, deck, created consumables) the same way.
+
 Override statistics (agent.stats, summarised by override_summary): per phase (round, boss, shop, pack,
 blind), how many decisions the network saw, how many were searched, and how often
   - the final choice is not one of the prior's top choices            ("final")
@@ -55,6 +66,11 @@ class AgentConfig:
     budget_spectral: int = 32
     budget_clear: int = 0           # in a round, when the policy is already this sure (clear_cut)
     clear_cut: float = 0.9
+    round_search: str = "all"       # "hard": in rounds, search only hard decisions (see the module doc)
+    hard_boss: bool = True
+    hard_margin: float = 0.0        # logits between the network's top two options (0: not a criterion)
+    hard_side_effects: bool = True
+    hard_side_margin: float = 3.0   # options this close to the top are compared for side effects
     m_root: int = 8
     c_visit: float = 50.0           # search vs prior: sigma = (c_visit + max N) * c_scale * Q
     c_scale: float = 0.1
@@ -238,10 +254,33 @@ class Agent:
         if ch.phase == "SELECTING_HAND":
             if _softmax(node.logits).max() >= cfg.clear_cut:
                 return cfg.budget_clear, "clear-cut"
+            if cfg.round_search == "hard" and not self.hard(node):
+                return 0, "easy"
             if g.blind_idx == 2:
                 return cfg.budget_boss, "boss"
             return cfg.budget_round, "round"
         return cfg.budget_shop, "build"
+
+    def hard(self, node: Node) -> bool:
+        """An in-round decision worth searching (see the module doc)."""
+        cfg = self.cfg
+        ch, g = node.choice, node.world.g
+        if cfg.hard_boss and g.blind_idx == 2:
+            return True
+        order = np.argsort(-node.logits)
+        top = float(node.logits[order[0]])
+        if len(order) > 1 and top - float(node.logits[order[1]]) < cfg.hard_margin:
+            return True
+        if cfg.hard_side_effects:
+            if any(c.kind == "use" for c in ch.cands):
+                return True
+            sig = ch.cands[order[0]].signature()
+            for i in order[1:]:
+                if top - float(node.logits[i]) >= cfg.hard_side_margin:
+                    break
+                if ch.cands[i].signature() != sig:
+                    return True
+        return False
 
     def decide(self, w: World, explore: bool = False) -> Decision:
         """Choose an action for `w` (not modified). explore: Gumbel noise at the root (self-play)."""

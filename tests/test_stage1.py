@@ -186,3 +186,38 @@ def test_compare_table_and_decisions_changed(tmp_path, capsys):
     assert n > 50 and diff == 0 and 0 < n_net <= n
     other = {"cfg": {"heur_bonus": -3.0}, "search": False}
     assert compare._changed_worker((same, other, [3]))[1] > 0
+
+
+def test_in_round_search_only_on_hard_decisions():
+    from balatro_rl.az.train import play_game as play
+    # default: unchanged, nothing is "easy"
+    agent = Agent(AZNet().eval(), AgentConfig(**SMALL), seed=0)
+    play(agent, 5, explore=False, record=False)
+    assert agent.stats["budget_easy"] == 0 and agent.stats["budget_round"] > 0
+    # hard only: some in-round decisions are taken without search, bosses are still searched
+    cfg = AgentConfig(round_search="hard", **SMALL)
+    agent = Agent(AZNet().eval(), cfg, seed=0)
+    play(agent, 5, explore=False, record=False)
+    st = agent.stats
+    assert st["budget_easy"] > 0 and st["budget_boss"] > 0
+    agent.cfg.hard_margin = 1.0
+    # the pieces of the definition
+    w = in_round(6)
+    node = agent.evaluate(w, True, random.Random(0))
+    node.logits = np.full(len(node.logits), -9.0)
+    node.logits[0], node.logits[1] = 0.0, -0.5
+    assert agent.hard(node)                                          # top two within the margin
+    node.logits[1] = -5.0
+    for c in node.choice.cands:
+        c.jdiff, c.effects = (), ()
+    node.choice.cands = [c for c in node.choice.cands if c.kind != "use"]
+    node.logits = node.logits[:len(node.choice.cands)]
+    assert not agent.hard(node) and agent.budget(node)[0] == 0      # ("clear-cut" or "easy")
+    node.logits[2] = -2.0                                            # a close option that treats a joker differently
+    node.choice.cands[2].jdiff = ((0, "val", 1, 2),)
+    assert agent.hard(node)
+    node.choice.cands[2].jdiff = ()
+    w.g.blind_idx = 2                                                # a boss blind is always hard
+    assert agent.hard(node)
+    agent.cfg.hard_boss = False
+    assert not agent.hard(node)
