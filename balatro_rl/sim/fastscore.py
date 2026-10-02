@@ -68,7 +68,7 @@ if _fs is not None:
         "scholar": _row(ck="CK_SCHOLAR"), "walkie_talkie": _row(ck="CK_WALKIE"), "smiley": _row(ck="CK_SMILEY"),
         "photograph": _row(ck="CK_PHOTO"), "fibonacci": _row(ck="CK_FIB"), "bloodstone": _row(ck="CK_BLOOD"),
         "idol": _row(ck="CK_IDOL"), "ancient": _row(ck="CK_ANCIENT"), "triboulet": _row(ck="CK_TRIB"),
-        "wee": _row(ck="CK_WEE", mk="MK_VAL_CHIPS"),
+        "wee": _row(ck="CK_WEE", mk="MK_VAL_CHIPS"), "hiker": _row(ck="CK_HIKER"),
         # retriggers / held
         "hanging_chad": _row(rk="RK_CHAD"), "hack": _row(rk="RK_HACK"), "dusk": _row(rk="RK_DUSK"),
         "sock_and_buskin": _row(rk="RK_SOCK"), "selzer": _row(rk="RK_SELZER"),
@@ -78,7 +78,7 @@ if _fs is not None:
         "runner": _row(bk="BK_RUNNER", mk="MK_VAL_CHIPS"), "square": _row(bk="BK_SQUARE", mk="MK_VAL_CHIPS"),
         "trousers": _row(bk="BK_TROUSERS", mk="MK_VAL_MULT"), "loyalty_card": _row(bk="BK_LOYALTY", mk="MK_LOYALTY"),
         "obelisk": _row(bk="BK_OBELISK", mk="MK_VAL_X"), "vampire": _row(bk="BK_VAMPIRE", mk="MK_VAL_X"),
-        "midas_mask": _row(bk="BK_MIDAS"),
+        "midas_mask": _row(bk="BK_MIDAS"), "dna": _row(bk="BK_DNA"),
         # jokers whose "val" is grown elsewhere in the game
         "popcorn": _row(mk="MK_VAL_MULT"), "red_card": _row(mk="MK_VAL_MULT"), "flash": _row(mk="MK_VAL_MULT"),
         "ceremonial": _row(mk="MK_VAL_MULT"),
@@ -94,19 +94,19 @@ if _fs is not None:
         "bootstraps": _row(mk="MK_BOOTSTRAPS"), "acrobat": _row(mk="MK_ACROBAT"),
         "blackboard": _row(mk="MK_BLACKBOARD"), "flower_pot": _row(mk="MK_FLOWER"),
         "seeing_double": _row(mk="MK_SEEING"), "stencil": _row(mk="MK_STENCIL"), "steel_joker": _row(mk="MK_STEEL"),
-        "erosion": _row(mk="MK_EROSION"), "stone": _row(mk="MK_STONE"), "lucky_cat": _row(mk="MK_LUCKY_CAT"),
+        "erosion": _row(mk="MK_EROSION"), "stone": _row(mk="MK_STONE"),
+        "lucky_cat": _row(ck="CK_LUCKY_CAT", mk="MK_LUCKY_CAT"),
         "throwback": _row(mk="MK_THROWBACK"),       # Baseball Card: Jkr.unc and the count below
         "drivers_license": _row(mk="MK_DRIVERS"),
         # copiers
-        "blueprint": _row(ck="CK_COPY", rk="RK_COPY", hk="HK_COPY", mk="MK_COPY"),
-        "brainstorm": _row(ck="CK_COPY", rk="RK_COPY", hk="HK_COPY", mk="MK_COPY"),
+        "blueprint": _row(bk="BK_COPY", ck="CK_COPY", rk="RK_COPY", hk="HK_COPY", mk="MK_COPY"),
+        "brainstorm": _row(bk="BK_COPY", ck="CK_COPY", rk="RK_COPY", hk="HK_COPY", mk="MK_COPY"),
     }
     NO_ROW = _row()
     # hooks that only move money or queue events (never change the score)
-    NO_SCORE_EFFECT = {("todo_list", "before"), ("space", "before"), ("dna", "before"),
+    NO_SCORE_EFFECT = {("todo_list", "before"), ("space", "before"),
                        ("sixth_sense", "before"), ("superposition", "before"), ("seance", "before"),
-                       ("vagabond", "before"), ("business", "card"), ("hiker", "card"), ("rough_gem", "card"),
-                       ("blueprint", "before"), ("brainstorm", "before"),   # copies of the money / event ones
+                       ("vagabond", "before"), ("business", "card"), ("rough_gem", "card"),
                        ("8_ball", "card"), ("ticket", "card"), ("reserved_parking", "held")}
 
     def _check_rows():
@@ -154,7 +154,8 @@ def _context(g, plan) -> tuple:
                              v is not None, 0.0 if v is None else v, j.sell_value(), j.d.rarity == 2))
     lists = ([index[id(j)] for j, _ in plan.before], [index[id(j)] for j, _ in plan.card],
              [index[id(j)] for j, _ in plan.retrig], [index[id(j)] for j, _ in plan.held],
-             [index[id(j)] for j, _, _ in plan.main])
+             [index[id(j)] for j, _, _ in plan.main],
+             [index[id(j)] for j in plan.jokers if j.key == "hologram"])
     flags = (plan.four_fingers, plan.shortcut, plan.smeared, plan.pareidolia, plan.splash, plan.mime,
              g.has("four_fingers"), g.has("shortcut"), g.has("smeared"))
     boss = (BOSS.get(plan.boss, 0), BOSS.get(g.boss_active(), 0), hand_types_mask(g.round_hand_types), g.mouth_hand,

@@ -423,7 +423,7 @@ class Game:
             d = False
             if boss in SUIT_BOSS and c.has_suit(SUIT_BOSS[boss], smeared):   # Wild cards too
                 d = True
-            if boss == "plant" and c.is_face(par):
+            if boss == "plant" and c.is_face(par, from_boss=True):
                 d = True
             if boss == "pillar" and c.uid in self.ante_played_uids:
                 d = True
@@ -497,7 +497,7 @@ class Game:
                 c.hidden = True
             elif boss == "fish" and after_play:
                 c.hidden = True
-            elif boss == "mark" and c.is_face(par):
+            elif boss == "mark" and c.is_face(par, from_boss=True):
                 c.hidden = True
             self.hand.append(c)
         self.hand = sort_hand(self.hand)
@@ -615,8 +615,8 @@ class Game:
         for ev in events:
             if ev[0] == "create":
                 self.create_consumable(ev[1])
-            elif ev[0] == "dna":
-                self.add_card(ev[1].copy(), to_hand=True)
+            elif ev[0] == "dna":                       # the copy was held while the hand scored, and
+                self.add_card(ev[1], to_hand=True, grow=False)   # Hologram grew then (scoring._dna_before)
             elif ev[0] == "destroy":
                 destroyed.append(ev[1])
         if destroyed:
@@ -1091,10 +1091,11 @@ class Game:
             if j.key == "caino" and faces:
                 j.state["val"] = j.state.get("val", 1.0) + 1.0 * faces
 
-    def add_card(self, c: Card, to_hand: bool = False):
+    def add_card(self, c: Card, to_hand: bool = False, grow: bool = True):
+        """grow=False: Hologram has already counted this card."""
         self.full_deck.append(c)
         for j in self.jokers:
-            if j.key == "hologram" and not j.debuffed:
+            if grow and j.key == "hologram" and not j.debuffed:
                 j.state["val"] = j.state.get("val", 1.0) + 0.25
         if to_hand and self.state == "SELECTING_HAND" and len(self.hand) < MAX_HAND:
             self.hand.append(c)

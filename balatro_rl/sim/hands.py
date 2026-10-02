@@ -70,27 +70,29 @@ def evaluate(cards: list[Card], four_fingers=False, shortcut=False, smeared=Fals
     # --- flush (same test as Card.has_suit, inlined: this runs for every candidate play)
     flush_idx: list[int] = []
     if len(normal) >= need:
-        # count first, then build the index list only for the winning suit (first suit with the
-        # most cards, as when scanning suits in order)
+        # count first, then build the index list only for the winning suit
         n_suit = [0, 0, 0, 0]
         wild = 0
         for i in normal:
             c = cards[i]
-            if c.enh == "WILD":
+            if c.enh == "WILD" and not c.debuffed:        # a debuffed Wild card only has its own suit
                 wild += 1
             else:
                 n_suit[c.suit] += 1
         if smeared:
             n_suit = [n_suit[s % 2] + n_suit[s % 2 + 2] for s in range(4)]
-        best_s, best_n = -1, need - 1
-        for s in range(4):
-            if n_suit[s] + wild > best_n:
-                best_s, best_n = s, n_suit[s] + wild
+        best_s = -1
+        for s in range(4):                                # the first suit (Spades, Hearts, Clubs, Diamonds)
+            if n_suit[s] + wild >= need:                  # that makes a flush, as the game checks them
+                best_s = s
+                break
         if best_s >= 0:
             if smeared:
-                flush_idx = [i for i in normal if cards[i].enh == "WILD" or cards[i].suit % 2 == best_s % 2]
+                flush_idx = [i for i in normal if (cards[i].enh == "WILD" and not cards[i].debuffed)
+                             or cards[i].suit % 2 == best_s % 2]
             else:
-                flush_idx = [i for i in normal if cards[i].enh == "WILD" or cards[i].suit == best_s]
+                flush_idx = [i for i in normal if (cards[i].enh == "WILD" and not cards[i].debuffed)
+                             or cards[i].suit == best_s]
     is_flush = bool(flush_idx)
 
     # --- straight (needs `need` distinct ranks, so most hands with a pair skip the search)

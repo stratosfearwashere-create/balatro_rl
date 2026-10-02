@@ -83,6 +83,8 @@ cdef enum:
     BK_OBELISK = 7
     BK_VAMPIRE = 8
     BK_MIDAS = 9
+    BK_DNA = 10
+    BK_COPY = 11
 cdef enum:
     CK_NONE = 0
     CK_SUIT = 1        # has suit p_suit -> add p_amt (p_kind)
@@ -100,6 +102,8 @@ cdef enum:
     CK_WEE = 13
     CK_TRIB = 14
     CK_COPY = 15
+    CK_HIKER = 16
+    CK_LUCKY_CAT = 17
 cdef enum:
     RK_NONE = 0
     RK_CHAD = 1
@@ -157,11 +161,11 @@ CODES = dict(
     K_MULT=K_MULT, K_CHIPS=K_CHIPS, K_X=K_X,
     BK_NONE=BK_NONE, BK_BUS=BK_BUS, BK_GREEN=BK_GREEN, BK_RUNNER=BK_RUNNER, BK_SQUARE=BK_SQUARE,
     BK_TROUSERS=BK_TROUSERS, BK_LOYALTY=BK_LOYALTY, BK_OBELISK=BK_OBELISK, BK_VAMPIRE=BK_VAMPIRE,
-    BK_MIDAS=BK_MIDAS,
+    BK_MIDAS=BK_MIDAS, BK_DNA=BK_DNA, BK_COPY=BK_COPY,
     CK_NONE=CK_NONE, CK_SUIT=CK_SUIT, CK_SCARY=CK_SCARY, CK_EVEN=CK_EVEN, CK_ODD=CK_ODD,
     CK_SCHOLAR=CK_SCHOLAR, CK_WALKIE=CK_WALKIE, CK_SMILEY=CK_SMILEY, CK_PHOTO=CK_PHOTO, CK_FIB=CK_FIB,
     CK_BLOOD=CK_BLOOD, CK_IDOL=CK_IDOL, CK_ANCIENT=CK_ANCIENT, CK_WEE=CK_WEE, CK_TRIB=CK_TRIB,
-    CK_COPY=CK_COPY,
+    CK_COPY=CK_COPY, CK_HIKER=CK_HIKER, CK_LUCKY_CAT=CK_LUCKY_CAT,
     RK_NONE=RK_NONE, RK_CHAD=RK_CHAD, RK_HACK=RK_HACK, RK_DUSK=RK_DUSK, RK_SOCK=RK_SOCK,
     RK_SELZER=RK_SELZER, RK_COPY=RK_COPY,
     HK_NONE=HK_NONE, HK_SHOOT=HK_SHOOT, HK_BARON=HK_BARON, HK_COPY=HK_COPY, HK_RAISED_FIST=HK_RAISED_FIST,
@@ -182,6 +186,8 @@ HAND_BASE = [(5, 1, 10, 1), (10, 2, 15, 1), (20, 2, 20, 1), (30, 3, 20, 2), (30,
 cdef int HB[12][4]
 cdef int FLOWER_ORDER[4]
 FLOWER_ORDER[0], FLOWER_ORDER[1], FLOWER_ORDER[2], FLOWER_ORDER[3] = 1, 3, 0, 2   # Hearts, Diamonds, Spades, Clubs
+cdef int SEEING_ORDER[4]
+SEEING_ORDER[0], SEEING_ORDER[1], SEEING_ORDER[2], SEEING_ORDER[3] = 2, 3, 0, 1   # Clubs, Diamonds, Spades, Hearts
 for _h in range(12):
     for _i in range(4):
         HB[_h][_i] = HAND_BASE[_h][_i]
@@ -209,15 +215,17 @@ cdef struct Jkr:
     int unc             # Uncommon (Baseball Card multiplies its effect)
 
 cdef struct Ctx:
-    double chips, mult, lucky
+    double chips, mult
+    double lucky_now    # Lucky hits of the card trigger being scored
     int trig, hand, contains, k, nsc, nh
+    int ncopy           # cards DNA added in this pass (kept after the real cards in Scorer.cards)
     int pos[5]          # view index of each played card
     int scoring[5]      # indices into the played list
-    int held[MAXC]      # view indices of held cards
+    int held[MAXC + MAXJ]   # view indices of held cards
     int ov[5]           # enhancement override per played card (-1 = none)
+    double hik[5]       # Hiker's chips gained in this hand, per played card
     double val[MAXJ]
     int hv[MAXJ]
-    int photo[MAXJ]
 
 
 cdef inline bint is_stone(int e) noexcept nogil:
@@ -233,7 +241,7 @@ cdef inline int chip_value(const Crd* c) noexcept nogil:
     return c.rank if c.rank < 10 else 10
 
 cdef inline bint is_face(const Crd* c, bint par) noexcept nogil:
-    if is_stone(c.enh):
+    if is_stone(c.enh) or c.deb:          # a debuffed card is not a face card
         return False
     return par or (c.rank >= 11 and c.rank <= 13)
 
@@ -241,6 +249,16 @@ cdef inline bint has_suit(const Crd* c, int s, bint sm) noexcept nogil:
     if is_stone(c.enh):
         return False
     if c.enh == E_WILD:
+        return True
+    if sm:
+        return (c.suit % 2) == (s % 2)
+    return c.suit == s
+
+cdef inline bint flush_suit(const Crd* c, int s, bint sm) noexcept nogil:
+    # flushes and Blackboard: a debuffed Wild card is not wild
+    if is_stone(c.enh):
+        return False
+    if c.enh == E_WILD and not c.deb:
         return True
     if sm:
         return (c.suit % 2) == (s % 2)
@@ -295,7 +313,7 @@ cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
     cdef int cnt[16]
     cdef int ns[4]
     cdef int ranks[5]
-    cdef int wild = 0, best_s, best_n, distinct = 0
+    cdef int wild = 0, best_s, distinct = 0
     cdef int g0r = -1, g0c = 0, g1r = -1, g1c = 0, top, second
     cdef int fmask = 0, smask = 0
     cdef bint full, is_flush, is_straight
@@ -321,12 +339,12 @@ cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
     top = g0c
     second = g1c
 
-    # flush: first suit with the most cards (wilds count for every suit)
+    # flush: the first suit that makes one (live Wild cards count for every suit)
     if nn >= need:
         ns[0] = ns[1] = ns[2] = ns[3] = 0
         for j in range(nn):
             i = normal[j]
-            if cs[i].enh == E_WILD:
+            if cs[i].enh == E_WILD and not cs[i].deb:
                 wild += 1
             else:
                 ns[cs[i].suit] += 1
@@ -334,15 +352,15 @@ cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
             ns[0] = ns[2] = ns[0] + ns[2]
             ns[1] = ns[3] = ns[1] + ns[3]
         best_s = -1
-        best_n = need - 1
         for s in range(4):
-            if ns[s] + wild > best_n:
+            if ns[s] + wild >= need:
                 best_s = s
-                best_n = ns[s] + wild
+                break
         if best_s >= 0:
             for j in range(nn):
                 i = normal[j]
-                if cs[i].enh == E_WILD or (cs[i].suit % 2 == best_s % 2 if sm else cs[i].suit == best_s):
+                if (cs[i].enh == E_WILD and not cs[i].deb) or (cs[i].suit % 2 == best_s % 2 if sm
+                                                              else cs[i].suit == best_s):
                     fmask |= 1 << i
     is_flush = fmask != 0
 
@@ -565,7 +583,7 @@ cdef inline void _check_finite(double f) except *:
 @cython.final
 cdef class Scorer:
     """Game state for one decision, flattened; predict_many scores candidate plays."""
-    cdef Crd cards[MAXC]
+    cdef Crd cards[MAXC + MAXJ]          # the hand, then room for the copies DNA makes while scoring
     cdef int ncards
     cdef Jkr jk[MAXJ]
     cdef int nj
@@ -574,7 +592,9 @@ cdef class Scorer:
     cdef int l_retrig[MAXJ]
     cdef int l_held[MAXJ]
     cdef int l_main[MAXJ]
-    cdef int n_before, n_card, n_retrig, n_held, n_main
+    cdef int l_holo[MAXJ]                # active Holograms (they grow when DNA adds a card)
+    cdef int n_before, n_card, n_retrig, n_held, n_main, n_holo
+    cdef bint first_hand                 # no hand played yet this round
     cdef bint ff, sc, sm, par, splash
     cdef int mime
     cdef bint vff, vsc, vsm
@@ -606,7 +626,10 @@ cdef class Scorer:
              self.jk[i].p_hand, self.jk[i].p_kind, self.jk[i].p_suit, self.jk[i].p_amt,
              self.jk[i].ed, self.jk[i].target, self.jk[i].st_rank, self.jk[i].st_suit,
              self.jk[i].has_val, self.jk[i].val, self.jk[i].sell, self.jk[i].unc) = j
-        before, card, retrig, held, main = lists
+        before, card, retrig, held, main, holo = lists
+        self.n_holo = len(holo)
+        for i, x in enumerate(holo):
+            self.l_holo[i] = x
         self.n_before = len(before)
         for i, x in enumerate(before):
             self.l_before[i] = x
@@ -630,6 +653,7 @@ cdef class Scorer:
             self.hplayed[i] = hplayed[i]
             self.hplayed_round[i] = hplayed_round[i]
             self.obs[i] = obs[i]
+        self.first_hand = sum(hplayed_round) == 0
         self.p5, self.p15, self.p2 = probs
         (self.plasma, self.discards_left, self.hands_left, self.money, self.njokers, self.deck_len,
          self.tarots, self.skipped, self.slots, self.stencils, self.steel, self.stone, self.enhanced,
@@ -783,6 +807,22 @@ cdef class Scorer:
             x.mult *= amt
 
     # ------------------------------------------------------------------ hooks
+    cdef void _dna(self, Ctx* x) noexcept:
+        # first hand of the round, one card played: its copy is held while this hand scores, and every
+        # active Hologram has already grown
+        cdef int q, p, h
+        if not self.first_hand or x.k != 1:
+            return
+        q = self.ncards + x.ncopy
+        self.cards[q] = self.cards[x.pos[0]]
+        self.cards[q].enh = self._enh(x, 0)
+        x.ncopy += 1
+        x.held[x.nh] = q
+        x.nh += 1
+        for p in range(self.n_holo):
+            h = self.l_holo[p]
+            self._set(x, h, self._get(x, h, 1.0) + 0.25)
+
     cdef void _before(self, Ctx* x, int j) noexcept:
         cdef int kind = self.jk[j].bk, p, i, n
         cdef double v
@@ -835,9 +875,16 @@ cdef class Scorer:
                 i = x.scoring[p]
                 if is_face(&self.cards[x.pos[i]], self.par):
                     x.ov[i] = E_GOLD
+        elif kind == BK_DNA:
+            self._dna(x)
+        elif kind == BK_COPY:                 # of the "before" effects, only DNA's changes the score
+            i = self.jk[j].target
+            if i >= 0 and self.jk[i].bk == BK_DNA:
+                self._dna(x)
 
     cdef void _card(self, Ctx* x, int j, int i, bint allow_copy) noexcept:
-        """Per-card effect of joker j (its own state) on played card i."""
+        """Per-card effect of joker j (its own state) on played card i. allow_copy is False when this is
+        a Blueprint / Brainstorm copy of j: the copy gives the effect but never grows j."""
         cdef int kind = self.jk[j].ck, p, first, t
         cdef const Crd* c = &self.cards[x.pos[i]]
         cdef int r = c.rank
@@ -873,8 +920,7 @@ cdef class Scorer:
                 if is_face(&self.cards[x.pos[x.scoring[p]]], self.par):
                     first = x.scoring[p]
                     break
-            if first == i and x.photo[j] != x.trig:
-                x.photo[j] = x.trig
+            if first == i:
                 x.mult *= 2
         elif kind == CK_FIB:
             if not st and (r == 14 or r == 2 or r == 3 or r == 5 or r == 8):
@@ -889,8 +935,13 @@ cdef class Scorer:
             if has_suit(c, self.jk[j].st_suit, self.sm):
                 x.mult *= 1.5
         elif kind == CK_WEE:
-            if not st and r == 2:
+            if allow_copy and not st and r == 2:
                 self._set(x, j, self._get(x, j, 0) + 8)
+        elif kind == CK_HIKER:
+            x.hik[i] += 5
+        elif kind == CK_LUCKY_CAT:
+            if allow_copy and x.lucky_now != 0:
+                self._set(x, j, self._get(x, j, 1.0) + 0.25 * x.lucky_now)
         elif kind == CK_TRIB:
             if not st and (r == 12 or r == 13):
                 x.mult *= 2
@@ -1004,7 +1055,7 @@ cdef class Scorer:
             ok = True
             for p in range(x.nh):
                 c = &self.cards[x.held[p]]
-                if is_stone(c.enh) or not (has_suit(c, 0, self.sm) or has_suit(c, 2, self.sm)):
+                if is_stone(c.enh) or not (flush_suit(c, 0, self.sm) or flush_suit(c, 2, self.sm)):
                     ok = False
                     break
             if ok:
@@ -1026,17 +1077,27 @@ cdef class Scorer:
             if need == 15:
                 x.mult *= 3
         elif kind == MK_SEEING:
-            ncards = nclub = nother = 0
+            # debuffed cards count for nothing; other non-Wild cards for every suit they match; then each
+            # Wild card fills the first missing suit in the order Clubs, Diamonds, Spades, Hearts
+            need = 0                      # bitmask of suits present
+            wild = 0
             for p in range(x.nsc):
                 c = &self.cards[x.pos[x.scoring[p]]]
-                if is_stone(c.enh):
+                if c.deb or is_stone(c.enh):
                     continue
-                ncards += 1
-                if has_suit(c, 2, self.sm):
-                    nclub += 1
-                if has_suit(c, 0, self.sm) or has_suit(c, 1, self.sm) or has_suit(c, 3, self.sm):
-                    nother += 1
-            if nclub and nother and ncards >= 2:
+                if c.enh == E_WILD:
+                    wild += 1
+                    continue
+                for h in range(4):
+                    if has_suit(c, h, self.sm):
+                        need |= 1 << h
+            for p in range(wild):
+                for i in range(4):
+                    h = SEEING_ORDER[i]
+                    if not (need & (1 << h)):
+                        need |= 1 << h
+                        break
+            if (need & 4) and (need & 11):
                 x.mult *= 2
         elif kind == MK_STENCIL:
             m = self.slots - self.njokers + self.stencils
@@ -1052,8 +1113,7 @@ cdef class Scorer:
         elif kind == MK_STONE:
             x.chips += 25 * self.stone
         elif kind == MK_LUCKY_CAT:
-            self._set(x, j, self._get(x, j, 1.0) + 0.25 * x.lucky)
-            x.mult *= x.val[j]
+            x.mult *= self._get(x, j, 1.0)
         elif kind == MK_BASEBALL:
             x.mult *= pow(1.5, <double>self.rare2)
         elif kind == MK_THROWBACK:
@@ -1101,7 +1161,7 @@ cdef class Scorer:
         # discarded first; -1 for none, -2 for all of them.
         cdef Ctx x
         cdef const Crd* pl[5]
-        cdef int i, j, p, r, e, reps, smask, level, ch, mu, h, vh, vs, vc, hi = 0
+        cdef int i, j, p, r, e, reps, smask, level, ch, mu, h, vh, vs, vc, bc, hi = 0
         cdef const Crd* c
         cdef bint in_play, steel_held
         cdef double avg, hc, hm
@@ -1110,7 +1170,9 @@ cdef class Scorer:
             x.pos[i] = pos[i]
             pl[i] = &self.cards[pos[i]]
             x.ov[i] = -1
+            x.hik[i] = 0.0
         x.nh = 0
+        x.ncopy = 0
         for h in range(self.ncards):
             in_play = False
             for i in range(k):
@@ -1127,12 +1189,11 @@ cdef class Scorer:
             if self.splash or (smask & (1 << i)):
                 x.scoring[x.nsc] = i
                 x.nsc += 1
-        x.chips = x.mult = x.lucky = 0.0
+        x.chips = x.mult = x.lucky_now = 0.0
         x.trig = 0
         for j in range(self.nj):          # joker state is copied per prediction
             x.val[j] = self.jk[j].val
             x.hv[j] = self.jk[j].has_val
-            x.photo[j] = 0
 
         for p in range(self.n_before):
             self._before(&x, self.l_before[p])
@@ -1166,15 +1227,22 @@ cdef class Scorer:
                 reps += self._retrig(&x, self.l_retrig[j], i, p, True)
             for r in range(reps):
                 x.trig += 1
-                x.chips += (50 if e == E_STONE else chip_value(c)) + c.extra
+                x.lucky_now = 0.0
+                if e == E_STONE:
+                    bc = 50
+                elif c.enh == E_STONE:        # a Stone card Vampire stripped: its rank counts again
+                    bc = 11 if c.rank == 14 else (c.rank if c.rank < 10 else 10)
+                else:
+                    bc = chip_value(c)
+                x.chips += bc + c.extra + x.hik[i]
                 if e == E_BONUS:
                     x.chips += 30
                 elif e == E_MULT:
                     x.mult += 4
                 elif e == E_LUCKY:
                     x.mult += 20 * self.p5
-                    x.lucky += self.p5
-                    x.lucky += self.p15
+                    x.lucky_now += self.p5
+                    x.lucky_now += self.p15
                 if e == E_GLASS:              # the card: chips, mult, Glass, then its edition ...
                     x.mult *= 2
                 if c.ed == ED_FOIL:
@@ -1229,8 +1297,8 @@ cdef class Scorer:
         for r in range(self.obs[x.hand]):
             x.mult *= 1.5
 
-        if self.plasma:
-            avg = (x.chips + x.mult) / 2
+        if self.plasma:                   # both become floor((chips + mult) / 2)
+            avg = floor((x.chips + x.mult) / 2)
             x.chips = x.mult = avg
 
         # Game.violates_boss

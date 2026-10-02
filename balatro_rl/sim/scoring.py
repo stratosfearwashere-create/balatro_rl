@@ -4,7 +4,7 @@
   -> each scored card, repeated per retrigger: chips (base, then Bonus), Mult / Lucky +20 mult, Gold seal /
      Lucky money, Glass x2, edition (Foil +50 / Holo +10 / Polychrome x1.5), then the jokers' per-card effects
   -> each held card (Steel, Raised Fist, Baron, Shoot the Moon ...), repeated by Red seals and Mime only when
-     it had an effect
+     it had an effect; a copy DNA made in the "before" step is one of them
   -> each joker: edition Foil / Holo, its effect, Baseball Card (x1.5 per Baseball if it is Uncommon), then
      edition Polychrome
   -> held planets (Observatory).
@@ -74,7 +74,9 @@ class ScoreCtx:
         self.jstate: dict[int, dict] = {}
         self.trigger_id = 0
         self.enh_override: dict[int, str] = {}     # Vampire / Midas Mask change enhancements "before"
-        self.lucky_hits = 0.0
+        self.lucky_now = 0.0                       # Lucky hits of the card trigger being scored (Lucky Cat)
+        self.copy = False                          # inside a Blueprint / Brainstorm copy of a hook
+        self.hiked: dict[int, int] = {}            # Hiker's chips gained in this hand, in a prediction
         self.events: list[tuple] = []              # creations etc., applied only on a real play
         self.first_hand = sum(g.hand_played_round) == 0
 
@@ -208,9 +210,16 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
             reps += f(ctx, j, ctx.st(j), c, pos) or 0
         for _ in range(reps):
             ctx.trigger_id += 1
+            ctx.lucky_now = 0.0
             # the card itself: chips (base, then Bonus), mult (Mult / Lucky), money (Gold seal / Lucky),
             # Glass, then its edition
-            ctx.add_chips((50 if e == "STONE" else c.chip_value()) + c.extra_chips)
+            if e == "STONE":
+                base = 50
+            elif c.enh == "STONE":                  # a Stone card Vampire stripped: its rank counts again
+                base = 11 if c.rank == 14 else min(c.rank, 10)
+            else:
+                base = c.chip_value()
+            ctx.add_chips(base + c.extra_chips + (ctx.hiked.get(c.uid, 0) if ctx.hiked else 0))
             if e == "BONUS":
                 ctx.add_chips(30)
             elif e == "MULT":
@@ -219,20 +228,20 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
                 p = g.prob(1, 5)
                 if rng is None:
                     ctx.add_mult(20 * p)
-                    ctx.lucky_hits += p
+                    ctx.lucky_now += p
                 elif rng.random() < p:
                     ctx.add_mult(20)
-                    ctx.lucky_hits += 1
+                    ctx.lucky_now += 1
             if c.seal == "GOLD":
                 ctx.money_now(3)
             if e == "LUCKY":
                 p2 = g.prob(1, 15)
                 if rng is None:
                     ctx.money += 20 * p2
-                    ctx.lucky_hits += p2
+                    ctx.lucky_now += p2
                 elif rng.random() < p2:
                     ctx.money += 20
-                    ctx.lucky_hits += 1
+                    ctx.lucky_now += 1
             if e == "GLASS":
                 ctx.x_mult(2)
             if c.edition == "FOIL":
@@ -248,6 +257,7 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
             glass_broken.append(c)
 
     # --- held-in-hand effects; Red seals and Mime repeat a card only if it had an effect
+    held = ctx.held                                  # with DNA's copy, if one was just made
     if plan.held or any(c.enh == "STEEL" for c in held):
         for c in held:
             if c.debuffed:
@@ -286,8 +296,8 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
             if c.kind == "planet" and PLANETS.get(c.name) == ctx.hand:
                 ctx.x_mult(1.5)
 
-    if g.deck_type == "PLASMA":
-        avg = (ctx.chips + ctx.mult) / 2
+    if g.deck_type == "PLASMA":                      # both become floor((chips + mult) / 2)
+        avg = float(math.floor((ctx.chips + ctx.mult) / 2))
         ctx.chips = ctx.mult = avg
     score = math.floor(ctx.chips * ctx.mult)
 
