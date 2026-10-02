@@ -2,7 +2,8 @@
 
 The golden file (tests/data/golden.json) was recorded from the agent before the scorer / cache / pruning
 work. On fixed seeds with fixed random generators, every decision, value, search policy, candidate score,
-side effect, solver estimate and headroom must come out identical (floats compared exactly, via repr).
+side effect, solver estimate and headroom must come out identical (floats compared exactly, via repr; only the network's own float32 outputs, its value and
+the search policy, get a 1e-6 tolerance: they vary between torch builds).
 
 Regenerate only on purpose, when behaviour is meant to change:
     BALATRO_REGEN_GOLDEN=1 python -m pytest tests/test_regression.py
@@ -117,5 +118,26 @@ def test_golden(current):
         for key in b:
             assert a[key] == b[key], f"state {i}: {key} changed"
     for k, (a, b) in enumerate(zip(current["trace"], gold["trace"])):
-        assert a == b, f"decision {k} changed: {a[:4]} vs {b[:4]}"
+        assert _same_decision(a, b), f"decision {k} changed: {a[:4]} vs {b[:4]}"
     assert len(current["trace"]) == len(gold["trace"])
+
+
+# The network's value and search policy are float32 torch outputs: they differ in the 7th digit between
+# torch builds / CPUs (BLAS kernels). They are compared with this tolerance; everything else (the decision,
+# its reason, the simulation count, every solver / scorer / headroom value) must be identical.
+NET_TOL = 1e-6
+
+
+def _close(a: str, b: str) -> bool:
+    return a == b or abs(float(a) - float(b)) <= NET_TOL
+
+
+def _same_decision(a: list, b: list) -> bool:
+    if len(a) != len(b):
+        return False
+    if len(a) == 4:                                   # [seed, "END", state, furthest blind]
+        return a == b
+    seed, act, reason, value, policy, sims = a
+    seed2, act2, reason2, value2, policy2, sims2 = b
+    return ((seed, act, reason, sims) == (seed2, act2, reason2, sims2) and _close(value, value2)
+            and len(policy) == len(policy2) and all(_close(x, y) for x, y in zip(policy, policy2)))
