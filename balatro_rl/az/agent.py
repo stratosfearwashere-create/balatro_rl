@@ -105,6 +105,8 @@ class AgentConfig:
     onestep_weight: float = 300.0
     onestep_samples: int = 2
     onestep_top: int = 24
+    onestep_margin: float = 0.0     # > 0: one-step V only decides when the prior's top two options are within
+                                    #   this many logits (a clear preference of the pricer stands)
     close_calls: bool = False
     close_margin: float = 1.0
     close_rollouts: int = 4
@@ -476,7 +478,11 @@ class Agent:
         k = len(cands)
         score = np.array(root.logits, dtype=float)
         sims, reason = 0, "prior"
-        if cfg.shop_eval == "onestep":
+        close_prior = True
+        if cfg.onestep_margin > 0 and k >= 2:
+            srt = np.sort(score)
+            close_prior = (srt[-1] - srt[-2]) <= cfg.onestep_margin
+        if cfg.shop_eval == "onestep" and close_prior:
             worlds, owner = [], []
             for i in np.argsort(-score, kind="stable")[:cfg.onestep_top]:
                 n = cfg.onestep_samples if random_outcome(w.g, cands[i].action) else 1

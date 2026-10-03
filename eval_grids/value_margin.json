@@ -1,0 +1,3 @@
+{"graded":  {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}}, "search": false},
+ "r1b_m1":  {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "shop_eval": "onestep", "value_model": "checkpoints/value_r1b.pt", "value_mode": "antes", "onestep_margin": 1.0, "budget_round": 0, "budget_boss": 0}},
+ "r1b_m2":  {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "shop_eval": "onestep", "value_model": "checkpoints/value_r1b.pt", "value_mode": "antes", "onestep_margin": 2.0, "budget_round": 0, "budget_boss": 0}}}

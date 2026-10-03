@@ -119,3 +119,24 @@ Kept on: joker state and use playouts (neutral; exact where the stateless solver
 Kept off: the in-round growth bonus in both forms; with V it trades blinds for wins (44 against 36), which
 says its scale (`growth_scale` 100: 0.01 of win probability = 1 logit, cap 2) is untuned rather than that
 the idea is wrong. To be measured again with a value model trained on more games.
+
+## Value model, round 1 (branch solver-state)
+
+10,000 prior-played games (stakes mixed), ~650k build records. Held-out, the model beats a logistic fit of
+Phi alone at every ante (mean win log-loss 0.296 vs 0.380; `value_r1b.pt`, per-game sampling, dropout 0.2).
+Used in the shop by one-step evaluation (`shop_eval: onestep`, `value_mode: antes`), 300 paired seeds per block:
+
+| model / weight | seeds 10000-10299 (blinds vs graded, wins) | seeds 10300-10599 |
+|---|---|---|
+| graded prior | 17.52, 37 wins | 17.04, 38 wins |
+| value.pt, P(win), w300 | -1.91 +- 0.48, 35 | |
+| value.pt, antes, w100 | +0.08, 38 | |
+| value.pt, antes, w300 | -0.40 +- 0.45, **57** | -0.11 +- 0.49, 38 |
+| value.pt, antes, w1000 | -3.50, 22 | |
+| value_r1b.pt, antes, w200 | -0.33 +- 0.44, 36 | +0.09 +- 0.44, 36 |
+| value_r1b.pt, antes, w300 | -1.36 +- 0.46, 39 | -1.04 +- 0.47, 33 |
+
+Conclusion: V predicts outcomes better than Phi but does not yet improve shop decisions; the 57 wins on the
+first block did not replicate. The between-option differences a shop decision turns on are far smaller than
+the between-game differences the model is trained on. Next: more games (20k more running, with the event
+log), a margin guard (V only when the pricer is nearly indifferent), and a within-decision training signal.
