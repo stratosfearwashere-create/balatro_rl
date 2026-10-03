@@ -98,16 +98,29 @@ struct SolverCorePy {
     balatro::SolverCore core;
     py::object fs_ref;                   // keeps the scorer alive
     SolverCorePy(py::list pool, py::object fs, int hand_size, std::string boss, double target, int hl, int dl,
-                 double chips, int types, int mouth, int inner, int max_steps)
-        : core(convert(pool), fs.ptr(), hand_size, boss, target, hl, dl, chips, types, mouth, inner, max_steps),
+                 double chips, int types, int mouth, int inner, int max_steps, bool carry, py::list hooks)
+        : core(convert(pool), fs.ptr(), hand_size, boss, target, hl, dl, chips, types, mouth, inner, max_steps,
+               carry, convert_hooks(hooks)),
           fs_ref(fs) {}
+    static std::vector<balatro::JokerHook> convert_hooks(py::list hooks) {
+        std::vector<balatro::JokerHook> out;
+        for (py::handle h : hooks) {
+            py::tuple t = py::reinterpret_borrow<py::tuple>(h);
+            balatro::JokerHook j;
+            j.dk = py::cast<int>(t[0]); j.ak = py::cast<int>(t[1]); j.suit = py::cast<int>(t[2]);
+            j.active = py::cast<bool>(t[3]);
+            out.push_back(j);
+        }
+        return out;
+    }
     static std::vector<balatro::PoolCard> convert(py::list pool) {
         std::vector<balatro::PoolCard> out;
         out.reserve(py::len(pool));
         for (py::handle h : pool) {
             if (!PyObject_TypeCheck(h.ptr(), &CardType)) throw py::type_error("pool: a Card is needed");
             balatro::CardView v = balatro::CardView::of(h.ptr());
-            out.push_back(balatro::PoolCard{v.rank, v.suit, v.chip_value(), v.is_stone(), v.uid});
+            out.push_back(balatro::PoolCard{v.rank, v.suit, v.chip_value(), v.is_stone(),
+                                            v.enh == balatro::E_WILD, v.uid});
         }
         return out;
     }
@@ -146,10 +159,11 @@ PYBIND11_MODULE(_core, m) {
     if (import_balatro_rl__sim___cards() < 0) throw py::import_error("balatro_rl.sim._cards is needed");
     if (import_balatro_rl__sim___fastscore() < 0) throw py::import_error("balatro_rl.sim._fastscore is needed");
     py::class_<SolverCorePy>(m, "SolverCore")
-        .def(py::init<py::list, py::object, int, std::string, double, int, int, double, int, int, int, int>(),
+        .def(py::init<py::list, py::object, int, std::string, double, int, int, double, int, int, int, int, bool,
+                      py::list>(),
              py::arg("pool"), py::arg("scorer"), py::arg("hand_size"), py::arg("boss"), py::arg("target"),
              py::arg("hands_left"), py::arg("discards_left"), py::arg("chips"), py::arg("types"), py::arg("mouth"),
-             py::arg("inner"), py::arg("max_steps"))
+             py::arg("inner"), py::arg("max_steps"), py::arg("carry") = false, py::arg("hooks") = py::list())
         .def("set_rng_state", &SolverCorePy::set_rng_state)
         .def("rng_state", &SolverCorePy::rng_state)
         .def("make_futures", &SolverCorePy::make_futures, py::arg("hand"), py::arg("order"), py::arg("hidden"),
@@ -158,6 +172,11 @@ PYBIND11_MODULE(_core, m) {
              py::arg("is_play"), py::arg("depth"))
         .def_property_readonly("calls", &SolverCorePy::calls)
         .def_property_readonly("cache_hits", &SolverCorePy::cache_hits);
+    m.attr("DK_GREEN") = (int)balatro::DK_GREEN;
+    m.attr("DK_CASTLE") = (int)balatro::DK_CASTLE;
+    m.attr("DK_ROAD") = (int)balatro::DK_ROAD;
+    m.attr("DK_RAMEN") = (int)balatro::DK_RAMEN;
+    m.attr("AK_ICE") = (int)balatro::AK_ICE;
     m.def("evaluate", &evaluate_py, py::arg("cards"), py::arg("four_fingers") = false, py::arg("shortcut") = false,
           py::arg("smeared") = false, "hands.evaluate: (hand, scoring positions, contained hand types)");
     py::class_<Random>(m, "Random")

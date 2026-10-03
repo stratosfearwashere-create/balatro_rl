@@ -88,6 +88,8 @@ class AgentConfig:
     solver_samples_inner: int = 2   # inside the search (measured: SPEED_NOTES.md, stage 3)
     boss_depth: int = 2             # solver depth on boss blinds (root)
     autoplay: bool = True
+    solver_state: bool = True       # the solver's playouts carry joker state and hands played (solver.py)
+    solver_uses: bool = True        # in-round consumable uses are played out (solver.py use_playout)
     search: bool = True
     root_cfg: Config = field(default_factory=lambda: Config(max_analyzed=700))
     inner_cfg: Config = field(default_factory=lambda: Config(max_plays=24, max_discards=12, max_analyzed=160,
@@ -239,7 +241,7 @@ class Agent:
         self.cfg = cfg or AgentConfig()
         self.device = device
         self.rng = random.Random(seed)
-        self.solver = RoundSolver()
+        self.solver = RoundSolver(joker_state=self.cfg.solver_state, use_playout=self.cfg.solver_uses)
         self.stats = Counter()
         self.potential = Potential(potential)
         self.pricer = ShopPricer(self.cfg.shop, self.potential)
@@ -299,35 +301,59 @@ class Agent:
         Green Joker its mult has to be worth it. Options outside the margin keep the solver's logit."""
         cfg = self.cfg
         bonus = np.zeros(len(choice.cands))
+        kinds = ("play", "discard", "use") if self.build_value is not None else ("play", "discard")
         near = [i for i, c in enumerate(choice.cands)
-                if c.kind in ("play", "discard") and c.analyzed and prior[i] >= -cfg.growth_margin]
-        if len({(choice.cands[i].kind == "play", choice.cands[i].jdiff, choice.cands[i].effects) for i in near}) < 2:
+                if c.kind in kinds and c.analyzed and prior[i] >= -cfg.growth_margin]
+        if len({(choice.cands[i].kind, choice.cands[i].jdiff, choice.cands[i].effects) for i in near}) < 2:
             return bonus                                    # nothing to choose between
         g = w.g
-        ctx = self.pricer.context(g)
+        ctx = None if self.build_value is not None else self.pricer.context(g)
         cache = {}
+        after = {}                                          # candidate index -> the build it leads to
         for i in near:
             c = choice.cands[i]
+            if c.kind == "use":                             # the use on a redrawn copy (its deck / jokers change)
+                from .world import apply, determinize
+                g2 = determinize(g, self.rng)
+                try:
+                    apply(g2, c.action)
+                except (AssertionError, IndexError, ValueError):
+                    continue
+                after[i] = g2
+                continue
             jd = c.jdiff + (choice.after_jdiff if c.kind == "play" else ())
             money = sum(v for k, v in c.effects if k == "money")
             key = (jd, round(money, 3))
-            d = cache.get(key)
-            if d is None:
-                g2 = g.clone()
-                gone = []
-                for slot, k, _, new in jd:
-                    if not 0 <= slot < len(g2.jokers):
-                        continue
-                    if k == "_removed":
-                        gone.append(g2.jokers[slot])
-                    else:
-                        g2.jokers[slot].state[k] = new
-                for j in gone:
-                    g2.destroy_joker(j)
-                g2.money = g.money + int(round(money))
-                a, b = self.pricer._delta(ctx, g2)
-                d = cache[key] = a + b
-            bonus[i] = d
+            if key in cache:
+                after[i] = cache[key]
+                continue
+            g2 = g.clone()
+            gone = []
+            for slot, k, _, new in jd:
+                if not 0 <= slot < len(g2.jokers):
+                    continue
+                if k == "_removed":
+                    gone.append(g2.jokers[slot])
+                else:
+                    g2.jokers[slot].state[k] = new
+            for j in gone:
+                g2.destroy_joker(j)
+            g2.money = g.money + int(round(money))
+            after[i] = cache[key] = g2
+        if self.build_value is not None:                    # the learned build value, P(win) units
+            idx = list(after)
+            vals = self.build_value.value([World(after[i], w.rerolls, w.moves, w.steps) for i in idx])
+            for i, v in zip(idx, vals):
+                bonus[i] = float(v)
+        else:                                               # the hand-built strength + money measure
+            seen = {}
+            for i, g2 in after.items():
+                k = id(g2)
+                if k not in seen:
+                    a, b = self.pricer._delta(ctx, g2)
+                    seen[k] = a + b
+                bonus[i] = seen[k]
+        near = [i for i in near if i in after]
         if near:
             bonus[near] -= max(bonus[i] for i in near)      # relative to the best: the top logit stays 0
             self.stats["growth_decisions"] += 1

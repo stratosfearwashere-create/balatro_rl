@@ -1,0 +1,5 @@
+{"base":         {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "solver_state": false, "solver_uses": false}, "search": false},
+ "state":        {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "solver_state": true,  "solver_uses": false}, "search": false},
+ "state_uses":   {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "solver_state": true,  "solver_uses": true}, "search": false},
+ "state_uses_growth":  {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "solver_state": true, "solver_uses": true, "round_growth": true}, "search": false},
+ "state_uses_growthV": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "solver_state": true, "solver_uses": true, "round_growth": true, "value_model": "checkpoints/value.pt"}, "search": false}}

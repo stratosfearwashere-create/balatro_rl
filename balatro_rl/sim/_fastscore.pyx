@@ -674,6 +674,8 @@ cdef class Scorer:
     cdef Crd pool[MAXPOOL]
     cdef int npool
     cdef double last_chips, last_mult    # of the latest _score call (after Plasma Deck averaging)
+    cdef double last_val[MAXJ]           # joker state after the latest _score1 (round state, see set_state)
+    cdef int last_hv[MAXJ]
     cdef unsigned int* hpre              # hand-detection cache entries of the loaded hand (pooled calls)
     # pruning bound (see _bound_setup): state-level parts
     cdef bint bnd_ok                     # the bound is exact for every joker on the table
@@ -1029,6 +1031,53 @@ cdef class Scorer:
             _check_finite(f)
             out.append((_score_obj(f, viol), hand, self.last_chips, self.last_mult))
         return out
+
+    # ------------------------------------------------------------------ round state (the solver's playouts)
+    # The jokers' "val" / has_val, and the hands played per type (this run, this round) are the parts of the
+    # state a round changes hand by hand: set them before scoring, read them back after the chosen play.
+    def get_state(self):
+        """(val per joker, has_val per joker, hands played per type this run, this round)."""
+        cdef int j
+        return ([self.jk[j].val for j in range(self.nj)], [self.jk[j].has_val for j in range(self.nj)],
+                [self.hplayed[j] for j in range(12)], [self.hplayed_round[j] for j in range(12)])
+
+    def set_state(self, vals, hvs, hplayed=None, hplayed_round=None):
+        cdef int j
+        for j in range(self.nj):
+            self.jk[j].val = vals[j]
+            self.jk[j].has_val = hvs[j]
+        if hplayed is not None:
+            for j in range(12):
+                self.hplayed[j] = hplayed[j]
+        if hplayed_round is not None:
+            for j in range(12):
+                self.hplayed_round[j] = hplayed_round[j]
+            self.first_hand = sum(hplayed_round) == 0
+
+    def last_state(self):
+        """The jokers' (val, has_val) after the play scored last."""
+        cdef int j
+        return [self.last_val[j] for j in range(self.nj)], [self.last_hv[j] for j in range(self.nj)]
+
+    def score_state(self, hand, pos, long long hands_left, long long discards_left, long long deck_len,
+                    int round_types, int mouth_hand):
+        """Pooled: load `hand` (pool indices), score the play `pos` (hand positions) and return
+        (score as predict_many gives it, hand type, forbidden by the boss, vals after, has_vals after)."""
+        cdef int p[5]
+        cdef int k = len(pos), i, h
+        cdef bint viol
+        cdef double f
+        cdef int n = self._load(hand, hands_left, discards_left, deck_len, round_types, mouth_hand)
+        if k < 1 or k > 5:
+            raise ValueError("a play has 1 to 5 cards")
+        for i in range(k):
+            p[i] = pos[i]
+            if p[i] < 0 or p[i] >= n:
+                raise IndexError("hand position out of range")
+        f = floor(self._score(p, k, &h, &viol, NO_PRE))
+        _check_finite(f)
+        vals, hvs = self.last_state()
+        return (0.0 if viol else PyLong_FromDouble(f)), h, bool(viol), vals, hvs
 
     # ------------------------------------------------------------------ joker state helpers
     cdef inline double _get(self, Ctx* x, int j, double default) noexcept:
@@ -1945,6 +1994,9 @@ cdef class Scorer:
                 viol[0] = True
         hand_out[0] = x.hand
         self.last_chips, self.last_mult = x.chips, x.mult
+        for j in range(self.nj):
+            self.last_val[j] = x.val[j]
+            self.last_hv[j] = x.hv[j]
         return x.chips * x.mult
 
 
@@ -1981,6 +2033,66 @@ cdef api int fs_score_one(object scorer, const int* hand, int n, const int* pos,
     f = floor(sc._score(p, k, hand_type, &viol, NO_PRE))
     _check_finite(f)
     score[0] = 0.0 if viol else f
+    return 0
+
+
+cdef api int fs_nj(object scorer) except -1:
+    """Number of jokers on the scorer's table (the length of the state arrays)."""
+    return (<Scorer>scorer).nj
+
+
+cdef api int fs_get_state(object scorer, double* val, int* hv, int* hplayed, int* hplayed_round) except -1:
+    """The round state as loaded: joker vals / has_val, hands played per type this run and this round."""
+    cdef Scorer sc = <Scorer>scorer
+    cdef int j
+    for j in range(sc.nj):
+        val[j] = sc.jk[j].val
+        hv[j] = sc.jk[j].has_val
+    for j in range(12):
+        hplayed[j] = sc.hplayed[j]
+        hplayed_round[j] = sc.hplayed_round[j]
+    return 0
+
+
+cdef api int fs_set_state(object scorer, const double* val, const int* hv, const int* hplayed,
+                          const int* hplayed_round) except -1:
+    """Set the round state before scoring (see Scorer.set_state)."""
+    cdef Scorer sc = <Scorer>scorer
+    cdef int j, tot = 0
+    for j in range(sc.nj):
+        sc.jk[j].val = val[j]
+        sc.jk[j].has_val = hv[j]
+    for j in range(12):
+        sc.hplayed[j] = hplayed[j]
+        sc.hplayed_round[j] = hplayed_round[j]
+        tot += hplayed_round[j]
+    sc.first_hand = tot == 0
+    return 0
+
+
+cdef api int fs_score_state(object scorer, const int* hand, int n, const int* pos, int k, long long hands_left,
+                            long long discards_left, long long deck_len, int round_types, int mouth_hand,
+                            double* score, int* hand_type, int* viol, double* val_out, int* hv_out) except -1:
+    """fs_score_one plus the jokers' state after the play (val / has_val per joker)."""
+    cdef Scorer sc = <Scorer>scorer
+    cdef bint v
+    cdef double f
+    cdef int i
+    cdef int p[5]
+    if k < 1 or k > 5:
+        raise ValueError("a play has 1 to 5 cards")
+    sc._load_c(hand, n, hands_left, discards_left, deck_len, round_types, mouth_hand)
+    for i in range(k):
+        p[i] = pos[i]
+        if p[i] < 0 or p[i] >= n:
+            raise IndexError("hand position out of range")
+    f = floor(sc._score(p, k, hand_type, &v, NO_PRE))
+    _check_finite(f)
+    score[0] = 0.0 if v else f
+    viol[0] = 1 if v else 0
+    for i in range(sc.nj):
+        val_out[i] = sc.last_val[i]
+        hv_out[i] = sc.last_hv[i]
     return 0
 
 

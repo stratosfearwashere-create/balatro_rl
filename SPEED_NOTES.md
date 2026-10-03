@@ -93,3 +93,29 @@ search grid (`eval_grids/stage3_search.json`, 300 paired seeds, search on, the s
 
 Kept: `solver_samples_inner = 2` (the golden file was regenerated for it: the search's inner evaluations
 change, the solver / scorer section of the golden file does not).
+
+## Solver state (branch solver-state)
+
+The solver's playouts now carry the jokers' runtime values and the hands-played counts from hand to hand
+(Green Joker, Ride the Bus, Runner, Square, Spare Trousers, Wee Joker, Obelisk, Loyalty Card, Vampire, Lucky
+Cat, Supernova, Card Sharp through the scorer; the discard hooks of Green Joker, Castle, Hit the Road and
+Ramen and Ice Cream's melt through a table; Yorick's counter, Burnt Joker and the money hooks are not), and
+in-round consumable uses are played out after the use (3 target sets per consumable, 8 futures) instead of
+taking the round's best P(clear). The C++ core and the Python reference agree bit for bit on the regression
+states (`tests/test_solver_state.py`); the table is checked against the game's real hooks. `solver_state` and
+`solver_uses` in AgentConfig switch them off (the golden file was regenerated for the new defaults).
+
+300 paired seeds (10000-10299, Red Deck, White Stake, no search, graded prior with `rule_arcana`):
+
+| variant | blinds +- SE | vs base (paired) | wins | cpu s/game |
+|---|---|---|---|---|
+| base (stateless, uses not played out) | 17.64 +- 0.32 | | 36/300 | 2.7 |
+| + joker state | 17.66 +- 0.33 | +0.03 +- 0.19 | 37/300 | 2.8 |
+| + use playouts | 17.52 +- 0.34 | -0.11 +- 0.24 | 37/300 | 2.8 |
+| + in-round growth bonus (pricer measure) | 17.09 +- 0.35 | -0.55 +- 0.32 | 35/300 | 2.9 |
+| + in-round growth bonus from the learned V | 16.85 +- 0.36 | -0.79 +- 0.34 | 44/300 | 3.2 |
+
+Kept on: joker state and use playouts (neutral; exact where the stateless solver was an approximation).
+Kept off: the in-round growth bonus in both forms; with V it trades blinds for wins (44 against 36), which
+says its scale (`growth_scale` 100: 0.01 of win probability = 1 logit, cap 2) is untuned rather than that
+the idea is wrong. To be measured again with a value model trained on more games.

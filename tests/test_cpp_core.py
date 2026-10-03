@@ -97,8 +97,10 @@ def test_solver_core_matches_compiled_solver():
             a = enumerate_candidates(World(g), random.Random(i))
             b = enumerate_candidates(World(g), random.Random(i))
             ra, rb = random.Random(100 + i), random.Random(100 + i)
+            # the Cython solver is stateless: the core is compared with joker state and use playouts off
+            # (with them on, tests/test_solver_state.py compares the core with the Python reference)
             S.CompiledRoundSolver(samples=6).solve(g, a, ra, depth=depth)
-            S.CoreRoundSolver(samples=6).solve(g, b, rb, depth=depth)
+            S.CoreRoundSolver(samples=6, joker_state=False, use_playout=False).solve(g, b, rb, depth=depth)
             assert rows(a) == rows(b), (i, g.boss, depth)
             assert ra.getstate() == rb.getstate()
             n += 1
