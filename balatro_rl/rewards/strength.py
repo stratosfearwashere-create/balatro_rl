@@ -68,6 +68,39 @@ def boss_targets(g: Game) -> list[int]:
     return [g.blind_target(2)] + [int(base[b - 1] * mult) for b in range(a + 1, LAST_ANTE + 1)]
 
 
+_INDEX_CACHE: dict = {}
+
+
+def _draw_indices(rng, n: int, rows: int, cols: int) -> np.ndarray:
+    """rng.integers(0, n, size=(rows, cols)), memoised by the generator's state: every strength evaluation
+    of a shop decision draws from a fresh generator with the decision's seed, so the same rounds are drawn
+    again and again. A generator in the same state draws the same numbers, so the cache is exact; the
+    generator is left advanced as if it had drawn."""
+    key = _state_key(rng)
+    if key is None:
+        return rng.integers(0, n, size=(rows, cols))
+    key = key + (n, rows, cols)
+    got = _INDEX_CACHE.get(key)
+    if got is None:
+        if len(_INDEX_CACHE) >= 4096:
+            _INDEX_CACHE.clear()
+        idx = rng.integers(0, n, size=(rows, cols))
+        _INDEX_CACHE[key] = got = (idx, rng.bit_generator.state)
+    else:
+        rng.bit_generator.state = got[1]
+    return got[0]
+
+
+def _state_key(rng) -> tuple | None:
+    try:
+        st = rng.bit_generator.state
+        if st.get("bit_generator") != "PCG64" or st.get("has_uint32", 0) != 0:
+            return None
+        return (st["state"]["state"], st["state"]["inc"])
+    except (AttributeError, KeyError, TypeError):
+        return None
+
+
 def round_totals(scores, hands: int, discards: int, cfg: StrengthConfig, rng: np.random.Generator) -> np.ndarray:
     """B bootstrapped whole-round totals from the best-hand scores of K sampled hands."""
     s = np.asarray(scores, dtype=float) * cfg.score_scale
@@ -80,7 +113,7 @@ def round_totals(scores, hands: int, discards: int, cfg: StrengthConfig, rng: np
     hands = max(1, int(hands))
     if len(s) == 0:
         return np.zeros(cfg.bootstrap)
-    draws = s[rng.integers(0, len(s), size=(cfg.bootstrap, hands + extra))]
+    draws = s[_draw_indices(rng, len(s), cfg.bootstrap, hands + extra)]
     if extra:
         draws = np.sort(draws, axis=1)[:, extra:]             # the best `hands` of each row
     return draws.sum(axis=1)
