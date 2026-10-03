@@ -12,3 +12,6 @@ balatro_rl/**/*.html
 *.so
 build/
 
+balatro_rl/sim/_cards.h
+balatro_rl/sim/_cards_api.h
+balatro_rl/sim/_fastscore_api.h

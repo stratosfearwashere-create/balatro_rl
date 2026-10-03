@@ -274,6 +274,106 @@ except ImportError:
     COMPILED = False
 
 
+class CoreRoundSolver:
+    """RoundSolver on the C++ core (sim/cpp/solver.hpp): the futures, playouts and the random draws run in
+    C++ with the agent's generator replicated, and the compiled scorer is called through its C API. Same
+    results as RoundSolver (bit for bit below 2^53 chips); falls back to it when a hand gets too large for
+    the compiled scorer (The Serpent) or the state is unusual."""
+
+    def __init__(self, samples: int = 12, depth: int = 1, inner: int = 2, top_plays: int = 10, max_steps: int = 40):
+        self.samples, self.depth, self.inner, self.top_plays, self.max_steps = samples, depth, inner, top_plays, max_steps
+        self.calls = 0
+        self.cache_hits = 0
+        self.fallback = CompiledRoundSolver(samples, depth, inner, top_plays, max_steps)
+
+    # the fallback's internals, for callers (tests) that drive one solve by hand
+    def _setup(self, g):
+        return self.fallback._setup(g)
+
+    def _preds(self, r):
+        return self.fallback._preds(r)
+
+    @property
+    def sg(self):
+        return self.fallback.sg
+
+    @property
+    def plan(self):
+        return self.fallback.plan
+
+    @property
+    def fs(self):
+        return self.fallback.fs
+
+    @fs.setter
+    def fs(self, v):
+        self.fallback.fs = v
+
+    def solve(self, g, choice: Choice, rng: random.Random, samples: int | None = None, depth: int | None = None):
+        n_s = samples or self.samples
+        depth = depth or self.depth
+        plan = Plan(g)
+        pool = list(g.hand) + list(g.deck)
+        fs = fastscore.pool_scorer(g, plan, pool)
+        if fs is None or len(g.hand) > 16:
+            return self.fallback.solve(g, choice, rng, samples, depth)
+        state = rng.getstate()
+        target = max(1.0, float(g.target))
+        hidden = [i for i, c in enumerate(g.hand) if c.hidden]
+        pidx = {id(c): i for i, c in enumerate(pool)}
+        order = [pidx[id(c)] for c in sorted(list(g.deck) + [g.hand[i] for i in hidden], key=lambda c: c.uid)]
+        core = _core.SolverCore(pool, fs, g.effective_hand_size(), g.boss_active(), float(g.target), g.hands_left,
+                                g.discards_left, float(g.chips), fastscore.hand_types_mask(g.round_hand_types),
+                                g.mouth_hand, self.inner, self.max_steps)
+        core.set_rng_state(state)
+        core.make_futures(list(range(len(g.hand))), order, hidden, n_s)
+        plays = [c for c in choice.cands if c.kind == "play"]
+        discs = [c for c in choice.cands if c.kind == "discard"]
+        best_by_group = {}
+        for c in sorted(plays, key=lambda c: -c.score):
+            best_by_group.setdefault(c.signature(), c)
+        chosen = set(id(c) for c in sorted(plays, key=lambda c: -c.score)[:self.top_plays])
+        chosen |= {id(c) for c in best_by_group.values()}
+        try:
+            for c in plays:
+                if c.clears:
+                    c.p_clear = 1.0 if c.certain or not hidden else c.p_clear
+                    c.e_chips = min(5.0, (g.chips + c.score) / target)
+                    if c.p_clear == 1.0:
+                        continue
+                if id(c) not in chosen and not c.clears:
+                    continue
+                c.p_clear, c.e_chips = core.evaluate(list(c.action.cards), float(c.score), int(c.hand), True, depth)
+            for c in discs:
+                c.p_clear, c.e_chips = core.evaluate(list(c.action.cards), 0.0, 0, False, depth)
+        except ValueError:                           # a simulated hand grew past the compiled scorer's size
+            rng.setstate(state)
+            return self.fallback.solve(g, choice, rng, samples, depth)
+        rng.setstate(core.rng_state())
+        self.calls += core.calls
+        self.cache_hits += core.cache_hits
+        base = max([c.p_clear for c in plays + discs if c.p_clear >= 0], default=0.0)
+        base_e = max([c.e_chips for c in plays + discs if c.e_chips >= 0], default=0.0)
+        for c in choice.cands:
+            if c.kind == "use":
+                c.p_clear = 1.0 if c.best_after >= 1.0 else base
+                c.e_chips = max(base_e, (g.chips / target) + c.best_after * (choice.need / target))
+
+
+try:                                   # the C++ core (python setup_cython.py build); BALATRO_PURE=1 disables
+    if _os.environ.get("BALATRO_PURE") == "1" or not COMPILED:
+        raise ImportError
+    from ..sim import _core
+    if not hasattr(_core, "SolverCore"):
+        raise ImportError
+    CORE = True
+except ImportError:
+    CORE = False
+CompiledRoundSolver = RoundSolver      # the Cython solver (CoreRoundSolver's fallback)
+if CORE:
+    RoundSolver = CoreRoundSolver      # noqa: F811
+
+
 # ------------------------------------------------------------------ benchmark
 def bench(games: int = 20, samples: int = 12, depth: int = 1, stake: str = "GOLD", seed0: int = 30_000):
     """Time the solver on the in-round decisions of games played by the rule-based player, and check it:

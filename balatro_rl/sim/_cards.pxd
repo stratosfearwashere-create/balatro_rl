@@ -1,4 +1,4 @@
-cdef class Card:
+cdef api class Card [object CardObject, type CardType]:
     cdef dict __dict__                 # ad-hoc attributes still work (the bridge tags cards with their API index)
     cdef public int rank
     cdef public int suit

@@ -110,6 +110,12 @@ except ImportError:
     _clone_game = None
 
 
+_VALUE_ENH = {"": 0, "BONUS": 8, "MULT": 10, "WILD": 6, "GLASS": 20, "STEEL": 15, "STONE": -5,
+              "GOLD": 5, "LUCKY": 10, "HIDDEN": 0}
+_VALUE_EDITION = {"": 0, "FOIL": 8, "HOLO": 12, "POLYCHROME": 25, "NEGATIVE": 0}
+_VALUE_SEAL = {"": 0, "RED": 15, "BLUE": 5, "GOLD": 8, "PURPLE": 5}
+
+
 class Game:
     def __init__(self, seed: Optional[int] = None, deck_type: str = "RED", stake: str = "GOLD",
                  win_ante: int = WIN_ANTE, joker_pool=None):
@@ -1183,10 +1189,9 @@ class Game:
     @staticmethod
     def card_value(c: Card) -> float:
         v = c.chip_value() + c.rank * 0.1
-        v += {"": 0, "BONUS": 8, "MULT": 10, "WILD": 6, "GLASS": 20, "STEEL": 15, "STONE": -5,
-              "GOLD": 5, "LUCKY": 10, "HIDDEN": 0}.get(c.enh, 0)
-        v += {"": 0, "FOIL": 8, "HOLO": 12, "POLYCHROME": 25, "NEGATIVE": 0}[c.edition]
-        v += {"": 0, "RED": 15, "BLUE": 5, "GOLD": 8, "PURPLE": 5}[c.seal]
+        v += _VALUE_ENH.get(c.enh, 0)
+        v += _VALUE_EDITION[c.edition]
+        v += _VALUE_SEAL[c.seal]
         return v
 
     def main_suit(self) -> int:

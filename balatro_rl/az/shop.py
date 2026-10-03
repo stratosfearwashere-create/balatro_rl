@@ -146,6 +146,13 @@ class ShopConfig:
     use_samples: int = 2            # copies per option with a random outcome
     cons_samples: int = 2           # sampled hands for a tarot / spectral that needs cards (shop)
     inner_scale: float = 0.5        # inside a search or a rollout: this share of the sample counts (min 1)
+    samples_small: int = 0          # K for the cheap kinds (sells, single playing cards, boss rerolls): their
+                                    #   deltas are measured on the first samples_small of the K hands (0: K)
+    pack_lazy: float = 0.0          # > 0: packs are priced after the other options, and a pack whose first
+                                    #   sampled content prices more than this behind the best option so far
+                                    #   gets no second sample
+    reuse_behind: float = 0.0       # > 0: at the next decision in the same shop, an unchanged option that
+                                    #   priced more than this behind the best is not priced again
     shop_cons_frac: float = 0.3     # a targeted consumable bought in the shop is worth this share of its
                                     #   sampled best use (it waits for a round, and for the agent to use it)
     created_dollars: float = 2.0    # value of a consumable an option creates (Emperor, High Priestess)
@@ -212,7 +219,7 @@ def _sig(c) -> tuple:
 class _Ctx:
     """One decision: the game it is about, and what every option's strength is measured with."""
     __slots__ = ("g", "seed", "index", "n_base", "prio", "w_dollar", "k_int", "behind", "p_boss", "w0", "inner",
-                 "scores", "econ0")
+                 "scores", "econ0", "k", "w0k", "best")
 
     def __init__(self, g: Game):
         self.g = g
@@ -223,6 +230,9 @@ class _Ctx:
         self.prio = None
         self.behind = False
         self.inner = False
+        self.k = 0                   # hands the option being priced is measured on (0: all K)
+        self.w0k = {}                # k -> W(g) measured on the first k hands
+        self.best = None             # best price so far in this decision (pack_lazy)
 
     def indices(self, cards) -> list[int]:
         """Each card's number: its place in the decision's deck, or (cards a copy created) after them, in
@@ -316,9 +326,10 @@ class ShopPricer:
                     new = max(new, min(v, 0.0) if j.key != "ramen" else 1.0)
                 j.state["val"] = new
 
-    def _sample_scores(self, ctx: _Ctx, g: Game, debuff: str = "") -> tuple[np.ndarray, np.ndarray]:
-        """(best-play score, its hand type) of each of the K shared hands, for the build of `g` at the first
-        hand of a fresh round. debuff: a suit / face boss whose debuffs are applied to the cards first."""
+    def _sample_scores(self, ctx: _Ctx, g: Game, debuff: str = "", k: int = 0) -> tuple[np.ndarray, np.ndarray]:
+        """(best-play score, its hand type) of each of the K shared hands (the first k of them when k > 0), for
+        the build of `g` at the first hand of a fresh round. debuff: a suit / face boss whose debuffs are
+        applied to the cards first."""
         self.stats["scorings"] += 1
         probe = fresh_round(g)
         if self.cfg.rule_scaling:
@@ -329,11 +340,11 @@ class ShopPricer:
                 c.debuffed = c.is_face(par) if debuff == "plant" else c.has_suit(SUIT_BOSS[debuff], sm)
         pool = sort_hand(probe.full_deck)
         n = min(fresh_hand_size(g), len(pool))
-        k = self.cfg.samples
+        k = min(k, self.cfg.samples) if k > 0 else self.cfg.samples
         if n == 0:
             return np.zeros(k), np.zeros(k, dtype=np.int64)
         idx = np.asarray(ctx.indices(pool), dtype=np.int64) % 128
-        p = self._prio(ctx)[:, idx]
+        p = self._prio(ctx)[:k, idx]
         hands = np.sort(np.argsort(p, axis=1, kind="stable")[:, :n], axis=1).tolist()
         plan = Plan(probe)
         fs = fastscore.pool_scorer(probe, plan, pool) if n <= 16 else None
@@ -368,7 +379,7 @@ class ShopPricer:
         if boss == "eye":                                 # no hand type twice
             return _eye_chance(sc, ty, hands, discards, target, scfg, seed)
         if boss in SUIT_BOSS or boss == "plant":
-            sc2, _ = self._sample_scores(ctx, g, debuff=boss)
+            sc2, _ = self._sample_scores(ctx, g, debuff=boss, k=len(sc))
             return clear_chances(sc2, hands, discards, [target], scfg, seed)[0]
         return None
 
@@ -376,13 +387,13 @@ class ShopPricer:
         """(S, clear chance of this ante's boss, the K best-hand scores) of g's build."""
         c = self.cfg
         targets = boss_targets(g)
-        key = (ctx.seed, self._build_key(ctx, g), tuple(targets), g.boss if c.rule_boss else "")
+        key = (ctx.seed, self._build_key(ctx, g), tuple(targets), g.boss if c.rule_boss else "", ctx.k)
         self.stats["strength_calls"] += 1
         got = self.cache.get(key)
         if got is not None:
             self.stats["strength_hits"] += 1
             return got
-        sc, ty = self._sample_scores(ctx, g)
+        sc, ty = self._sample_scores(ctx, g, k=ctx.k)
         scfg = self.potential.cfg.strength
         bseed = _seed(("shop-bootstrap", ctx.seed))
         ch = clear_chances(sc, g.round_hands(), g.round_discards(), targets, scfg, bseed)
@@ -406,9 +417,19 @@ class ShopPricer:
         """(strength and economy part, money part) of W(g)."""
         return self.strength(ctx, g)[0] + self._econ(ctx, g), self._u(ctx, g)
 
+    def _w0(self, ctx: _Ctx) -> tuple[float, float]:
+        """W of the decision's game, measured on the hands the option being priced is measured on."""
+        if ctx.k == 0:
+            return ctx.w0
+        got = ctx.w0k.get(ctx.k)
+        if got is None:
+            got = ctx.w0k[ctx.k] = self._w(ctx, ctx.g)
+        return got
+
     def _delta(self, ctx: _Ctx, g: Game) -> tuple[float, float]:
         a, b = self._w(ctx, g)
-        return a - ctx.w0[0], b - ctx.w0[1]
+        w0 = self._w0(ctx)
+        return a - w0[0], b - w0[1]
 
     def context(self, g: Game, inner: bool = False) -> _Ctx:
         ctx = _Ctx(g)
@@ -587,17 +608,24 @@ class ShopPricer:
         key = (ctx.seed, self._build_key(ctx, g), g.boss, it.key, ctx.inner)
         val = self.pack_cache.get(key)
         if val is None:
-            tot, n = 0.0, self._n(ctx, self.cfg.pack_samples)
-            for _ in range(n):
+            c = self.cfg
+            tot, n, done = 0.0, self._n(ctx, c.pack_samples), 0
+            for s in range(n):
                 g2 = determinize(g, rng)
                 g2.money += it.cost                  # the cost is charged once, below
                 try:
                     g2.buy_pack(idx)
                 except (AssertionError, IndexError):
+                    done += 1
                     continue
                 g2.money = g.money
                 tot += self.pack_value(ctx, g2, rng)
-            val = self.pack_cache[key] = tot / n
+                done += 1
+                # pack_lazy: the first content prices far behind the best option so far: no more samples
+                if (s == 0 and c.pack_lazy > 0 and ctx.best is not None
+                        and tot + money - c.act_margin < ctx.best - c.pack_lazy):
+                    break
+            val = self.pack_cache[key] = tot / done
         return val, money
 
     def _u_after(self, ctx: _Ctx, money: float) -> float:
@@ -672,8 +700,24 @@ class ShopPricer:
                     best = (d[0] - self.cfg.act_margin, d[1])
         return best[0] - self.cfg.act_margin, best[1]
 
+    SMALL = ("sell_joker", "sell_cons", "reroll_boss")     # samples_small kinds, plus single playing cards
+
     def _price(self, ctx: _Ctx, w, cand, rng: random.Random) -> tuple[float, float]:
         """(strength / economy part, money part) of one option's price."""
+        c = self.cfg
+        g = ctx.g
+        a = cand.action
+        k = a.kind
+        ctx.k = 0
+        if c.samples_small and (k in self.SMALL or (k == "buy" and g.shop[a.idx].kind == "card")
+                                or (k == "pick" and not isinstance(g.pack_cards[a.idx], (Joker, Consumable)))):
+            ctx.k = c.samples_small
+        try:
+            return self._price1(ctx, w, cand, rng)
+        finally:
+            ctx.k = 0
+
+    def _price1(self, ctx: _Ctx, w, cand, rng: random.Random) -> tuple[float, float]:
         c = self.cfg
         g = ctx.g
         a = cand.action
@@ -748,9 +792,28 @@ class ShopPricer:
         c = self.cfg
         ctx = self.context(g, inner=not root)
         out = np.zeros((len(choice.cands), 2))
-        for i, cand in enumerate(choice.cands):
-            if cand.kind != "reroll":
+        sigs = [_option_sig(g, cand) for cand in choice.cands]
+        reuse = {}
+        if c.reuse_behind > 0 and root and g.state == "SHOP":
+            prev = self.last
+            if prev.get("visit") == (g.shops_seen, g.ante, "SHOP") and prev.get("sigs"):
+                best = max(prev["prices"].sum(axis=1))
+                reuse = {sg: tuple(pr) for sg, pr in zip(prev["sigs"], prev["prices"])
+                         if sg is not None and sum(pr) < best - c.reuse_behind}
+        order = list(range(len(choice.cands)))
+        if c.pack_lazy > 0:
+            order.sort(key=lambda i: choice.cands[i].kind == "buy_pack")
+        for i in order:
+            cand = choice.cands[i]
+            if cand.kind == "reroll":
+                continue
+            got = reuse.get(sigs[i])
+            if got is not None:
+                self.stats["price_reused"] += 1
+                out[i] = got
+            else:
                 out[i] = self._price(ctx, w, cand, rng)
+            ctx.best = out[i].sum() if ctx.best is None else max(ctx.best, out[i].sum())
         if g.state == "SHOP":
             cards = [out[i].sum() for i, cand in enumerate(choice.cands) if cand.kind in ("buy", "sell_joker")]
             best = max([0.0] + cards)
@@ -769,7 +832,7 @@ class ShopPricer:
                 if g.money - cost < c.reroll_min_money:
                     val = 0.0
                 out[i] = (val - c.act_margin, self._u_after(ctx, g.money - cost))
-        self.last = {"ctx": ctx, "prices": out}
+        self.last = {"ctx": ctx, "prices": out, "sigs": sigs, "visit": (g.shops_seen, g.ante, g.state)}
         return out
 
     def prior(self, w, choice, rng: random.Random, root: bool = True) -> tuple[np.ndarray, np.ndarray]:
@@ -785,10 +848,46 @@ class ShopPricer:
         return logits, feats
 
 
+def _option_sig(g: Game, cand) -> tuple | None:
+    """What identifies an option across the decisions of one shop (reuse_behind): the action and the
+    object it acts on; None for options that are always priced again."""
+    a = cand.action
+    k = a.kind
+    try:
+        if k == "buy":
+            it = g.shop[a.idx]
+            obj = it.joker.uid if it.joker is not None else (it.card.uid if it.card is not None else it.key)
+            return (k, it.key, obj)
+        if k == "buy_pack":
+            return (k, g.shop_packs[a.idx].key, a.idx)
+        if k == "voucher":
+            return (k, g.shop_vouchers[a.idx].key)
+        if k == "sell_joker":
+            return (k, g.jokers[a.idx].uid)
+        if k in ("sell_cons", "use"):
+            return (k, g.consumables[a.idx].key, a.idx)
+    except (IndexError, AttributeError):
+        return None
+    return None
+
+
+_CARD_VALUES: dict = {}
+
+
 def _deck_quality(g: Game) -> float:
+    """Mean Game.card_value of the deck (values memoised by the card's content; the sum is taken in the same
+    order, so the result is the same)."""
     if not g.full_deck:
         return 0.0
-    return sum(Game.card_value(c) for c in g.full_deck) / len(g.full_deck)
+    vals = _CARD_VALUES
+    tot = 0.0
+    for c in g.full_deck:
+        k = (c.rank, c.enh, c.edition, c.seal)
+        v = vals.get(k)
+        if v is None:
+            v = vals[k] = Game.card_value(c)
+        tot += v
+    return tot / len(g.full_deck)
 
 
 def _eye_chance(sc: np.ndarray, ty: np.ndarray, hands: int, discards: int, target: float, scfg, seed: int) -> float:

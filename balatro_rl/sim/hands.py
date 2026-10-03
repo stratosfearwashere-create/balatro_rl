@@ -1,9 +1,17 @@
 """Poker hand detection, matching Balatro's rules (incl. Four Fingers, Shortcut, Smeared)."""
 from __future__ import annotations
 
+import os
 from itertools import combinations
 
 from .cards import Card
+
+try:                                   # the C++ core (python setup_cython.py build); BALATRO_PURE=1 disables
+    if os.environ.get("BALATRO_PURE") == "1":
+        raise ImportError
+    from . import _core
+except ImportError:
+    _core = None
 
 HAND_NAMES = ["High Card", "Pair", "Two Pair", "Three of a Kind", "Straight", "Flush",
               "Full House", "Four of a Kind", "Straight Flush", "Five of a Kind",
@@ -54,6 +62,14 @@ class HandResult:
 
 
 def evaluate(cards: list[Card], four_fingers=False, shortcut=False, smeared=False) -> HandResult:
+    if _core is not None and len(cards) <= 5:
+        hand, scoring, contains = _core.evaluate(cards, four_fingers, shortcut, smeared)
+        return HandResult(hand, scoring, contains)
+    return _py_evaluate(cards, four_fingers, shortcut, smeared)
+
+
+def _py_evaluate(cards: list[Card], four_fingers=False, shortcut=False, smeared=False) -> HandResult:
+    """The reference implementation (any number of cards)."""
     need = 4 if four_fingers else 5
     normal: list[int] = []
     stones: list[int] = []

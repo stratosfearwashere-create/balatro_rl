@@ -305,6 +305,18 @@ cdef bint _is_straight_ranks(const int* ranks, int n, bint shortcut) noexcept no
     return False
 
 
+# subsets of the non-stone cards a straight can be made of: masks over nn <= 5 cards with need..5 members
+cdef int SMASK[6][6][32]
+cdef int NSMASK[6][6]
+for _nn in range(6):
+    for _need in range(6):
+        NSMASK[_nn][_need] = 0
+        for _m in range(1, 1 << _nn):
+            if _need <= bin(_m).count("1") <= 5:
+                SMASK[_nn][_need][NSMASK[_nn][_need]] = _m
+                NSMASK[_nn][_need] += 1
+
+
 cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
                    int* out_hand, int* out_scoring, int* out_contains) noexcept nogil:
     """hands.evaluate for n <= 5 cards. Scoring cards and contained hands come back as bitmasks."""
@@ -315,28 +327,31 @@ cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
     cdef int ns[4]
     cdef int ranks[5]
     cdef int wild = 0, best_s, distinct = 0
-    cdef int g0r = -1, g0c = 0, g1r = -1, g1c = 0, top, second
+    cdef int g0r = -1, g0c = 0, g1r = -1, g1c = 0, top, second, q
     cdef int fmask = 0, smask = 0
     cdef bint full, is_flush, is_straight
-    for i in range(16):
-        cnt[i] = 0
     for i in range(n):
         if is_stone(cs[i].enh):
             stones |= 1 << i
         else:
             normal[nn] = i
             nn += 1
-            cnt[cs[i].rank] += 1
-    for r in range(14, -1, -1):           # rank groups ordered by (-count, -rank)
-        if cnt[r] > 0:
-            distinct += 1
-        if cnt[r] > g0c:
-            g0c = cnt[r]
-            g0r = r
-    for r in range(14, -1, -1):
-        if r != g0r and cnt[r] > g1c:
-            g1c = cnt[r]
-            g1r = r
+    for j in range(nn):                   # rank counts (only the ranks present are touched)
+        cnt[cs[normal[j]].rank] = 0
+    for j in range(nn):
+        cnt[cs[normal[j]].rank] += 1
+    for j in range(nn):                   # rank groups ordered by (-count, -rank)
+        r = cs[normal[j]].rank
+        q = cnt[r]
+        if q == 0:
+            continue
+        cnt[r] = 0                        # each rank once
+        distinct += 1
+        if q > g0c or (q == g0c and r > g0r):
+            g1c, g1r = g0c, g0r
+            g0c, g0r = q, r
+        elif q > g1c or (q == g1c and r > g1r):
+            g1c, g1r = q, r
     top = g0c
     second = g1c
 
@@ -367,14 +382,13 @@ cdef void evaluate(const Crd** cs, int n, bint ff, bint shortcut, bint sm,
 
     # straight: union of every straight subset of size need..min(5, nn)
     if nn >= need and distinct >= need:
-        for m in range(1, 1 << nn):
+        for q in range(NSMASK[nn][need]):
+            m = SMASK[nn][need][q]
             k = 0
             for j in range(nn):
                 if m & (1 << j):
                     ranks[k] = cs[normal[j]].rank
                     k += 1
-            if k < need or k > 5:
-                continue
             if _is_straight_ranks(ranks, k, shortcut):
                 for j in range(nn):
                     if m & (1 << j):
@@ -672,6 +686,9 @@ cdef class Scorer:
     cdef double b_base_c[12]
     cdef double b_base_m[12]
     cdef int b_chad, b_wee, b_cat, b_hiker
+    cdef bint b_has_cont, b_has_held      # any "contains" effect / any held-card effect on the table
+    cdef double* b_arr                    # per subset: its bound
+    cdef int b_cap
     cdef double b_cat_val[MAXJ]
     cdef int b_lucky[MAXHAND]
     cdef double b_rf                     # Raised Fist instances (held hook)
@@ -684,6 +701,14 @@ cdef class Scorer:
     cdef double b_hm[MAXHAND]
     cdef double b_hx[MAXHAND]
     cdef int b_r[MAXHAND]
+
+    def __cinit__(self):
+        self.b_arr = NULL
+        self.b_cap = 0
+
+    def __dealloc__(self):
+        if self.b_arr != NULL:
+            free(self.b_arr)
 
     def __init__(self, cards, jokers, lists, flags, boss, arrays, probs, scalars):
         cdef int i
@@ -765,7 +790,17 @@ cdef class Scorer:
 
     cdef int _load(self, hand, long long hands_left, long long discards_left, long long deck_len,
                    int round_types, int mouth_hand) except -1:
-        cdef int n = len(hand), i, k
+        cdef int n = len(hand), i
+        cdef int idx[MAXHAND]
+        if n > MAXHAND:
+            raise ValueError("hand too large for the pooled scorer")
+        for i in range(n):
+            idx[i] = hand[i]
+        return self._load_c(idx, n, hands_left, discards_left, deck_len, round_types, mouth_hand)
+
+    cdef int _load_c(self, const int* hand, int n, long long hands_left, long long discards_left,
+                     long long deck_len, int round_types, int mouth_hand) except -1:
+        cdef int i, k
         if n > MAXHAND:
             raise ValueError("hand too large for the pooled scorer")
         for i in range(n):
@@ -827,26 +862,77 @@ cdef class Scorer:
 
     cdef list _best_two(self, int n):
         """[(score, hand type, subset index)] for the two best plays, best first; ties keep the earlier
-        subset (what a stable sort by score gives). The subsets are visited largest first (they tend to
-        score highest) and a subset whose upper bound (_bound) is below the second best is skipped; the
-        tie rule is applied explicitly, so the result is the same as scoring every subset in order."""
-        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, hand, h1 = -1, h2 = -1, b1 = -1, b2 = -1
+        subset (what a stable sort by score gives)."""
+        cdef double s[2]
+        cdef int h[2]
+        cdef int b[2]
+        cdef bint v[2]
+        cdef int cnt = self._best_two_c(n, s, h, b, v), i
+        out = []
+        for i in range(cnt):
+            out.append((_score_obj(s[i], v[i]), h[i], b[i]))
+        return out
+
+    cdef int _best_two_c(self, int n, double* s, int* h, int* b, bint* v) except -1:
+        """The two best plays of the loaded hand into s (floor of the score, 0 when the boss forbids it),
+        h (hand type), b (subset index) and v (forbidden); returns how many (0-2), best first. The subsets
+        are visited largest first (they tend to score highest) and a subset whose upper bound (_bound) is
+        below the second best is skipped; the tie rule is applied explicitly, so the result is the same as
+        scoring every subset in order."""
+        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, q, hand, h1 = -1, h2 = -1, b1 = -1, b2 = -1
+        cdef int top1 = -1, top2 = -1
         cdef int pos[5]
-        cdef double v, f, s1 = -1e308, s2 = -1e308, bound
+        cdef double f, s1 = -1e308, s2 = -1e308, bound
         cdef bint viol, v1 = False, v2 = False
         cdef long long pre
         self._bound_setup(n)
-        for t in range(m - 1, -1, -1):
+        if self.bnd_ok:
+            # every subset's bound; the two largest are scored first so the second-best score is high from
+            # the start, then the rest in order, skipping every subset whose bound is below it
+            if self.b_cap < m:
+                if self.b_arr != NULL:
+                    free(self.b_arr)
+                self.b_arr = <double*> malloc(m * sizeof(double))
+                if self.b_arr == NULL:
+                    self.b_cap = 0
+                    raise MemoryError()
+                self.b_cap = m
+            for t in range(m):
+                k = PAT_K[off + t]
+                for i in range(k):
+                    pos[i] = PAT_POS[5 * (off + t) + i]
+                bound = self._bound(pos, k, _pre_of(self.hpre[t]))
+                if bound != bound:
+                    bound = 1e308                                        # NaN: never skipped
+                self.b_arr[t] = bound
+                if top1 < 0 or bound > self.b_arr[top1]:
+                    top2 = top1
+                    top1 = t
+                elif top2 < 0 or bound > self.b_arr[top2]:
+                    top2 = t
+        for q in range(m + 1, -1, -1):
+            if self.bnd_ok:
+                if q == m + 1:
+                    t = top1
+                elif q == m:
+                    t = top2
+                else:
+                    t = q
+                    if t == top1 or t == top2:
+                        continue
+                    if b2 >= 0 and self.b_arr[t] < s2:
+                        continue
+                if t < 0:
+                    continue
+            elif q >= m:
+                continue
+            else:
+                t = q
             pre = _pre_of(self.hpre[t])
             k = PAT_K[off + t]
             for i in range(k):
                 pos[i] = PAT_POS[5 * (off + t) + i]
-            if b2 >= 0 and self.bnd_ok:
-                bound = self._bound(pos, k, pre)
-                if bound < s2:
-                    continue
-            v = self._score(pos, k, &hand, &viol, pre)
-            f = floor(v)
+            f = floor(self._score(pos, k, &hand, &viol, pre))
             _check_finite(f)
             if viol:
                 f = 0.0
@@ -855,12 +941,14 @@ cdef class Scorer:
                 b1, s1, h1, v1 = t, f, hand, viol
             elif b2 < 0 or f > s2 or (f == s2 and t < b2):
                 b2, s2, h2, v2 = t, f, hand, viol
-        out = []
+        k = 0
         if b1 >= 0:
-            out.append((_score_obj(s1, v1), h1, b1))
+            s[0], h[0], b[0], v[0] = s1, h1, b1, v1
+            k = 1
         if b2 >= 0:
-            out.append((_score_obj(s2, v2), h2, b2))
-        return out
+            s[1], h[1], b[1], v[1] = s2, h2, b2, v2
+            k = 2
+        return k
 
     def best_two(self, hand, long long hands_left, long long discards_left, long long deck_len,
                  int round_types, int mouth_hand):
@@ -1324,6 +1412,7 @@ cdef class Scorer:
                 self.b_x *= amt if amt > 1 else 1
         elif kind == MK_CONTAINS:
             h = self.jk[t].p_hand
+            self.b_has_cont = True
             if pk == K_MULT:
                 self.b_cont_m[h] += amt
             elif pk == K_CHIPS:
@@ -1434,6 +1523,7 @@ cdef class Scorer:
         self.b_chad = self.b_wee = self.b_cat = 0
         self.b_rf = self.b_shoot = self.b_baron = 0.0
         self.b_dusk = self.b_selzer = self.b_hack = self.b_sock = 0
+        self.b_has_cont = self.b_has_held = False
         for p in range(self.n_before):
             j = self.l_before[p]
             kind = self.jk[j].bk
@@ -1605,6 +1695,8 @@ cdef class Scorer:
                     hx *= pow(1.5, self.b_baron)
             self.b_hm[i] = hm * reps
             self.b_hx[i] = pow(hx, reps)
+            if hm != 0.0 or hx != 1.0:
+                self.b_has_held = True
 
     cdef double _bound(self, int* pos, int k, long long pre) noexcept:
         """Upper bound on chips x mult of the play `pos` of the loaded hand (after _bound_setup)."""
@@ -1617,11 +1709,12 @@ cdef class Scorer:
         X = self.b_x * self.b_hand_x[hand]
         if k <= 3:
             M += self.b_half
-        for h in range(12):
-            if contains & (1 << h):
-                C += self.b_cont_c[h]
-                M += self.b_cont_m[h]
-                X *= self.b_cont_x[h]
+        if self.b_has_cont:
+            for h in range(12):
+                if contains & (1 << h):
+                    C += self.b_cont_c[h]
+                    M += self.b_cont_m[h]
+                    X *= self.b_cont_x[h]
         for i in range(k):
             q = pos[i]
             played |= (<long long>1) << q
@@ -1642,10 +1735,11 @@ cdef class Scorer:
                 X *= pow(self.b_px[q], <double>r)
             if self.b_lucky[q]:
                 lucky += r
-        for q in range(self.ncards):
-            if not (played & ((<long long>1) << q)):
-                M += self.b_hm[q]
-                X *= self.b_hx[q]
+        if self.b_has_held:
+            for q in range(self.ncards):
+                if not (played & ((<long long>1) << q)):
+                    M += self.b_hm[q]
+                    X *= self.b_hx[q]
         for i in range(self.b_cat):
             v = self.b_cat_val[i] + 0.25 * (self.p5 + self.p15) * lucky
             X *= v if v > 1 else 1
@@ -1852,3 +1946,50 @@ cdef class Scorer:
         hand_out[0] = x.hand
         self.last_chips, self.last_mult = x.chips, x.mult
         return x.chips * x.mult
+
+
+# ------------------------------------------------------------------ C API (the C++ core, sim/cpp)
+# These are reachable from C through the generated _fastscore_api.h; scores come back as doubles (the floor
+# of chips x mult, 0 when the boss forbids the play), which is exact below 2^53.
+
+cdef api int fs_best_two(object scorer, const int* hand, int n, long long hands_left, long long discards_left,
+                         long long deck_len, int round_types, int mouth_hand,
+                         double* scores, int* hands, int* subs) except -1:
+    """best_two for a hand given as pool indices; fills up to 2 results, returns how many."""
+    cdef Scorer sc = <Scorer>scorer
+    cdef bint v[2]
+    sc._load_c(hand, n, hands_left, discards_left, deck_len, round_types, mouth_hand)
+    return sc._best_two_c(n, scores, hands, subs, v)
+
+
+cdef api int fs_score_one(object scorer, const int* hand, int n, const int* pos, int k, long long hands_left,
+                          long long discards_left, long long deck_len, int round_types, int mouth_hand,
+                          double* score, int* hand_type) except -1:
+    """predict_many([pos]) on the hand given as pool indices: the score (floor; 0 when forbidden) and hand."""
+    cdef Scorer sc = <Scorer>scorer
+    cdef bint viol
+    cdef double f
+    cdef int i
+    cdef int p[5]
+    if k < 1 or k > 5:
+        raise ValueError("a play has 1 to 5 cards")
+    sc._load_c(hand, n, hands_left, discards_left, deck_len, round_types, mouth_hand)
+    for i in range(k):
+        p[i] = pos[i]
+        if p[i] < 0 or p[i] >= n:
+            raise IndexError("hand position out of range")
+    f = floor(sc._score(p, k, hand_type, &viol, NO_PRE))
+    _check_finite(f)
+    score[0] = 0.0 if viol else f
+    return 0
+
+
+cdef api int fs_subset(int n, int t, int* pos) except -1:
+    """Subset t of an n-card hand (subset_patterns order) into pos; returns its size."""
+    cdef int off = PAT_OFF[n], i, k
+    if n < 0 or n > MAXHAND or t < 0 or t >= PAT_N[n]:
+        raise IndexError("subset index out of range")
+    k = PAT_K[off + t]
+    for i in range(k):
+        pos[i] = PAT_POS[5 * (off + t) + i]
+    return k

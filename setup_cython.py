@@ -69,27 +69,49 @@ def clean():
     print(f"removed {removed} generated files")
 
 
+CPP = "balatro_rl/sim/cpp/core.cpp"       # the C++ game core (pybind11), built after the Cython extensions
+
+
+def _cpp_extension():
+    """The C++ core (balatro_rl.sim._core), or None when pybind11 is not installed. It reads the compiled
+    card's struct through the header the Cython build of _cards.pyx generates."""
+    from setuptools import Extension
+    try:
+        import pybind11
+    except ImportError:
+        print("pybind11 is not installed: the C++ core is not built (pip install pybind11)")
+        return None
+    extra = ["-std=c++17", "-O2"] if sys.platform != "win32" else ["/std:c++17", "/O2", "/EHsc"]
+    return Extension("balatro_rl.sim._core", [CPP], include_dirs=[pybind11.get_include(), "balatro_rl/sim",
+                                                                 "balatro_rl/sim/cpp"],
+                     language="c++", extra_compile_args=extra, depends=glob.glob("balatro_rl/sim/cpp/*.hpp"))
+
+
 def build(only: str | None, jobs: int, force: bool = False, pure: bool = False):
     from Cython.Build import cythonize
-    from setuptools import setup, Extension
-    files = _targets(only, pure)
+    from setuptools import setup
+    from setuptools import Extension
+    files = _targets(only, pure) if only != CPP else []
     exts = []
     for f in files:
         rel = os.path.relpath(f, ROOT)
         name = rel[:-len(os.path.splitext(rel)[1])].replace(os.sep, ".")
         exts.append(Extension(name, [rel]))
     sys.argv = [sys.argv[0], "build_ext", "--inplace", f"--parallel={jobs}"]
-    setup(name="balatro_rl_compiled",
-          ext_modules=cythonize(exts, compiler_directives=DIRECTIVES, nthreads=jobs, quiet=True,
-                                force=force, annotate=False),
-          zip_safe=False)
+    cy = cythonize(exts, compiler_directives=DIRECTIVES, nthreads=jobs, quiet=True, force=force, annotate=False)
+    if exts:
+        setup(name="balatro_rl_compiled", ext_modules=cy, zip_safe=False)
+    if only is None or only == CPP:
+        cpp = _cpp_extension()
+        if cpp is not None and os.path.exists(os.path.join(ROOT, "balatro_rl/sim/_cards_api.h")):
+            setup(name="balatro_rl_core", ext_modules=[cpp], zip_safe=False)
 
 
 def main():
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument("cmd", choices=["build", "clean"])
-    p.add_argument("--only", default=None)
+    p.add_argument("--only", default=None, help="one .pyx file, or balatro_rl/sim/cpp/core.cpp for the C++ core")
     p.add_argument("--force", action="store_true", help="regenerate every C file (after changing directives)")
     p.add_argument("--pure", action="store_true", help="also compile the pure-Python modules in MODULES")
     p.add_argument("--jobs", type=int, default=max(1, min(4, (os.cpu_count() or 2) // 2)))
