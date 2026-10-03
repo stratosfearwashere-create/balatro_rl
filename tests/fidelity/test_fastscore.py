@@ -128,3 +128,48 @@ def test_pooled_calls_match_predict_many():
             batch.append((idx, hl, dl, dlen, mask, mouth, top))
         idx, hl, dl, dlen, mask, mouth, top = batch[0]
         assert sc.best_two_many([idx, idx], hl, dl, dlen, mask, mouth) == [top, top]
+
+
+def test_pruning_bound_is_sound():
+    """The upper bound best_two prunes with is never below the real score, on random states with random
+    jokers (copiers, retriggers, held effects, bosses, Plasma), and it is tight enough to prune at all."""
+    rng = random.Random(23)
+    checked = pruned = 0
+    for s in range(400):
+        g = rand_state(rng)
+        plan = Plan(g)
+        pool = list(g.hand) + list(g.full_deck)
+        sc = fastscore.pool_scorer(g, plan, pool)
+        n = rng.randint(1, 10)
+        idx = rng.sample(range(len(pool)), min(n, len(pool)))
+        hl, dl, dlen = rng.randint(1, 4), rng.randint(0, 4), rng.randint(0, 40)
+        types = fastscore.hand_types_mask(set(rng.sample(range(12), rng.randint(0, 3))))
+        mouth = rng.choice([-1, rng.randrange(12)])
+        try:
+            rows = sc.bounds(idx, hl, dl, dlen, types, mouth)
+        except (OverflowError, ValueError):
+            continue
+        best2 = sorted(f for _, f in rows)[-2] if len(rows) > 1 else None
+        for k, (b, f) in enumerate(rows):
+            assert b >= f, (s, k, b, f, [j.key for j in g.jokers])
+            checked += 1
+            if best2 is not None and b < best2:
+                pruned += 1
+    assert checked > 10000 and pruned > checked // 4, (checked, pruned)
+
+
+def test_hand_cache_is_keyed_on_cards_and_flags():
+    """Two scorers with different flags (Four Fingers) on the same cards get different hand detection."""
+    g = Game(seed=3, stake="WHITE")
+    g.state = "SELECTING_HAND"
+    g.jokers = []
+    g.hand = [Card(r, 0) for r in (2, 3, 4, 5, 9, 11, 12, 13)]
+    pool = list(g.hand)
+    a = fastscore.pool_scorer(g, Plan(g), pool).score_all(list(range(8)), 4, 3, 10, 0, -1)
+    g.jokers = [Joker("four_fingers", base_cost=7)]
+    b = fastscore.pool_scorer(g, Plan(g), pool).score_all(list(range(8)), 4, 3, 10, 0, -1)
+    subs = fastscore.subset_patterns(8)
+    i = subs.index((0, 1, 2, 3))
+    assert a[i][1] != b[i][1] and b[i][1] in (4, 5, 8)          # a 4-card straight flush with Four Fingers
+    hits, misses = fastscore._fs.cache_stats()
+    assert hits > 0 and misses > 0

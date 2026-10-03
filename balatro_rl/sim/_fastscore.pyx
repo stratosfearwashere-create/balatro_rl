@@ -7,7 +7,8 @@ and tests/test_fastscore.py checks the two agree. Effects that only move money a
 (they never change the score)."""
 cimport cython
 from libc.math cimport pow, floor, isinf, isnan
-from libc.stdlib cimport malloc
+from libc.stdlib cimport malloc, free, calloc
+from libc.string cimport memcmp, memcpy
 from cpython.long cimport PyLong_FromDouble
 
 cdef enum:
@@ -567,6 +568,54 @@ def subset_patterns(int n):
     return [c for k in range(1, min(5, n) + 1) for c in combinations(range(n), k)]
 
 
+# ------------------------------------------------------------------ hand-detection cache
+# evaluate() for every subset pattern of a loaded hand, keyed on the hand's cards (rank, suit, enhancement,
+# debuff: everything evaluate reads) and the flags. The pricer scores the same sampled hands for every option
+# of a shop decision and the solver the same hands across futures, each with a new Scorer: the cache is
+# module-level, so only the jokers' pass runs per option. Direct-mapped; a slot holds one packed int per
+# subset: hand type (4 bits), the boss check's hand type (4), the scoring mask (5), contained hands (12).
+cdef enum:
+    CACHE_SLOTS = 2048
+    NO_PRE = -1
+
+cdef struct HSlot:
+    int n
+    int flags
+    unsigned int cards[MAXHAND]
+    unsigned int* pre          # PAT_N[n] packed entries, or NULL
+    int cap
+
+cdef HSlot* CACHE = <HSlot*> calloc(CACHE_SLOTS, sizeof(HSlot))
+if CACHE == NULL:
+    raise MemoryError()
+cdef long long CACHE_HITS = 0, CACHE_MISSES = 0
+
+
+def cache_stats():
+    """(hits, misses) of the hand-detection cache."""
+    return CACHE_HITS, CACHE_MISSES
+
+
+cdef inline unsigned int _pack_card(const Crd* c) noexcept nogil:
+    return (<unsigned int>c.rank) | ((<unsigned int>c.suit) << 4) | ((<unsigned int>c.enh) << 8) \
+        | ((<unsigned int>(1 if c.deb else 0)) << 12)
+
+cdef inline long long _pre_of(unsigned int v) noexcept nogil:
+    return <long long>v
+
+cdef inline int PRE_HAND(long long p) noexcept nogil:
+    return <int>(p & 15)
+
+cdef inline int PRE_VHAND(long long p) noexcept nogil:
+    return <int>((p >> 4) & 15)
+
+cdef inline int PRE_SMASK(long long p) noexcept nogil:
+    return <int>((p >> 8) & 31)
+
+cdef inline int PRE_CONTAINS(long long p) noexcept nogil:
+    return <int>((p >> 16) & 4095)
+
+
 cdef inline object _score_obj(double f, bint viol):
     # what predict_many returns for one play: 0.0 when the boss forbids it, else the int floor
     return 0.0 if viol else PyLong_FromDouble(f)
@@ -611,6 +660,30 @@ cdef class Scorer:
     cdef Crd pool[MAXPOOL]
     cdef int npool
     cdef double last_chips, last_mult    # of the latest _score call (after Plasma Deck averaging)
+    cdef unsigned int* hpre              # hand-detection cache entries of the loaded hand (pooled calls)
+    # pruning bound (see _bound_setup): state-level parts
+    cdef bint bnd_ok                     # the bound is exact for every joker on the table
+    cdef double b_chips, b_mult, b_x, b_half
+    cdef double b_cont_c[12]
+    cdef double b_cont_m[12]
+    cdef double b_cont_x[12]
+    cdef double b_hand_m[12]             # per hand type: Supernova
+    cdef double b_hand_x[12]             # per hand type: Card Sharp, Observatory
+    cdef double b_base_c[12]
+    cdef double b_base_m[12]
+    cdef int b_chad, b_wee, b_cat, b_hiker
+    cdef double b_cat_val[MAXJ]
+    cdef int b_lucky[MAXHAND]
+    cdef double b_rf                     # Raised Fist instances (held hook)
+    cdef double b_shoot, b_baron
+    cdef int b_dusk, b_selzer, b_hack, b_sock
+    # per card of the loaded hand
+    cdef double b_pc[MAXHAND]
+    cdef double b_pm[MAXHAND]
+    cdef double b_px[MAXHAND]
+    cdef double b_hm[MAXHAND]
+    cdef double b_hx[MAXHAND]
+    cdef int b_r[MAXHAND]
 
     def __init__(self, cards, jokers, lists, flags, boss, arrays, probs, scalars):
         cdef int i
@@ -674,7 +747,7 @@ cdef class Scorer:
                 pos[i] = s[i]
                 if pos[i] < 0 or pos[i] >= self.ncards:
                     raise IndexError("hand position out of range")
-            v = self._score(pos, k, &hand, &viol)
+            v = self._score(pos, k, &hand, &viol, NO_PRE)
             sc = PyLong_FromDouble(floor(v))     # math.floor(chips * mult), overflow errors included
             out.append((0.0 if viol else sc, hand))
         return out
@@ -703,28 +776,84 @@ cdef class Scorer:
         self.ncards = n
         self.hands_left, self.discards_left, self.deck_len = hands_left, discards_left, deck_len
         self.round_types, self.mouth_hand = round_types, mouth_hand
+        self.hpre = self._lookup(n)
         return n
 
-    cdef list _best_two(self, int n):
-        """[(score, hand type, subset index)] for the two best plays, best first; ties keep the earlier
-        subset (what a stable sort by score gives)."""
-        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, hand, h1 = -1, h2 = -1, b1 = -1, b2 = -1
+    cdef unsigned int* _lookup(self, int n) except NULL:
+        """The hand-detection cache entries of the loaded hand (filled on a miss)."""
+        global CACHE_HITS, CACHE_MISSES
+        cdef unsigned int key[MAXHAND]
+        cdef unsigned long long h = 1469598103934665603ULL
+        cdef int i, t, k, off, m, flags, hand, smask, contains, vh, vs, vc
+        cdef bint needv = self.vboss == B_EYE or self.vboss == B_MOUTH
         cdef int pos[5]
-        cdef double v, f, s1 = -1e308, s2 = -1e308
-        cdef bint viol, v1 = False, v2 = False
+        cdef const Crd* pl[5]
+        cdef HSlot* slot
+        flags = ((1 if self.ff else 0) | (2 if self.sc else 0) | (4 if self.sm else 0) | (8 if self.vff else 0)
+                 | (16 if self.vsc else 0) | (32 if self.vsm else 0) | (64 if needv else 0))
+        for i in range(n):
+            key[i] = _pack_card(&self.cards[i])
+            h = (h ^ key[i]) * 1099511628211ULL
+        h = (h ^ <unsigned long long>flags) * 1099511628211ULL
+        h = (h ^ <unsigned long long>n) * 1099511628211ULL
+        slot = &CACHE[(h >> 17) % CACHE_SLOTS]
+        if (slot.pre != NULL and slot.n == n and slot.flags == flags
+                and memcmp(slot.cards, key, n * sizeof(unsigned int)) == 0):
+            CACHE_HITS += 1
+            return slot.pre
+        CACHE_MISSES += 1
+        off, m = PAT_OFF[n], PAT_N[n]
+        if slot.cap < m:
+            if slot.pre != NULL:
+                free(slot.pre)
+            slot.pre = <unsigned int*> malloc(m * sizeof(unsigned int))
+            if slot.pre == NULL:
+                slot.cap = 0
+                raise MemoryError()
+            slot.cap = m
+        slot.n, slot.flags = n, flags
+        memcpy(slot.cards, key, n * sizeof(unsigned int))
         for t in range(m):
             k = PAT_K[off + t]
             for i in range(k):
+                pl[i] = &self.cards[PAT_POS[5 * (off + t) + i]]
+            evaluate(pl, k, self.ff, self.sc, self.sm, &hand, &smask, &contains)
+            vh = 0
+            if needv:
+                evaluate(pl, k, self.vff, self.vsc, self.vsm, &vh, &vs, &vc)
+            slot.pre[t] = ((<unsigned int>hand) | ((<unsigned int>vh) << 4) | ((<unsigned int>smask) << 8)
+                           | ((<unsigned int>contains) << 16))
+        return slot.pre
+
+    cdef list _best_two(self, int n):
+        """[(score, hand type, subset index)] for the two best plays, best first; ties keep the earlier
+        subset (what a stable sort by score gives). The subsets are visited largest first (they tend to
+        score highest) and a subset whose upper bound (_bound) is below the second best is skipped; the
+        tie rule is applied explicitly, so the result is the same as scoring every subset in order."""
+        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, hand, h1 = -1, h2 = -1, b1 = -1, b2 = -1
+        cdef int pos[5]
+        cdef double v, f, s1 = -1e308, s2 = -1e308, bound
+        cdef bint viol, v1 = False, v2 = False
+        cdef long long pre
+        self._bound_setup(n)
+        for t in range(m - 1, -1, -1):
+            pre = _pre_of(self.hpre[t])
+            k = PAT_K[off + t]
+            for i in range(k):
                 pos[i] = PAT_POS[5 * (off + t) + i]
-            v = self._score(pos, k, &hand, &viol)
+            if b2 >= 0 and self.bnd_ok:
+                bound = self._bound(pos, k, pre)
+                if bound < s2:
+                    continue
+            v = self._score(pos, k, &hand, &viol, pre)
             f = floor(v)
             _check_finite(f)
             if viol:
                 f = 0.0
-            if b1 < 0 or f > s1:
+            if b1 < 0 or f > s1 or (f == s1 and t < b1):
                 b2, s2, h2, v2 = b1, s1, h1, v1
                 b1, s1, h1, v1 = t, f, hand, viol
-            elif b2 < 0 or f > s2:
+            elif b2 < 0 or f > s2 or (f == s2 and t < b2):
                 b2, s2, h2, v2 = t, f, hand, viol
         out = []
         if b1 >= 0:
@@ -759,10 +888,36 @@ cdef class Scorer:
             k = PAT_K[off + t]
             for i in range(k):
                 pos[i] = PAT_POS[5 * (off + t) + i]
-            v = self._score(pos, k, &h, &viol)
+            v = self._score(pos, k, &h, &viol, _pre_of(self.hpre[t]))
             f = floor(v)
             _check_finite(f)
             out.append((_score_obj(f, viol), h))
+        return out
+
+    def bounds(self, hand, long long hands_left, long long discards_left, long long deck_len,
+               int round_types, int mouth_hand):
+        """[(upper bound, score)] per subset of one hand (pool indices), in subset_patterns order: the
+        pruning bound _best_two uses against the real score (bound is inf when the bound is off). For
+        tests: bound >= score must hold everywhere."""
+        cdef int n = self._load(hand, hands_left, discards_left, deck_len, round_types, mouth_hand)
+        cdef int off = PAT_OFF[n], m = PAT_N[n], t, i, k, h
+        cdef int pos[5]
+        cdef double v, f, b
+        cdef bint viol
+        cdef long long pre
+        self._bound_setup(n)
+        out = []
+        for t in range(m):
+            k = PAT_K[off + t]
+            for i in range(k):
+                pos[i] = PAT_POS[5 * (off + t) + i]
+            pre = _pre_of(self.hpre[t])
+            b = self._bound(pos, k, pre) if self.bnd_ok else float("inf")
+            v = self._score(pos, k, &h, &viol, pre)
+            f = floor(v)
+            if viol:
+                f = 0.0
+            out.append((b, f))
         return out
 
     def score_ext(self, subsets):
@@ -781,7 +936,7 @@ cdef class Scorer:
                 pos[i] = s[i]
                 if pos[i] < 0 or pos[i] >= self.ncards:
                     raise IndexError("hand position out of range")
-            v = self._score(pos, k, &hand, &viol)
+            v = self._score(pos, k, &hand, &viol, NO_PRE)
             f = floor(v)
             _check_finite(f)
             out.append((_score_obj(f, viol), hand, self.last_chips, self.last_mult))
@@ -1126,8 +1281,383 @@ cdef class Scorer:
             if allow_copy and t >= 0:
                 self._main(x, t, False)
 
+    # ------------------------------------------------------------------ pruning bound
+    # An upper bound on chips x mult of a play, cheap enough to skip the full pass when it cannot beat the
+    # second-best play found so far. Every add in the real pass is >= 0 and every multiplier >= 1 (Lucky
+    # Cat's is clamped here), so whatever the order of adds and multiplies, the final mult is at most
+    # (base + every add) x (every multiplier), and the chips at most base + every add. Conditional effects
+    # count as if they fired; effects that depend on the cards are summed per card (as if every played card
+    # scored with its most retriggers); the held effects of every card that is not played are included.
+    # DNA is the one joker without a bound (it adds a held copy and grows Holograms): bnd_ok is off then.
+
+    cdef inline int _copy_target(self, int j) noexcept:
+        return self.jk[j].target
+
+    cdef double _val_bound(self, int t, double default) noexcept:
+        """The largest value joker t's "val" can have when its main effect reads it."""
+        cdef double v = self.jk[t].val if self.jk[t].has_val else default
+        cdef int bk = self.jk[t].bk
+        if bk == BK_BUS or bk == BK_GREEN:
+            v += 1
+        elif bk == BK_RUNNER:
+            v += 15
+        elif bk == BK_SQUARE:
+            v += 4
+        elif bk == BK_TROUSERS:
+            v += 2
+        elif bk == BK_OBELISK:
+            v = v + 0.2 if v + 0.2 > 1.0 else 1.0
+        elif bk == BK_VAMPIRE:
+            v += 0.5
+        return v
+
+    cdef void _main_bound(self, int t, int kind) noexcept:
+        cdef int h, pk = self.jk[t].p_kind
+        cdef double v, amt = self.jk[t].p_amt
+        cdef long long m
+        if kind == MK_CONST:
+            if pk == K_MULT:
+                self.b_mult += amt
+            elif pk == K_CHIPS:
+                self.b_chips += amt
+            else:
+                self.b_x *= amt if amt > 1 else 1
+        elif kind == MK_CONTAINS:
+            h = self.jk[t].p_hand
+            if pk == K_MULT:
+                self.b_cont_m[h] += amt
+            elif pk == K_CHIPS:
+                self.b_cont_c[h] += amt
+            else:
+                self.b_cont_x[h] *= amt if amt > 1 else 1
+        elif kind == MK_HALF:
+            self.b_half += 20
+        elif kind == MK_BANNER:
+            self.b_chips += 30 * self.discards_left
+        elif kind == MK_MYSTIC:
+            if self.discards_left == 0:
+                self.b_mult += 15
+        elif kind == MK_RAISED_FIST:
+            self.b_mult += 22
+        elif kind == MK_ABSTRACT:
+            self.b_mult += 3 * self.njokers
+        elif kind == MK_SUPERNOVA:
+            for h in range(12):
+                self.b_hand_m[h] += self.hplayed[h] + 1
+        elif kind == MK_VAL_MULT:
+            v = self._val_bound(t, 0.0)
+            self.b_mult += v if v > 0 else 0
+        elif kind == MK_VAL_CHIPS:
+            v = self._val_bound(t, 0.0)
+            self.b_chips += v if v > 0 else 0
+            if self.jk[t].ck == CK_WEE:
+                self.b_wee += 1
+        elif kind == MK_VAL_X:
+            v = self._val_bound(t, 1.0)
+            self.b_x *= v if v > 1 else 1
+        elif kind == MK_BLUE:
+            self.b_chips += 2 * self.deck_len
+        elif kind == MK_SWASH:
+            m = self.sell_total - self.jk[t].sell
+            self.b_mult += m if m > 0 else 0
+        elif kind == MK_FORTUNE:
+            self.b_mult += self.tarots if self.tarots > 0 else 0
+        elif kind == MK_CARD_SHARP:
+            for h in range(12):
+                if self.hplayed_round[h] > 0:
+                    self.b_hand_x[h] *= 3
+        elif kind == MK_BULL:
+            self.b_chips += 2 * (self.money if self.money > 0 else 0)
+        elif kind == MK_BOOTSTRAPS:
+            self.b_mult += 2 * ((self.money if self.money > 0 else 0) // 5)
+        elif kind == MK_ACROBAT:
+            if self.hands_left == 1:
+                self.b_x *= 3
+        elif kind == MK_BLACKBOARD or kind == MK_FLOWER:
+            self.b_x *= 3
+        elif kind == MK_SEEING:
+            self.b_x *= 2
+        elif kind == MK_STENCIL:
+            m = self.slots - self.njokers + self.stencils
+            self.b_x *= m if m > 1 else 1
+        elif kind == MK_LOYALTY:
+            v = self.jk[t].val if self.jk[t].has_val else 6
+            if v == 1 or v == 0:
+                self.b_x *= 4
+        elif kind == MK_STEEL:
+            self.b_x *= 1 + 0.2 * self.steel
+        elif kind == MK_EROSION:
+            m = self.start_len - self.full_len
+            self.b_mult += 4 * (m if m > 0 else 0)
+        elif kind == MK_STONE:
+            self.b_chips += 25 * self.stone
+        elif kind == MK_LUCKY_CAT:
+            self.b_cat_val[self.b_cat] = self.jk[t].val if self.jk[t].has_val else 1.0
+            self.b_cat += 1
+        elif kind == MK_BASEBALL:
+            self.b_x *= pow(1.5, <double>self.rare2)
+        elif kind == MK_THROWBACK:
+            self.b_x *= 1 + 0.25 * self.skipped
+        elif kind == MK_DRIVERS:
+            if self.enhanced >= 16:
+                self.b_x *= 3
+
+    cdef void _bound_setup(self, int n) noexcept:
+        """State-level and per-card parts of the bound for the loaded hand."""
+        cdef int j, t, p, i, h, kind, r, level, ch, mu, e, hiker = 0
+        cdef const Crd* c
+        cdef bint st
+        cdef double pc, pm, px, hm, hx, reps
+        self.bnd_ok = True
+        self.b_chips = self.b_mult = self.b_half = 0.0
+        self.b_x = 1.0
+        for h in range(12):
+            self.b_cont_c[h] = self.b_cont_m[h] = self.b_hand_m[h] = 0.0
+            self.b_cont_x[h] = 1.0
+            self.b_hand_x[h] = pow(1.5, <double>self.obs[h])
+            level = self.levels[h]
+            if self.boss == B_ARM:
+                level = level - 1 if level - 1 > 1 else 1
+            if level < 1:
+                level = 1
+            ch = HB[h][0] + HB[h][2] * (level - 1)
+            mu = HB[h][1] + HB[h][3] * (level - 1)
+            if self.boss == B_FLINT:
+                ch = <int>(ch / 2.0 + 0.5)
+                if ch < 0:
+                    ch = 0
+                mu = <int>(mu / 2.0 + 0.5)
+                if mu < 1:
+                    mu = 1
+            self.b_base_c[h] = ch
+            self.b_base_m[h] = mu
+        self.b_chad = self.b_wee = self.b_cat = 0
+        self.b_rf = self.b_shoot = self.b_baron = 0.0
+        self.b_dusk = self.b_selzer = self.b_hack = self.b_sock = 0
+        for p in range(self.n_before):
+            j = self.l_before[p]
+            kind = self.jk[j].bk
+            if kind == BK_COPY:
+                t = self._copy_target(j)
+                kind = self.jk[t].bk if t >= 0 else BK_NONE
+            if kind == BK_DNA:
+                self.bnd_ok = False
+        for p in range(self.n_card):
+            j = self.l_card[p]
+            kind = self.jk[j].ck
+            if kind == CK_COPY:
+                t = self._copy_target(j)
+                kind = self.jk[t].ck if t >= 0 else CK_NONE
+            if kind == CK_HIKER:
+                hiker += 1
+        self.b_hiker = hiker
+        for p in range(self.n_retrig):
+            j = self.l_retrig[p]
+            kind = self.jk[j].rk
+            if kind == RK_COPY:
+                t = self._copy_target(j)
+                kind = self.jk[t].rk if t >= 0 else RK_NONE
+            if kind == RK_CHAD:
+                self.b_chad += 1
+            elif kind == RK_HACK:
+                self.b_hack += 1
+            elif kind == RK_DUSK:
+                if self.hands_left == 1:
+                    self.b_dusk += 1
+            elif kind == RK_SOCK:
+                self.b_sock += 1
+            elif kind == RK_SELZER:
+                self.b_selzer += 1
+        for p in range(self.n_held):
+            j = self.l_held[p]
+            kind = self.jk[j].hk
+            if kind == HK_COPY:
+                t = self._copy_target(j)
+                kind = self.jk[t].hk if t >= 0 else HK_NONE
+            if kind == HK_RAISED_FIST:
+                self.b_rf += 1
+            elif kind == HK_SHOOT:
+                self.b_shoot += 13
+            elif kind == HK_BARON:
+                self.b_baron += 1
+        for p in range(self.n_main):
+            j = self.l_main[p]
+            if self.jk[j].ed == ED_FOIL:
+                self.b_chips += 50
+            elif self.jk[j].ed == ED_HOLO:
+                self.b_mult += 10
+            elif self.jk[j].ed == ED_POLY:
+                self.b_x *= 1.5
+            if self.jk[j].unc:
+                self.b_x *= pow(1.5, <double>self.rare2)
+            t = j
+            kind = self.jk[j].mk
+            if kind == MK_COPY:
+                t = self._copy_target(j)
+                kind = self.jk[t].mk if t >= 0 else MK_NONE
+                if kind == MK_COPY:
+                    kind = MK_NONE
+            if kind != MK_NONE:
+                self._main_bound(t, kind)
+        # per card: retriggers, what each trigger adds, what it adds when held
+        for i in range(n):
+            c = &self.cards[i]
+            self.b_r[i] = 0
+            self.b_pc[i] = self.b_pm[i] = self.b_hm[i] = 0.0
+            self.b_px[i] = self.b_hx[i] = 1.0
+            self.b_lucky[i] = 0
+            if c.deb:
+                continue
+            st = is_stone(c.enh)
+            r = 1 + (1 if c.seal == S_RED else 0) + self.b_selzer + self.b_dusk
+            if not st and 2 <= c.rank <= 5:
+                r += self.b_hack
+            if is_face(c, self.par):
+                r += self.b_sock
+            self.b_r[i] = r
+            e = c.enh
+            pc = chip_value(c) + c.extra
+            pm = 0.0
+            px = 1.0
+            if e == E_BONUS:
+                pc += 30
+            elif e == E_MULT:
+                pm += 4
+            elif e == E_LUCKY:
+                pm += 20 * self.p5
+                self.b_lucky[i] = 1
+            if e == E_GLASS:
+                px *= 2
+            if c.ed == ED_FOIL:
+                pc += 50
+            elif c.ed == ED_HOLO:
+                pm += 10
+            elif c.ed == ED_POLY:
+                px *= 1.5
+            if not st and c.rank == 2:
+                pc += 8 * self.b_wee
+            for p in range(self.n_card):
+                j = self.l_card[p]
+                t = j
+                kind = self.jk[j].ck
+                if kind == CK_COPY:
+                    t = self._copy_target(j)
+                    kind = self.jk[t].ck if t >= 0 else CK_NONE
+                    if kind == CK_COPY or kind == CK_WEE or kind == CK_LUCKY_CAT:
+                        kind = CK_NONE
+                if kind == CK_SUIT:
+                    if has_suit(c, self.jk[t].p_suit, self.sm):
+                        if self.jk[t].p_kind == K_MULT:
+                            pm += self.jk[t].p_amt
+                        elif self.jk[t].p_kind == K_CHIPS:
+                            pc += self.jk[t].p_amt
+                        else:
+                            px *= self.jk[t].p_amt if self.jk[t].p_amt > 1 else 1
+                elif kind == CK_SCARY:
+                    if is_face(c, self.par):
+                        pc += 30
+                elif kind == CK_EVEN:
+                    if not st and c.rank <= 10 and c.rank % 2 == 0:
+                        pm += 4
+                elif kind == CK_ODD:
+                    if not st and (c.rank == 14 or (c.rank <= 10 and c.rank % 2 == 1)):
+                        pc += 31
+                elif kind == CK_SCHOLAR:
+                    if not st and c.rank == 14:
+                        pc += 20
+                        pm += 4
+                elif kind == CK_WALKIE:
+                    if not st and (c.rank == 10 or c.rank == 4):
+                        pc += 10
+                        pm += 4
+                elif kind == CK_SMILEY:
+                    if is_face(c, self.par):
+                        pm += 5
+                elif kind == CK_PHOTO:
+                    if is_face(c, self.par):
+                        px *= 2
+                elif kind == CK_FIB:
+                    if not st and (c.rank == 14 or c.rank == 2 or c.rank == 3 or c.rank == 5 or c.rank == 8):
+                        pm += 8
+                elif kind == CK_BLOOD:
+                    if has_suit(c, 1, self.sm):
+                        px *= 1 + (1.5 - 1) * self.p2
+                elif kind == CK_IDOL:
+                    if not st and c.rank == self.jk[t].st_rank and has_suit(c, self.jk[t].st_suit, self.sm):
+                        px *= 2
+                elif kind == CK_ANCIENT:
+                    if has_suit(c, self.jk[t].st_suit, self.sm):
+                        px *= 1.5
+                elif kind == CK_TRIB:
+                    if not st and (c.rank == 12 or c.rank == 13):
+                        px *= 2
+            self.b_pc[i], self.b_pm[i], self.b_px[i] = pc, pm, px
+            # held (every card that is not played): Steel, Shoot the Moon, Raised Fist, Baron, each repeated
+            # by a Red seal and Mime
+            reps = 1 + (1 if c.seal == S_RED else 0) + self.mime
+            hm = 0.0
+            hx = 1.5 if c.enh == E_STEEL else 1.0
+            if not st:
+                hm += self.b_rf * 2 * chip_value(c)
+                if c.rank == 12:
+                    hm += self.b_shoot
+                if c.rank == 13:
+                    hx *= pow(1.5, self.b_baron)
+            self.b_hm[i] = hm * reps
+            self.b_hx[i] = pow(hx, reps)
+
+    cdef double _bound(self, int* pos, int k, long long pre) noexcept:
+        """Upper bound on chips x mult of the play `pos` of the loaded hand (after _bound_setup)."""
+        cdef int hand = PRE_HAND(pre), smask = PRE_SMASK(pre), contains = PRE_CONTAINS(pre), i, q, h, r
+        cdef double C, M, X, v, lucky = 0.0
+        cdef long long played = 0
+        cdef bint first = True
+        C = self.b_base_c[hand] + self.b_chips
+        M = self.b_base_m[hand] + self.b_mult + self.b_hand_m[hand]
+        X = self.b_x * self.b_hand_x[hand]
+        if k <= 3:
+            M += self.b_half
+        for h in range(12):
+            if contains & (1 << h):
+                C += self.b_cont_c[h]
+                M += self.b_cont_m[h]
+                X *= self.b_cont_x[h]
+        for i in range(k):
+            q = pos[i]
+            played |= (<long long>1) << q
+            if not (self.splash or (smask & (1 << i))):
+                continue
+            r = self.b_r[q]
+            if first:                     # Hanging Chad: the first scoring card, if it is not debuffed
+                first = False
+                if r > 0:
+                    r += 2 * self.b_chad
+            if r == 0:
+                continue
+            C += r * self.b_pc[q]
+            if self.b_hiker:
+                C += 5.0 * self.b_hiker * r * (r - 1) / 2
+            M += r * self.b_pm[q]
+            if self.b_px[q] != 1.0:
+                X *= pow(self.b_px[q], <double>r)
+            if self.b_lucky[q]:
+                lucky += r
+        for q in range(self.ncards):
+            if not (played & ((<long long>1) << q)):
+                M += self.b_hm[q]
+                X *= self.b_hx[q]
+        for i in range(self.b_cat):
+            v = self.b_cat_val[i] + 0.25 * (self.p5 + self.p15) * lucky
+            X *= v if v > 1 else 1
+        if self.plasma:
+            v = (C + M * X) / 2
+            v = v * v
+        else:
+            v = C * M * X
+        return v * (1 + 1e-9) + 0.5
+
     # ------------------------------------------------------------------ scoring
-    cdef double _score(self, int* pos, int k, int* hand_out, bint* viol) noexcept:
+    cdef double _score(self, int* pos, int k, int* hand_out, bint* viol, long long pre) noexcept:
         # chips x mult of one play. Under The Hook, when the held cards can change the score, the mean
         # over every pair of held cards it could discard first (scoring.hook_variants / _hook_expected).
         cdef int nh = self.ncards - k, a, b, h, i, n = 0
@@ -1144,21 +1674,23 @@ cdef class Scorer:
                     if not in_play and self.cards[h].enh == E_STEEL:
                         matters = True
         if not matters:
-            return self._score1(pos, k, hand_out, viol, -1, -1)
+            return self._score1(pos, k, hand_out, viol, -1, -1, pre)
         if nh <= 2:
-            return self._score1(pos, k, hand_out, viol, -2, -2)
+            return self._score1(pos, k, hand_out, viol, -2, -2, pre)
         for a in range(nh):
             for b in range(a + 1, nh):
-                total += self._score1(pos, k, hand_out, viol, a, b)
+                total += self._score1(pos, k, hand_out, viol, a, b, pre)
                 chips += self.last_chips
                 mult += self.last_mult
                 n += 1
         self.last_chips, self.last_mult = chips / n, mult / n
         return total / n
 
-    cdef double _score1(self, int* pos, int k, int* hand_out, bint* viol, int skip_a, int skip_b) noexcept:
+    cdef double _score1(self, int* pos, int k, int* hand_out, bint* viol, int skip_a, int skip_b,
+                        long long pre) noexcept:
         # One scoring pass. skip_a / skip_b: held cards (by their place among the held cards) The Hook
-        # discarded first; -1 for none, -2 for all of them.
+        # discarded first; -1 for none, -2 for all of them. pre: the hand-detection cache entry of this
+        # play (NO_PRE: evaluate here).
         cdef Ctx x
         cdef const Crd* pl[5]
         cdef int i, j, p, r, e, reps, smask, level, ch, mu, h, vh, vs, vc, bc, hi = 0
@@ -1183,7 +1715,10 @@ cdef class Scorer:
                     x.held[x.nh] = h
                     x.nh += 1
                 hi += 1
-        evaluate(pl, k, self.ff, self.sc, self.sm, &x.hand, &smask, &x.contains)
+        if pre == NO_PRE:
+            evaluate(pl, k, self.ff, self.sc, self.sm, &x.hand, &smask, &x.contains)
+        else:
+            x.hand, smask, x.contains = PRE_HAND(pre), PRE_SMASK(pre), PRE_CONTAINS(pre)
         x.nsc = 0
         for i in range(k):
             if self.splash or (smask & (1 << i)):
@@ -1306,7 +1841,10 @@ cdef class Scorer:
         if self.vboss == B_PSYCHIC and k < 5:
             viol[0] = True
         elif self.vboss == B_EYE or self.vboss == B_MOUTH:
-            evaluate(pl, k, self.vff, self.vsc, self.vsm, &vh, &vs, &vc)
+            if pre == NO_PRE:
+                evaluate(pl, k, self.vff, self.vsc, self.vsm, &vh, &vs, &vc)
+            else:
+                vh = PRE_VHAND(pre)
             if self.vboss == B_EYE and (self.round_types & (1 << vh)):
                 viol[0] = True
             elif self.vboss == B_MOUTH and self.mouth_hand >= 0 and vh != self.mouth_hand:
