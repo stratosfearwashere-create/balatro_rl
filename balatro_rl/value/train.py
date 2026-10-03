@@ -36,6 +36,22 @@ def split(data: dict, val_frac: float = 0.05, seed: int = 0):
     return {k: v[~is_val] for k, v in data.items()}, {k: v[is_val] for k, v in data.items()}
 
 
+def per_game_sample(data: dict, k: int, rng: np.random.Generator) -> np.ndarray:
+    """Indices of at most k records per game (a random k): the ~70 records of one game share its outcome,
+    so training on all of them every epoch makes the network recognise games instead of builds."""
+    games = data["game"]
+    order = rng.permutation(len(games))
+    seen = {}
+    keep = []
+    for i in order:
+        g = games[i]
+        c = seen.get(g, 0)
+        if c < k:
+            seen[g] = c + 1
+            keep.append(i)
+    return rng.permutation(np.asarray(keep))
+
+
 def batches(data: dict, idx: np.ndarray, batch: int):
     for lo in range(0, len(idx), batch):
         sel = idx[lo:lo + batch]
@@ -166,9 +182,10 @@ def train(a):
         print(json.dumps(rep, indent=1, default=float))
         return
     torch.manual_seed(0)
-    net = BuildValueNet(d=a.d, layers=a.layers).to(device)
-    opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
-    steps_per_epoch = math.ceil(len(tr["game"]) / a.batch)
+    net = BuildValueNet(d=a.d, layers=a.layers, dropout=a.dropout).to(device)
+    opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=a.weight_decay)
+    per_epoch = len(tr["game"]) if a.per_game <= 0 else min(len(tr["game"]), a.per_game * len(np.unique(tr["game"])))
+    steps_per_epoch = math.ceil(per_epoch / a.batch)
     total = max(10, a.epochs * steps_per_epoch)
     warm = max(1, total // 20)
     sched = torch.optim.lr_scheduler.LambdaLR(            # linear warm-up, then cosine to 2% of the peak
@@ -179,7 +196,7 @@ def train(a):
     for ep in range(1, a.epochs + 1):
         net.train()
         t = time.time()
-        idx = rng.permutation(len(tr["game"]))
+        idx = rng.permutation(len(tr["game"])) if a.per_game <= 0 else per_game_sample(tr, a.per_game, rng)
         agg, k = {}, 0
         for b in batches(tr, idx, a.batch):
             loss, parts = losses(net, b, device)
@@ -224,12 +241,15 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", default="checkpoints/value_data")
     p.add_argument("--out", default="checkpoints/value.pt")
-    p.add_argument("--epochs", type=int, default=12)
+    p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--batch", type=int, default=1024)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--d", type=int, default=128)
     p.add_argument("--layers", type=int, default=3)
     p.add_argument("--val-frac", type=float, default=0.05)
+    p.add_argument("--per-game", type=int, default=8, help="records per game per epoch (0: all)")
+    p.add_argument("--dropout", type=float, default=0.2)
+    p.add_argument("--weight-decay", type=float, default=1e-3)
     p.add_argument("--report-only", action="store_true")
     train(p.parse_args())
 

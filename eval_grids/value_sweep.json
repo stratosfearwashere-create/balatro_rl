@@ -1,0 +1,2 @@
+{"antes_w100":  {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "shop_eval": "onestep", "value_model": "checkpoints/value.pt", "value_mode": "antes", "onestep_weight": 100.0, "budget_round": 0, "budget_boss": 0}},
+ "antes_w1000": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "shop_eval": "onestep", "value_model": "checkpoints/value.pt", "value_mode": "antes", "onestep_weight": 1000.0, "budget_round": 0, "budget_boss": 0}}}

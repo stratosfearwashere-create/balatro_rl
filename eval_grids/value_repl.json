@@ -1,0 +1,2 @@
+{"graded":      {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}}, "search": false},
+ "antes_w300":  {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "shop_eval": "onestep", "value_model": "checkpoints/value.pt", "value_mode": "antes", "budget_round": 0, "budget_boss": 0}}}
