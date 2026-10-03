@@ -1,0 +1,2 @@
+{"search_base":   {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}}, "search": true},
+ "search_inner2": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}, "solver_samples_inner": 2}, "search": true}}

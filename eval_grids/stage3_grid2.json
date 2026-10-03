@@ -1,0 +1,2 @@
+{"lazy16": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "samples_small": 16, "pack_lazy": 0.05}}, "search": false},
+ "lazy10": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "pack_lazy": 0.10}}, "search": false}}

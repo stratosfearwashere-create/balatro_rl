@@ -1,0 +1,5 @@
+{"base":    {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true}}, "search": false},
+ "small16": {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "samples_small": 16}}, "search": false},
+ "lazy":    {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "pack_lazy": 0.05}}, "search": false},
+ "reuse":   {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "reuse_behind": 0.05}}, "search": false},
+ "all3":    {"cfg": {"shop_prior": "graded", "shop": {"rule_arcana": true, "samples_small": 16, "pack_lazy": 0.05, "reuse_behind": 0.05}}, "search": false}}

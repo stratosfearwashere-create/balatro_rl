@@ -146,13 +146,14 @@ class ShopConfig:
     use_samples: int = 2            # copies per option with a random outcome
     cons_samples: int = 2           # sampled hands for a tarot / spectral that needs cards (shop)
     inner_scale: float = 0.5        # inside a search or a rollout: this share of the sample counts (min 1)
-    samples_small: int = 0          # K for the cheap kinds (sells, single playing cards, boss rerolls): their
+    samples_small: int = 16         # K for the cheap kinds (sells, single playing cards, boss rerolls): their
                                     #   deltas are measured on the first samples_small of the K hands (0: K)
-    pack_lazy: float = 0.0          # > 0: packs are priced after the other options, and a pack whose first
+    pack_lazy: float = 0.05         # > 0: packs are priced after the other options, and a pack whose first
                                     #   sampled content prices more than this behind the best option so far
-                                    #   gets no second sample
+                                    #   gets no second sample (SPEED_NOTES.md: measured, +0.5 blinds)
     reuse_behind: float = 0.0       # > 0: at the next decision in the same shop, an unchanged option that
-                                    #   priced more than this behind the best is not priced again
+                                    #   priced more than this behind the best is not priced again (measured
+                                    #   at 0.05: -1.1 blinds, so off)
     shop_cons_frac: float = 0.3     # a targeted consumable bought in the shop is worth this share of its
                                     #   sampled best use (it waits for a round, and for the agent to use it)
     created_dollars: float = 2.0    # value of a consumable an option creates (Emperor, High Priestess)
@@ -709,8 +710,9 @@ class ShopPricer:
         a = cand.action
         k = a.kind
         ctx.k = 0
-        if c.samples_small and (k in self.SMALL or (k == "buy" and g.shop[a.idx].kind == "card")
-                                or (k == "pick" and not isinstance(g.pack_cards[a.idx], (Joker, Consumable)))):
+        # (a playing card picked from a pack keeps the K hands: a pack offers the best of several such
+        # noisy gains, and card_margin is set for K)
+        if c.samples_small and (k in self.SMALL or (k == "buy" and g.shop[a.idx].kind == "card")):
             ctx.k = c.samples_small
         try:
             return self._price1(ctx, w, cand, rng)

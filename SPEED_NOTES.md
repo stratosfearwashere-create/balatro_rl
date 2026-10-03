@@ -11,6 +11,7 @@ about 3.4 s/game, 2.3x faster than this container); the ratio is what matters.
 | stage 1: differential harness, bench | 33bed6d | 7.87 | 1.00 |
 | stage 2: scorer: hand-detection cache + pruning bound | 20aa8d9 | 6.47 | 0.82 |
 | stage 4 (steps 1-2): C++ core: solver playouts, hands.evaluate; scorer prunes in bound order | e59d79b | 4.95 | 0.63 |
+| stage 3: pricer: 16 hands for cheap options, lazy pack sampling (defaults flipped) | (this) | 4.33 | 0.55 |
 
 ## Stage 2 (exact: the golden test is unchanged)
 
@@ -38,3 +39,42 @@ subset of a hand the hand cache has not seen) was the rest of a solve: `_best_tw
 largest-bound subsets first and skips every subset whose bound is below the second best, the straight
 search only visits the masks a straight can use, and the bound skips its empty terms: 25 -> 14 us per
 cold 8-card hand, 18 -> 11 us warm. A search game went from 40 to 33 CPU s on this container.
+
+## Stage 3 (changes decisions: measured)
+
+`python -m balatro_rl.az.compare grid` (grids in eval_grids/) on 300 paired seeds (10000-10299, Red Deck, White Stake, no search,
+graded prior with `rule_arcana`, untrained network), against the unchanged graded prior. Rule: a change
+is kept only if blinds do not fall by more than one paired SE. (cpu s/game here was measured while other
+work ran on the machine; the bench row above is the clean number.)
+
+| variant | option | blinds +- SE | vs base (paired) | wins | cpu s/game |
+|---|---|---|---|---|---|
+| base | - | 17.02 +- 0.35 | | 41/300 | 6.9 |
+| small16 | `samples_small: 16` | 16.83 +- 0.35 | -0.19 +- 0.30 | 27/300 | 6.5 |
+| lazy | `pack_lazy: 0.05` | 17.87 +- 0.33 | +0.85 +- 0.39 | 36/300 | 6.8 |
+| reuse | `reuse_behind: 0.05` | 15.89 +- 0.32 | -1.13 +- 0.37 | 19/300 | 4.7 |
+| all3 | all three | 15.67 +- 0.29 | -1.35 +- 0.40 | 13/300 | 4.6 |
+| lazy16 | `samples_small: 16`, `pack_lazy: 0.05` | 17.50 +- 0.33 | +0.48 +- 0.41 | 31/300 | 5.8 |
+| lazy10 | `pack_lazy: 0.10` | 17.34 +- 0.33 | +0.32 +- 0.40 | 31/300 | 6.0 |
+
+Kept (the new defaults): `samples_small = 16` (sells, boss rerolls and single playing cards bought in
+the shop are measured on the first 16 of the 32 shared hands, against the decision's state measured on
+the same 16; a playing card picked from a pack keeps 32: card_margin is set for that) and
+`pack_lazy = 0.05` (packs are priced after the other options; a pack whose first sampled content prices
+more than 5 logits behind the best option so far gets no second sample). Rejected: `reuse_behind` (at the
+next decision in the same shop, options that priced more than 5 logits behind were not priced again;
+the state changes between decisions, a joker bought fills the slots and sells become the way to the next
+one, so it loses over a blind). The option stays in ShopConfig, off.
+
+Stage 3 was expected to cut more. Per-option profile of the pricer (5 games, before stage 3): packs 44% of
+pricing time (15 ms each: 2 sampled contents x every pick x up to 4 target sets), sells 30% (2.7 ms each;
+89% of them more than 5 logits behind), consumable picks 12%, tarots 7%. The hands are not where the
+time is: a strength evaluation costs about 1 ms, of which 0.4 ms is compiled scoring and the rest is
+Python (fresh_round's clone, the scorer's tables, numpy's bootstrap, the build key), so halving K saves
+a fifth of those calls, and lazy packs rarely stop after the first sample (a pack is seldom 5 logits
+behind on its first content). The gains that remain are in the Python glue (CPP_PORT_NOTES.md).
+
+Solver (3b): `_preds` hit rate within a solve is 3.3% without search and 11.5% with it (the futures draw
+different hands; identical hands are already reused), so nothing to change there. `solver_samples_inner`
+only applies inside the search (the no-search bench and grid never run it); it is measured with a search
+grid, see below.
