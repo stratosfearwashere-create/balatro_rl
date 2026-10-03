@@ -85,7 +85,7 @@ class AgentConfig:
     crn: bool = False               # root candidates share each sweep's sampled future (search.py)
     value_range: tuple | None = (0.0, 1.0)   # fixed scale for Q in the search (None: per-tree min-max)
     solver_samples: int = 12        # root
-    solver_samples_inner: int = 4   # inside the search
+    solver_samples_inner: int = 2   # inside the search (measured: SPEED_NOTES.md, stage 3)
     boss_depth: int = 2             # solver depth on boss blinds (root)
     autoplay: bool = True
     search: bool = True
