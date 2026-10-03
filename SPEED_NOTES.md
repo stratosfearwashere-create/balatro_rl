@@ -7,11 +7,18 @@ about 3.4 s/game, 2.3x faster than this container); the ratio is what matters.
 
 | step | commit | CPU s/game | vs baseline |
 |---|---|---|---|
-| baseline (cd7dfc3) | - | 7.87 | 1.00 |
-| stage 1: differential harness, bench | 33bed6d | 7.87 | 1.00 |
-| stage 2: scorer: hand-detection cache + pruning bound | 20aa8d9 | 6.47 | 0.82 |
-| stage 4 (steps 1-2): C++ core: solver playouts, hands.evaluate; scorer prunes in bound order | e59d79b | 4.95 | 0.63 |
-| stage 3: pricer: 16 hands for cheap options, lazy pack sampling (defaults flipped) | (this) | 4.33 | 0.55 |
+| baseline (cd7dfc3) | - | 7.76 | 1.00 |
+| stage 1: differential harness, bench | 33bed6d | 7.76 | 1.00 |
+| stage 2: scorer: hand-detection cache + pruning bound (exact) | 20aa8d9 | 6.38 | 0.82 |
+| stage 4, steps 1-2: C++ core: solver playouts, hands.evaluate; scorer prunes in bound order (exact) | e59d79b | 4.77 | 0.61 |
+| stage 3: pricer: 16 hands for cheap options, lazy pack sampling (measured, decisions change) | 25d4af4 | 3.82 | 0.49 |
+| bootstrap memo, headroom hands from the C++ replica (exact) | f8a83d2 | 3.75 | 0.48 |
+| stage 3b: inner solver samples 4 -> 2 (search only; no effect on this bench) | 6818341 | 3.75 | 0.48 |
+
+Every commit was benched the same way, each built in its own worktree with the machine otherwise idle
+(the mean furthest blind over the 20 games is 15.80 for every exact step and 14.35 after stage 3, whose
+decisions differ; the 300-seed paired comparison below is the measurement of that change). On the
+reference machine, 3.4 s/game at the baseline, the same ratio gives about 1.6 s/game.
 
 ## Stage 2 (exact: the golden test is unchanged)
 
@@ -76,5 +83,13 @@ behind on its first content). The gains that remain are in the Python glue (CPP_
 
 Solver (3b): `_preds` hit rate within a solve is 3.3% without search and 11.5% with it (the futures draw
 different hands; identical hands are already reused), so nothing to change there. `solver_samples_inner`
-only applies inside the search (the no-search bench and grid never run it); it is measured with a search
-grid, see below.
+only applies inside the search (the no-search bench and grid never run it), so it was measured with a
+search grid (`eval_grids/stage3_search.json`, 300 paired seeds, search on, the stage-3 pricer defaults):
+
+| variant | blinds +- SE | vs search base (paired) | wins | cpu s/game |
+|---|---|---|---|---|
+| search_base (inner 4) | 16.30 +- 0.37 | | 24/300 | 53.3 |
+| search_inner2 (inner 2) | 16.95 +- 0.35 | +0.65 +- 0.49 | 26/300 | 50.6 |
+
+Kept: `solver_samples_inner = 2` (the golden file was regenerated for it: the search's inner evaluations
+change, the solver / scorer section of the golden file does not).
