@@ -38,21 +38,76 @@ def parse_stakes(s: str) -> tuple[list[str], list[float]]:
     return names, weights
 
 
+def event(w, a) -> dict | None:
+    """What a decision outside a round (or a consumable use) did, as plain facts for stats.py; None for plays
+    and discards. Read before the step: the indices refer to the state the agent saw."""
+    g = w.g
+    k = a.kind
+    e = {"ante": g.ante, "blind": min(g.blind_idx, 2), "step": w.steps, "money": g.money, "kind": k,
+         "in_round": g.state == "SELECTING_HAND"}
+    if k in ("play", "discard"):
+        return None
+    if k == "buy" and 0 <= a.idx < len(g.shop):
+        it = g.shop[a.idx]
+        e["key"], e["cost"] = it.key, it.cost
+        if it.joker is not None:
+            e["edition"] = it.joker.edition
+    elif k == "buy_pack" and 0 <= a.idx < len(g.shop_packs):
+        e["key"], e["cost"] = g.shop_packs[a.idx].key, g.shop_packs[a.idx].cost
+    elif k == "voucher" and 0 <= a.idx < len(g.shop_vouchers):
+        e["key"], e["cost"] = g.shop_vouchers[a.idx].key, g.shop_vouchers[a.idx].cost
+    elif k == "sell_joker" and 0 <= a.idx < len(g.jokers):
+        j = g.jokers[a.idx]
+        e["key"], e["edition"], e["value"] = f"j_{j.key}", j.edition, j.sell_value()
+    elif k == "sell_cons" and 0 <= a.idx < len(g.consumables):
+        e["key"] = g.consumables[a.idx].key
+    elif k == "use" and 0 <= a.idx < len(g.consumables):
+        e["key"], e["targets"] = g.consumables[a.idx].key, len(a.cards)
+    elif k == "pick" and g.state == "PACK" and 0 <= a.idx < len(g.pack_cards):
+        x = g.pack_cards[a.idx]
+        key = getattr(x, "key", None)
+        e["key"] = (f"j_{key}" if hasattr(x, "state") else key) if isinstance(key, str) else "<playing_card>"
+        e["pack"] = g.pack_kind
+    elif k == "skip" and g.blind_idx < len(g.tags_offered):
+        e["key"] = f"tag_{g.tags_offered[g.blind_idx]}"
+    elif k == "reroll":
+        e["cost"] = 0 if g.free_rerolls > 0 else g.reroll_cost
+    elif k == "select":
+        e["key"] = g.boss if g.blind_idx == 2 else ""
+    elif k == "pack_skip":
+        e["pack"] = g.pack_kind
+    return e
+
+
+def lineup(g) -> dict:
+    return {"kind": "ante", "ante": g.ante, "money": g.money, "step": 0, "blind": 0, "in_round": False,
+            "jokers": [f"j_{j.key}" + (f":{j.edition}" if j.edition else "") for j in g.jokers],
+            "vouchers": sorted(g.vouchers), "levels": list(g.hand_levels), "deck": len(g.full_deck)}
+
+
 def play_recorded(agent, seed: int, deck: str, stake: str, explore: bool, game_id: int):
-    """One game; returns (labelled rows, info)."""
+    """One game; returns (labelled rows, info, events)."""
     from ..az.world import World
     from ..sim.game import Game
     w = World(Game(seed=seed, deck_type=deck, stake=stake))
     agent.reseed(seed * 7919 + 17)
     rec = GameRecorder(agent.potential, game_id)
+    events = []
+    seen_ante = set()
     while not w.done:
         g = w.g
+        if g.state == "BLIND_SELECT" and g.blind_idx == 0 and g.ante not in seen_ante:
+            seen_ante.add(g.ante)
+            events.append(lineup(g))
         if g.state == "BLIND_SELECT" or g.state in ("SHOP", "PACK"):
             rec.maybe(w)
         d = agent.decide(w, explore=explore)
         if d.action is None:
             g.state = "GAME_OVER"
             break
+        ev = event(w, d.action)
+        if ev is not None:
+            events.append(ev)
         prev_state, prev_ante, prev_blind = g.state, g.ante, blind_index(g)
         w.step(d.action)
         if prev_state != "SELECTING_HAND" and g.state == "SELECTING_HAND":
@@ -62,8 +117,9 @@ def play_recorded(agent, seed: int, deck: str, stake: str, explore: bool, game_i
     g = w.g
     rows = rec.finish(g)
     info = {"seed": seed, "stake": stake, "deck": deck, "won": g.state == "WON", "blinds": g.furthest_blind,
-            "ante": g.ante, "steps": w.steps, "explore": explore, "records": len(rows)}
-    return rows, info
+            "ante": g.ante, "steps": w.steps, "explore": explore, "records": len(rows),
+            "boss": g.boss if g.state != "WON" else "", "died_blind": min(g.blind_idx, 2), "money_end": g.money}
+    return rows, info, events
 
 
 def _worker(args):
@@ -74,15 +130,22 @@ def _worker(args):
     if os.path.exists(out_path):
         return []
     agent = _make_agent(model, False, seeds[0], cfg, pot)
-    rows, infos = [], []
+    rows, infos, events = [], [], []
     for s in seeds:
         rng = random.Random(s)
         stake = rng.choices(stakes, weights=weights)[0]
         explore = rng.random() < explore_frac
-        r, info = play_recorded(agent, s, deck, stake, explore, s)
+        r, info, ev = play_recorded(agent, s, deck, stake, explore, s)
         rows += r
         infos.append(info)
+        for e in ev:
+            e["game"] = s
+        events += ev
     if rows:
+        import gzip
+        with gzip.open(out_path[:-4] + ".events.jsonl.gz", "wt", encoding="utf-8") as f:
+            for e in events:
+                f.write(json.dumps(e, separators=(",", ":")) + "\n")
         np.savez_compressed(out_path + ".tmp.npz", **pack(rows))
         os.replace(out_path + ".tmp.npz", out_path)
     return infos
