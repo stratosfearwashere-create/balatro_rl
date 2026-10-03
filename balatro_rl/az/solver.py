@@ -286,12 +286,11 @@ class CoreRoundSolver:
         self.cache_hits = 0
         self.fallback = CompiledRoundSolver(samples, depth, inner, top_plays, max_steps)
 
-    # the fallback's internals, for callers (tests) that drive one solve by hand
-    def _setup(self, g):
-        return self.fallback._setup(g)
-
-    def _preds(self, r):
-        return self.fallback._preds(r)
+    # the fallback's internals (_setup, _preds, _playout ...), for callers that drive one solve by hand
+    def __getattr__(self, name):
+        if name == "fallback":
+            raise AttributeError(name)
+        return getattr(self.fallback, name)
 
     @property
     def sg(self):
