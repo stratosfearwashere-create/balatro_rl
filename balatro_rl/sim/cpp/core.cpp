@@ -61,6 +61,7 @@ struct Random {
         for (size_t i : r.sample_indices(py::len(pop), k)) out.append(pop[i]);
         return out;
     }
+    std::vector<size_t> sample_indices(size_t n, size_t k) { return r.sample_indices(n, k); }
     py::list choices(py::sequence pop, py::object weights, size_t k) {
         py::list out;
         std::vector<size_t> idx;
@@ -170,6 +171,8 @@ PYBIND11_MODULE(_core, m) {
         .def("choice", &Random::choice)
         .def("shuffle", &Random::shuffle)
         .def("sample", &Random::sample, py::arg("population"), py::arg("k"))
+        .def("sample_indices", &Random::sample_indices, py::arg("n"), py::arg("k"),
+             "the indices sample(range(n), k) picks")
         .def("choices", &Random::choices, py::arg("population"), py::arg("weights") = py::none(), py::arg("k") = 1)
         .def("uniform", &Random::uniform);
 }

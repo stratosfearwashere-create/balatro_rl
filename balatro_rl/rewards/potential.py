@@ -29,6 +29,15 @@ import time
 from itertools import combinations
 
 from ..sim import fastscore
+
+try:                                   # the C++ core's random.Random replica (BALATRO_PURE=1 disables it)
+    import os as _os
+    if _os.environ.get("BALATRO_PURE") == "1":
+        raise ImportError
+    from ..sim import _core as _core_mod
+    _core_random = _core_mod.Random if hasattr(_core_mod.Random, "sample_indices") else None
+except ImportError:
+    _core_random = None
 from ..sim.cards import Card
 from ..sim.game import Game
 from ..sim.hands import N_HANDS
@@ -128,8 +137,12 @@ class Headroom:
         plan = Plan(probe)
         fs = fastscore.pool_scorer(probe, plan, pool) if n <= 16 else None
         if fs is not None:                   # all K hands in one compiled call
-            pos = {id(c): i for i, c in enumerate(pool)}
-            hands = [[pos[id(c)] for c in rng.sample(pool, n)] for _ in range(k)]
+            if _core_random is not None and seed is None:       # the same draws, from the C++ replica
+                crng = _core_random(_seed(scoring_key(g)))
+                hands = [crng.sample_indices(len(pool), n) for _ in range(k)]
+            else:
+                pos = {id(c): i for i, c in enumerate(pool)}
+                hands = [[pos[id(c)] for c in rng.sample(pool, n)] for _ in range(k)]
             best = fs.best_two_many(hands, probe.hands_left, probe.discards_left, len(pool) - n,
                                     fastscore.hand_types_mask(probe.round_hand_types), probe.mouth_hand)
             return [b[0][0] if b else 0.0 for b in best]
