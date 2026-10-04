@@ -64,12 +64,35 @@ def losses(net, b: dict, device) -> tuple[torch.Tensor, dict]:
     ante = torch.as_tensor(b["ante"], device=device)
     reached = torch.as_tensor(b["ante_reached"], device=device)
     tgt, mask = ordinal_targets(ante, reached)
+    if "td_target" in b:                                   # TD(lambda) targets replace the Monte-Carlo ones
+        tgt = torch.as_tensor(b["td_target"], device=device, dtype=torch.float32)
     ol = (F.binary_cross_entropy_with_logits(out["ord"], tgt, reduction="none") * mask).sum() / mask.sum().clamp(min=1)
     bn = F.binary_cross_entropy_with_logits(out["boss_now"], torch.as_tensor(b["boss_now"], device=device))
     bx = F.binary_cross_entropy_with_logits(out["boss_next"], torch.as_tensor(b["boss_next"], device=device))
     bl = F.mse_loss(out["blinds"], torch.as_tensor(b["blinds_after"], device=device))
     loss = ol + 0.25 * bn + 0.25 * bx + 0.5 * bl
     return loss, {"ord": ol.item(), "boss_now": bn.item(), "boss_next": bx.item(), "blinds": bl.item()}
+
+
+def td_targets(data: dict, reach: np.ndarray, lam: float) -> np.ndarray:
+    """TD(lambda) targets for the ordinal heads. Within a game, records in step order: the target of record t
+    for head k is (1 - lam) * V_k(s_{t+1}) + lam * target_{t+1}, ending in the game's label; a record's own
+    antes (k <= ante) keep the Monte-Carlo label (they are masked out of the loss anyway)."""
+    n = len(data["game"])
+    k = np.arange(2, 2 + N_ORDINAL)
+    mc = (data["ante_reached"][:, None] >= k[None, :]).astype(np.float32)
+    out = mc.copy()
+    order = np.lexsort((data["step"], data["game"]))
+    games = data["game"][order]
+    starts = np.flatnonzero(np.r_[True, games[1:] != games[:-1]])
+    ends = np.r_[starts[1:], len(order)]
+    for s, e in zip(starts, ends):
+        idx = order[s:e]
+        nxt = mc[idx[-1]]
+        for i in idx[::-1]:
+            out[i] = nxt
+            nxt = (1.0 - lam) * reach[i] + lam * out[i]
+    return out
 
 
 def predict(net, data: dict, device, batch: int = 2048) -> dict:
@@ -194,6 +217,8 @@ def train(a):
     best = math.inf
     log_path = a.out.replace(".pt", "_log.jsonl")
     for ep in range(1, a.epochs + 1):
+        if a.td_lambda > 0 and ep > 1:                  # epoch 1 trains on the Monte-Carlo labels
+            tr["td_target"] = td_targets(tr, predict(net, tr, device)["reach"], a.td_lambda)
         net.train()
         t = time.time()
         idx = rng.permutation(len(tr["game"])) if a.per_game <= 0 else per_game_sample(tr, a.per_game, rng)
@@ -248,6 +273,8 @@ def main():
     p.add_argument("--layers", type=int, default=3)
     p.add_argument("--val-frac", type=float, default=0.05)
     p.add_argument("--per-game", type=int, default=8, help="records per game per epoch (0: all)")
+    p.add_argument("--td-lambda", type=float, default=0.0,
+                   help="> 0: TD(lambda) targets (the model's own estimate of the next build, blended with the outcome)")
     p.add_argument("--dropout", type=float, default=0.2)
     p.add_argument("--weight-decay", type=float, default=1e-3)
     p.add_argument("--report-only", action="store_true")

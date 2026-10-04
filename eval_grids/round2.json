@@ -1,0 +1,67 @@
+{
+ "graded": {
+  "cfg": {
+   "shop_prior": "graded",
+   "shop": {
+    "rule_arcana": true
+   }
+  },
+  "search": false
+ },
+ "r2_w200": {
+  "cfg": {
+   "shop_prior": "graded",
+   "shop": {
+    "rule_arcana": true
+   },
+   "shop_eval": "onestep",
+   "value_model": "checkpoints/value_r2.pt",
+   "value_mode": "antes",
+   "budget_round": 0,
+   "budget_boss": 0,
+   "onestep_weight": 200.0
+  }
+ },
+ "r2_w300": {
+  "cfg": {
+   "shop_prior": "graded",
+   "shop": {
+    "rule_arcana": true
+   },
+   "shop_eval": "onestep",
+   "value_model": "checkpoints/value_r2.pt",
+   "value_mode": "antes",
+   "budget_round": 0,
+   "budget_boss": 0,
+   "onestep_weight": 300.0
+  }
+ },
+ "r2_m1": {
+  "cfg": {
+   "shop_prior": "graded",
+   "shop": {
+    "rule_arcana": true
+   },
+   "shop_eval": "onestep",
+   "value_model": "checkpoints/value_r2.pt",
+   "value_mode": "antes",
+   "budget_round": 0,
+   "budget_boss": 0,
+   "onestep_margin": 1.0
+  }
+ },
+ "r2_m2": {
+  "cfg": {
+   "shop_prior": "graded",
+   "shop": {
+    "rule_arcana": true
+   },
+   "shop_eval": "onestep",
+   "value_model": "checkpoints/value_r2.pt",
+   "value_mode": "antes",
+   "budget_round": 0,
+   "budget_boss": 0,
+   "onestep_margin": 2.0
+  }
+ }
+}
