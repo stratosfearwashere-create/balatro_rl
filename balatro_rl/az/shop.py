@@ -169,6 +169,14 @@ class ShopConfig:
     rule_pace: bool = False
     rule_copier: bool = False
     rule_boss: bool = False
+    rule_plan: bool = False         # commit to the hand the build plays (plan_* below)
+    # plan: when one hand type is at least plan_min_share of the K sampled best plays, a planet for it and a
+    # playing card that feeds it (its suit for the flush family, a rank the deck holds more often than its
+    # median rank for the pair family) get a bonus x the share: the K shared hands cannot show what a planet
+    # or one card does to future hands
+    plan_min_share: float = 0.3
+    plan_planet: float = 0.01
+    plan_card: float = 0.006
     # skip
     skip_shop_dollars: float = 6.0  # what the skipped blind's shop is worth
     skip_scaling: float = 0.004     # per owned joker that grows by being played
@@ -220,7 +228,7 @@ def _sig(c) -> tuple:
 class _Ctx:
     """One decision: the game it is about, and what every option's strength is measured with."""
     __slots__ = ("g", "seed", "index", "n_base", "prio", "w_dollar", "k_int", "behind", "p_boss", "w0", "inner",
-                 "scores", "econ0", "k", "w0k", "best")
+                 "scores", "econ0", "k", "w0k", "best", "plan")
 
     def __init__(self, g: Game):
         self.g = g
@@ -234,6 +242,7 @@ class _Ctx:
         self.k = 0                   # hands the option being priced is measured on (0: all K)
         self.w0k = {}                # k -> W(g) measured on the first k hands
         self.best = None             # best price so far in this decision (pack_lazy)
+        self.plan = None             # rule_plan: (hand type, share, suit or -1, ranks held 3+ times)
 
     def indices(self, cards) -> list[int]:
         """Each card's number: its place in the decision's deck, or (cards a copy created) after them, in
@@ -384,8 +393,8 @@ class ShopPricer:
             return clear_chances(sc2, hands, discards, [target], scfg, seed)[0]
         return None
 
-    def strength(self, ctx: _Ctx, g: Game) -> tuple[float, float, np.ndarray]:
-        """(S, clear chance of this ante's boss, the K best-hand scores) of g's build."""
+    def strength(self, ctx: _Ctx, g: Game) -> tuple[float, float, np.ndarray, np.ndarray]:
+        """(S, clear chance of this ante's boss, the K best-hand scores, their hand types) of g's build."""
         c = self.cfg
         targets = boss_targets(g)
         key = (ctx.seed, self._build_key(ctx, g), tuple(targets), g.boss if c.rule_boss else "", ctx.k)
@@ -407,7 +416,7 @@ class ShopPricer:
         else:
             s = strength_score(current_ante(g), ch, scfg.score) + c.log_weight * math.log(max(float(sc.mean()), 1.0))
         s += c.deck_weight * 52.0 * _deck_quality(g)
-        out = (s, float(ch[0]), sc)
+        out = (s, float(ch[0]), sc, ty)
         if len(self.cache) >= self.max_cache:
             self.cache.clear()
         self.cache[key] = out
@@ -436,11 +445,54 @@ class ShopPricer:
         ctx = _Ctx(g)
         ctx.inner = inner
         ctx.w_dollar = self.cfg.dollar * self.ante_factor(g.ante)
-        _, p, sc = self.strength(ctx, g)
+        _, p, sc, ty = self.strength(ctx, g)
         ctx.p_boss, ctx.scores = p, sc
+        if self.cfg.rule_plan and len(ty):
+            ctx.plan = self._plan(g, ty)
         ctx.behind = bool(self.cfg.rule_pace and p < self.cfg.pace_threshold)
         ctx.w0 = self._w(ctx, g)
         return ctx
+
+    FLUSH_FAMILY = (5, 8, 10, 11)                 # Flush, Straight Flush, Flush House, Flush Five
+    PAIR_FAMILY = (1, 2, 3, 6, 7, 9, 10, 11)
+
+    def _plan(self, g: Game, ty: np.ndarray):
+        """The hand the build plays, when one type dominates the sampled best plays (rule_plan)."""
+        cnt = Counter(ty.tolist())
+        h, n = cnt.most_common(1)[0]
+        share = n / len(ty)
+        self.stats["plan_checked"] += 1
+        if share < self.cfg.plan_min_share or h == 0:
+            return None
+        self.stats["plan_set"] += 1
+        suit = -1
+        if h in self.FLUSH_FAMILY:
+            by_suit = Counter(c.suit for c in g.full_deck if not c.is_stone and c.enh != "WILD")
+            if by_suit:
+                suit = by_suit.most_common(1)[0][0]
+        ranks = Counter(c.rank for c in g.full_deck if not c.is_stone)
+        med = sorted(ranks.values())[len(ranks) // 2] if ranks else 0
+        held = frozenset(r for r, k in ranks.items() if k > med) if h in self.PAIR_FAMILY else frozenset()
+        return (h, share, suit, held)
+
+    def _plan_bonus(self, ctx: _Ctx, x) -> float:
+        """rule_plan: the bonus of a planet (Consumable) or a playing card (Card) for the planned hand."""
+        plan = ctx.plan
+        if plan is None or x is None:
+            return 0.0
+        h, share, suit, held = plan
+        c = self.cfg
+        if isinstance(x, Consumable):
+            hit = x.kind == "planet" and PLANETS.get(x.name) == h
+            if hit:
+                self.stats["plan_planet_bonus"] += 1
+            return c.plan_planet * share if hit else 0.0
+        if getattr(x, "is_stone", False):
+            return 0.0
+        fits = (suit >= 0 and (x.suit == suit or x.enh == "WILD")) or (x.rank in held)
+        if fits:
+            self.stats["plan_card_bonus"] += 1
+        return c.plan_card * share if fits else 0.0
 
     def _n(self, ctx: _Ctx, n: int) -> int:
         return max(1, int(round(n * self.cfg.inner_scale))) if ctx.inner else n
@@ -741,8 +793,10 @@ class ShopPricer:
             if it.kind in ("planet", "tarot", "spectral"):
                 if it.kind != "planet" and not c.rule_arcana:
                     return -c.act_margin, d[1]
-                return d[0] + self.hold_value(ctx, g2, len(g2.consumables) - 1, rng) - c.act_margin, d[1]
-            return d[0] - c.card_margin - c.act_margin, d[1]
+                bonus = self._plan_bonus(ctx, g2.consumables[-1]) if (c.rule_plan and g2.consumables) else 0.0
+                return d[0] + bonus + self.hold_value(ctx, g2, len(g2.consumables) - 1, rng) - c.act_margin, d[1]
+            bonus = self._plan_bonus(ctx, it.card) if c.rule_plan else 0.0
+            return d[0] + bonus - c.card_margin - c.act_margin, d[1]
         if k == "buy_pack":
             v, money = self._pack_price(ctx, w, a.idx, rng)
             return v - c.act_margin, money
@@ -779,6 +833,8 @@ class ShopPricer:
             extra = sum(self._created(ctx, g2) for g2 in games) / max(1, len(games))
             if not isinstance(x, (Joker, Consumable)):
                 extra -= c.card_margin
+            if c.rule_plan and not isinstance(x, Joker):
+                extra += self._plan_bonus(ctx, x)
             return d[0] + extra - 0.5 * c.act_margin, d[1]
         if k == "skip":
             return self._skip_price(ctx, rng)
