@@ -392,13 +392,18 @@ def train_ppo_cpp(a):
                 pl.append(ploss.detach()); vl.append(vloss.detach()); ents.append(ent.detach())
                 kls.append((flat_lp[mb] - lp).mean().detach())
         pl, vl, ents, kls = (torch.stack(x).double().cpu().numpy() for x in (pl, vl, ents, kls))
+        if cuda:
+            # the legal-action path makes tensors of a different size every call, and the allocator's cache of
+            # them grows until the card is full (then Windows pages GPU memory and everything crawls)
+            torch.cuda.empty_cache()
         el = time.time() - t0
         row = {"iter": it, "pi": round(float(np.mean(pl)), 4), "v": round(float(np.mean(vl)), 3),
                "ent": round(float(np.mean(ents)), 3), "kl": round(float(np.mean(kls)), 4),
                "min": round(el / 60, 1), "phase": a.phase, "env_steps": it * T * N,
                "sps": round(it * T * N / max(el, 1e-9)), "sim%": round(100 * sim_s / max(el, 1e-9), 1),
                "games": games, "wins": wins, "antes": ante_hist[1:].tolist(),   # antes: lost in 1..8, then won
-               "lr": lr_now, "ent_coef": ent_now}
+               "lr": lr_now, "ent_coef": ent_now,
+               "gpu_gb": round(torch.cuda.max_memory_reserved() / 1e9, 1) if cuda else 0.0}
         ante_hist[:] = 0
         row.update(stats.summary())
         log(a.log, row)

@@ -120,6 +120,8 @@ def main():
         return show(out, base)
     last_mtime = -1.0
     while True:
+        while not os.path.exists(a.checkpoint):         # a run that has not saved yet
+            time.sleep(15)
         m = os.path.getmtime(a.checkpoint)
         if m != last_mtime:
             last_mtime = m
