@@ -3,6 +3,8 @@
 //            differential tests) and a few debug setters the tests use to build states
 //   Env      one environment: observation encoding, legal actions, rewards (env.py)
 //   VecEnv   many environments stepped together on a thread pool, observations written into numpy batches
+#include <chrono>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
@@ -272,7 +274,16 @@ PYBIND11_MODULE(_engine, m) {
         .def("debug_add_tag", [](Game& g, const std::string& t) { g.pending_tags.push_back((int8_t)find_name(TAG_KEYS, T_COUNT, t, "tag")); })
         .def("debug_set_tag_offered", [](Game& g, int i, const std::string& t) { g.tags_offered[i] = find_name(TAG_KEYS, T_COUNT, t, "tag"); })
         .def("debug_set_hand_level", [](Game& g, int h, int lv) { g.hand_levels[h] = lv; })
-        .def("debug_set_ante", [](Game& g, int a) { g.ante = a; });
+        .def("debug_set_ante", [](Game& g, int a) { g.ante = a; })
+        .def("debug_set_joker_state", [](Game& g, int i, const std::string& key, double v) {
+            JState& st = g.jokers.at(i).st;
+            if (key == "val") st.set(v);
+            else if (key == "rank") st.rank = (int)v;
+            else if (key == "suit") st.suit = (int)v;
+            else if (key == "hand") st.hand = (int)v;
+            else if (key == "left") st.left = (int)v;
+            else throw std::invalid_argument("unknown joker state key: " + key);
+        });
 
     py::class_<Env>(m, "Env")
         .def(py::init([](const std::string& deck, const std::string& stake, double ante_weight, double win_bonus,
@@ -294,6 +305,27 @@ PYBIND11_MODULE(_engine, m) {
             info["blinds"] = e.g.furthest_blind;
             py::object ob = r.done ? py::object(py::none()) : py::object(obs_dict_single(e.obs_ref()));
             return py::make_tuple(ob, r.reward, r.done, info);
+        })
+        // timing helpers: seconds for n repetitions (the state is not changed)
+        .def("bench_encode", [](Env& e, int n) {
+            auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < n; i++) e.encode();
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        })
+        .def("bench_candidates", [](Env& e, int n) {
+            auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < n; i++) e.candidates();
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        })
+        .def("bench_features", [](Env& e, int n) {
+            auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < n; i++) { e.legal_mask(); e.action_features(); e.encode_global(); }
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        })
+        .def("bench_reset", [](Env& e, int n) {
+            auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < n; i++) e.reset((uint64_t)i);
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         })
         .def_property_readonly("game", [](Env& e) -> Game& { return e.g; }, py::return_value_policy::reference_internal)
         .def_readonly("steps", &Env::steps)

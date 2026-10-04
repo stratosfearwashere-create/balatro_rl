@@ -188,7 +188,21 @@ def apply_cpp(cg, a: int, obs: dict, targeting: bool):
 
 def spice(g: Game, cg, rng: random.Random) -> str:
     """One random change applied to both games (only between decisions outside a round)."""
-    kind = rng.choice(["joker", "joker", "joker", "cons", "voucher", "money", "card", "boss", "tag", "level", "ptag"])
+    kind = rng.choice(["joker", "joker", "joker", "cons", "voucher", "money", "card", "boss", "tag", "level", "ptag",
+                       "jstate"])
+    if kind == "jstate" and g.jokers:
+        # a joker about to run out, fire or expire: the edges of the scaling / self-destroying jokers
+        i = rng.randrange(len(g.jokers))
+        j = g.jokers[i]
+        edge = {"ramen": ("val", 1.01), "ice_cream": ("val", 5), "popcorn": ("val", 4), "turtle_bean": ("val", 1),
+                "selzer": ("val", 1), "loyalty_card": ("val", rng.choice([0, 1])), "invisible": ("val", 2),
+                "yorick": ("left", 2), "rocket": ("val", 7), "campfire": ("val", 2.5), "obelisk": ("val", 1.8),
+                "green_joker": ("val", 0), "ride_the_bus": ("val", 9), "hologram": ("val", 2.25)}.get(j.key)
+        if edge is None:
+            return ""
+        j.state[edge[0]] = edge[1]
+        cg.debug_set_joker_state(i, edge[0], float(edge[1]))
+        return f"joker state {j.key} {edge[0]}={edge[1]}"
     if kind == "joker" and len(g.jokers) < g.joker_slots + 1:
         k = rng.choice(list(JOKERS))
         ed = rng.choice(["", "", "", "FOIL", "HOLO", "POLYCHROME", "NEGATIVE"])
@@ -272,7 +286,8 @@ def obs_diff(po: dict, co: dict) -> list[str]:
 
 
 def new_cov() -> dict:
-    return {k: set() for k in ("joker", "joker_end", "cons", "boss", "tag", "ptag", "voucher", "pack", "deck", "stake")}
+    return {k: set() for k in ("joker", "joker_end", "cons", "boss", "tag", "ptag", "voucher", "pack", "deck", "stake",
+                               "misc")}
 
 
 def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, verbose: bool = False,
@@ -348,6 +363,18 @@ def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, 
         # what this step exercises
         cov["voucher"] |= g.vouchers
         cov["ptag"] |= set(g.pending_tags)
+        if in_round and len(g.hand) > 8:
+            cov["misc"].add("a hand of more than 8 cards")
+        if targeting and len(g.target_cards()) > 8:
+            cov["misc"].add("targets chosen among more than 8 cards")
+        if targeting:
+            cov["misc"].add("targets chosen in a pack" if g.targeting["from_pack"] else "targets chosen in a round")
+        if in_round and g.boss_active() == "hook" and any(j.d.held for j in g.jokers):
+            cov["misc"].add("The Hook with a held-card joker (averaged prediction)")
+        if in_round and any(c.hidden for c in g.hand):
+            cov["misc"].add("face-down cards in hand")
+        if any(j.key in ("blueprint", "brainstorm") for j in g.jokers) and in_round:
+            cov["misc"].add("a copier joker in a round")
         if in_round and not targeting and a < E.A_SELECT:
             cov["joker"] |= {j.key for j in g.jokers if not j.debuffed}
             if g.blind_idx == 2 and not g.boss_disabled:
@@ -436,13 +463,18 @@ def main():
         from balatro_rl.sim.items import PACK_KEYS
         full = {"joker": set(JOKERS), "joker_end": set(JOKERS), "cons": set(PLANETS) | set(TAROTS) | set(SPECTRALS),
                 "boss": set(ALL_BOSSES), "tag": set(TAGS), "voucher": set(VOUCHERS),
-                "pack": {f"p_{k}_{sz}" for k, sz in PACK_KEYS}, "deck": set(DECKS), "stake": set(STAKES)}
+                "pack": {f"p_{k}_{sz}" for k, sz in PACK_KEYS}, "deck": set(DECKS), "stake": set(STAKES),
+                "misc": {"a hand of more than 8 cards", "targets chosen among more than 8 cards",
+                         "targets chosen in a pack", "targets chosen in a round",
+                         "The Hook with a held-card joker (averaged prediction)", "face-down cards in hand",
+                         "a copier joker in a round"}}
         names = {"joker": "jokers held while a hand was played or discarded", "joker_end": "jokers held at a round's end",
                  "cons": "consumables used", "boss": "bosses played against", "tag": "tags taken by skipping",
-                 "voucher": "vouchers owned", "pack": "packs bought", "deck": "decks", "stake": "stakes"}
+                 "voucher": "vouchers owned", "pack": "packs bought", "deck": "decks", "stake": "stakes",
+                 "misc": "special situations"}
         for k, allk in full.items():
             miss = sorted(allk - cov[k])
-            print(f"  {names[k]}: {len(allk) - len(miss)}/{len(allk)}" + (f"   never: {' '.join(miss)}" if miss else ""))
+            print(f"  {names[k]}: {len(allk) - len(miss)}/{len(allk)}" + (f"   never: {'; '.join(miss)}" if miss else ""))
     sys.exit(1 if fails else 0)
 
 

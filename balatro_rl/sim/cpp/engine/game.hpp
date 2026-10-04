@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -288,7 +289,10 @@ struct ScoreCtx {
     int ns = 0;
     double chips = 0.0, mult = 0.0, money = 0.0;
     int level_up = 0;
-    JState js[MAXJ];                     // the plan jokers' states (copies; committed on a real play)
+    // the plan jokers' states (copies; committed on a real play). Raw storage: only the first plan->n are
+    // ever written or read, and a context is made for every candidate play of every decision
+    alignas(JState) unsigned char js_raw[MAXJ * sizeof(JState)];
+    JState* js = reinterpret_cast<JState*>(js_raw);
     int ct[MAXJ];                        // plan index a copier copies (-1: nothing)
     bool ov_has[5] = {false, false, false, false, false};
     uint8_t ov[5] = {0, 0, 0, 0, 0};     // Vampire / Midas Mask enhancement overrides of the played cards
@@ -299,8 +303,12 @@ struct ScoreCtx {
     bool first_hand = false;
     ScoreEvent ev[256];
     int nev = 0;
-    Card dna_tmp[8];                     // DNA's copies in a prediction
+    alignas(Card) unsigned char dna_raw[8 * sizeof(Card)];
+    Card* dna_tmp = reinterpret_cast<Card*>(dna_raw);      // DNA's copies in a prediction
     int ndna = 0;
+    ScoreCtx() {}
+    ScoreCtx(const ScoreCtx&) = delete;
+    ScoreCtx& operator=(const ScoreCtx&) = delete;
 
     bool real() const { return rng != nullptr; }
     int played_index(const Card* c) const {
@@ -935,8 +943,7 @@ struct Game {
                         c.event(EV_DNA, id);
                     } else {
                         if (c.ndna >= 8) throw std::runtime_error("too many DNA copies");
-                        cp = &c.dna_tmp[c.ndna++];
-                        *cp = *src;
+                        cp = new (&c.dna_tmp[c.ndna++]) Card(*src);
                         cp->hidden = false;
                         cp->uid = -1 - c.ndna;
                         cp->enh = c.enh(src);
@@ -1266,7 +1273,7 @@ struct Game {
         ctx.first_hand = hpr == 0;
         for (int k = 0; k < plan.n; k++) {
             const Joker* j = joker_by_uid(plan.j[k].uid);
-            ctx.js[k] = j ? j->st : JState();
+            new (&ctx.js[k]) JState(j ? j->st : JState());
         }
         resolve_copiers(ctx);
         int b = plan.boss;
