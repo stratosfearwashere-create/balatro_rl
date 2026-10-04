@@ -362,8 +362,141 @@ def to_rpc(g: Game, a: int, hand_map: list[int], obs: dict, targets: list[int] |
     return "pack", {"skip": True}
 
 
+# ------------------------------------------------------------------ the unified agent (az/)
+BEST_AZ_CFG = {"shop_prior": "graded", "shop": {"rule_arcana": True}, "shop_eval": "onestep",
+               "value_model": "checkpoints/value_r3.pt", "value_mode": "antes", "onestep_weight": 200.0,
+               "budget_round": 0, "budget_boss": 0}
+
+
+def az_to_rpc(g: Game, a, hand_map: list[int]):
+    """The BalatroBot call for an az Action. Cards are sent as game indices; the game scores a play in hand
+    order, so the agent's card order is not transmitted (it only matters with order-dependent jokers)."""
+    k = a.kind
+    if k in ("play", "discard"):
+        return k, {"cards": sorted(hand_map[p] for p in a.cards)}
+    if k == "move_joker":
+        perm = list(range(len(g.jokers)))
+        j = perm.pop(a.idx)
+        perm.insert(a.to, j)
+        return "rearrange", {"jokers": perm}
+    if k == "select":
+        return "select", None
+    if k == "skip":
+        return "skip", None
+    if k == "buy":
+        return "buy", {"card": a.idx}
+    if k == "buy_pack":
+        return "buy", {"pack": a.idx}
+    if k == "voucher":
+        return "buy", {"voucher": max(a.idx, 0)}
+    if k == "reroll":
+        return "reroll", None
+    if k == "leave":
+        return "next_round", None
+    if k == "sell_joker":
+        return "sell", {"joker": a.idx}
+    if k == "sell_cons":
+        return "sell", {"consumable": a.idx}
+    if k == "use":
+        params = {"consumable": a.idx}
+        if a.cards:
+            params["cards"] = [hand_map[i] for i in a.cards]
+        return "use", params
+    if k == "pick":
+        params = {"card": a.idx}
+        if a.cards:
+            params["targets"] = [hand_map[i] for i in a.cards]
+        return "pack", params
+    if k == "pack_skip":
+        return "pack", {"skip": True}
+    return None, None                               # reroll_boss: BalatroBot has no call for it
+
+
+def play_az(args):
+    """The unified agent on the real game: the state is rebuilt as a simulator Game, the agent decides as in
+    the simulator (exact solver in rounds, graded prior + value model in shops), and its action is sent."""
+    from .az.agent import Agent, AgentConfig
+    from .az.net import AZNet, load_net
+    from .az.world import World
+    cfg = dict(BEST_AZ_CFG)
+    if args.cfg:
+        cfg.update(json.loads(args.cfg))
+    net = load_net(args.model) if args.model not in ("none", "az") else AZNet().eval()
+    agent = Agent(net, AgentConfig(**cfg), seed=0)
+    cli = Client(f"http://{args.host}:{args.port}")
+    cli.call("health")
+    results = []
+    for run in range(args.runs):
+        gs = cli.call("gamestate")
+        if gs.get("state") != "MENU":
+            gs = cli.call("menu")
+        params = {"deck": args.deck, "stake": args.stake}
+        if args.seed:
+            params["seed"] = f"{args.seed}{run}" if args.runs > 1 else args.seed
+        gs = cli.call("start", params)
+        agent.reseed(run)
+        cnt = Counters()
+        memory = {}
+        while True:
+            st = gs.get("state")
+            if st == "GAME_OVER" or gs.get("won"):
+                break
+            if st == "ROUND_EVAL":
+                gs = cli.call("cash_out"); cnt = Counters()
+                continue
+            if st not in ("BLIND_SELECT", "SELECTING_HAND", "SHOP", "SMODS_BOOSTER_OPENED"):
+                time.sleep(0.2)
+                gs = cli.call("gamestate")
+                continue
+            g, hmap = game_from_state(gs, args.deck, args.stake, memory)
+            w = World(g, rerolls=cnt.rerolls, moves=cnt.swaps)
+            d = agent.decide(w)
+            if d.action is None:
+                gs = cli.call("play", {"cards": [0]})
+                continue
+            order = [d.index] if d.index >= 0 else []
+            if len(d.policy) == len(d.choice.cands):
+                order += [int(i) for i in np.argsort(-d.policy) if int(i) != d.index]
+            elif d.index < 0:
+                order = [i for i, c in enumerate(d.choice.cands) if c.action == d.action] or [0]
+            sent = False
+            for i in order[:6]:
+                a = d.action if (i == d.index or d.index < 0 and i == order[0]) else d.choice.cands[i].action
+                method, params = az_to_rpc(g, a, hmap)
+                if method is None:
+                    continue
+                if args.verbose:
+                    from .az.train import describe
+                    print(f"ante {g.ante} {g.state:15s} ${g.money:<4} {d.reason:9s} {describe(w, a)}")
+                try:
+                    gs = cli.call(method, params)
+                    sent = True
+                    if a.kind == "reroll":
+                        cnt.rerolls += 1
+                    elif a.kind == "move_joker":
+                        cnt.swaps += 1
+                    else:
+                        if a.kind == "leave":
+                            cnt.rerolls = 0
+                        if a.kind in ("leave", "select", "skip", "play", "discard"):
+                            cnt.swaps = 0
+                    break
+                except RPCError as e:
+                    print("  rejected:", e)
+            if not sent:
+                fallback = {"SHOP": ("next_round", None), "SMODS_BOOSTER_OPENED": ("pack", {"skip": True}),
+                            "BLIND_SELECT": ("select", None), "SELECTING_HAND": ("play", {"cards": [0]})}[st]
+                gs = cli.call(*fallback)
+            time.sleep(args.delay)
+        results.append({"run": run, "won": bool(gs.get("won")), "ante": gs.get("ante_num")})
+        print(results[-1])
+    print(json.dumps(results))
+
+
 # ------------------------------------------------------------------ main loop
 def play(args):
+    if args.agent == "az":
+        return play_az(args)
     cli = Client(f"http://{args.host}:{args.port}")
     cli.call("health")
     if args.model == "heuristic":
@@ -447,7 +580,11 @@ def _one_hot(a, n):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--model", required=True, help="checkpoint path, or 'heuristic'")
+    p.add_argument("--model", default="none",
+                   help="PPO checkpoint or 'heuristic' (--agent ppo); az network checkpoint or 'none' (--agent az)")
+    p.add_argument("--agent", choices=["ppo", "az"], default="az",
+                   help="az: the unified agent (graded prior + value model, bridge.BEST_AZ_CFG); ppo: the old one")
+    p.add_argument("--cfg", default="", help="az: AgentConfig overrides as JSON (merged into BEST_AZ_CFG)")
     p.add_argument("--deck", default="RED")
     p.add_argument("--stake", default="GOLD")
     p.add_argument("--runs", type=int, default=1)
