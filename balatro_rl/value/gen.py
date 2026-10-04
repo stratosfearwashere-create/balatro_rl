@@ -171,7 +171,10 @@ def _worker(args):
     model, cfg, pot, seeds, stakes, weights, explore_frac, deck, out_path, branch = args
     if os.path.exists(out_path):
         return []
-    agent = _make_agent(model, False, seeds[0], cfg, pot)
+    # one-step / prior configs need search=True to take their shop path (agent.decide); without it every
+    # "V agent" generation so far was the plain graded prior
+    search = cfg.get("shop_eval") in ("onestep", "prior")
+    agent = _make_agent(model, search, seeds[0], cfg, pot)
     rows, infos, events = [], [], []
     for s in seeds:
         rng = random.Random(s)
