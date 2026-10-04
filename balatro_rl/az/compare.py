@@ -44,7 +44,7 @@ def _variant(v: dict):
     return v.get("model", "none"), dict(v.get("cfg") or {}), bool(v.get("search", True)), rcfg
 
 
-def run_grid(grid: dict, out: str, games: int, workers: int, seed0: int = EVAL_SEED0, only=None):
+def run_grid(grid: dict, out: str, games: int, workers: int, seed0: int = EVAL_SEED0, only=None, stake: str = STAKE):
     os.makedirs(out, exist_ok=True)
     for name, v in grid.items():
         path = os.path.join(out, f"{name}.json")
@@ -52,7 +52,7 @@ def run_grid(grid: dict, out: str, games: int, workers: int, seed0: int = EVAL_S
             continue
         model, cfg, search, rcfg = _variant(v)
         t = time.time()
-        res = evaluate(model, games, workers, search, stake=STAKE, seed0=seed0, cfg_over=cfg, rcfg=rcfg,
+        res = evaluate(model, games, workers, search, stake=stake, seed0=seed0, cfg_over=cfg, rcfg=rcfg,
                        explore=bool(v.get("explore", False)))
         res.update(name=name, variant=v, workers=workers, wall_min=round((time.time() - t) / 60, 2))
         with open(path, "w") as f:
@@ -169,6 +169,7 @@ def main():
     p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     p.add_argument("--only", default="", help="comma-separated variant names")
     p.add_argument("--seed0", type=int, default=EVAL_SEED0, help="first seed (every variant plays the same ones)")
+    p.add_argument("--stake", default=STAKE, help="grid: the stake every variant plays")
     p.add_argument("--detail", action="store_true")
     a = p.parse_args()
     grid = {}
@@ -177,7 +178,7 @@ def main():
             grid = json.load(f)
     only = [x for x in a.only.split(",") if x] or None
     if a.cmd == "grid":
-        run_grid(grid, a.out, a.games, a.workers, seed0=a.seed0, only=only)
+        run_grid(grid, a.out, a.games, a.workers, seed0=a.seed0, only=only, stake=a.stake)
     elif a.cmd == "changed":
         changed(grid, a.out, a.base, a.games, a.workers, seed0=a.seed0, only=only)
     else:

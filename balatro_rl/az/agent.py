@@ -130,7 +130,7 @@ class AgentConfig:
     def __post_init__(self):
         if isinstance(self.shop, dict):
             self.shop = ShopConfig(**self.shop)
-        if self.shop_prior not in ("rule", "graded"):
+        if self.shop_prior not in ("rule", "graded", "guide"):
             raise ValueError(f"unknown shop_prior {self.shop_prior!r}")
         if self.shop_eval not in ("search", "onestep", "prior"):
             raise ValueError(f"unknown shop_eval {self.shop_eval!r}")
@@ -293,6 +293,9 @@ class Agent:
                 prior = prior + self.growth_bonus(w, choice, prior)
         elif cfg.shop_prior == "graded":
             prior, price = self.pricer.prior(w, choice, rng, root)
+        elif cfg.shop_prior == "guide":
+            from .guide import guide_prior
+            prior = guide_prior(w, choice, cfg.heur_bonus, self.pricer, rng)
         else:
             prior = rule_prior(w, choice, cfg.heur_bonus)
         state = encode_state(w)
