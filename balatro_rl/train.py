@@ -308,6 +308,12 @@ def train_ppo_cpp(a):
     games = wins = 0
     ante_hist = np.zeros(10, dtype=np.int64)        # games by ante reached, since the last log row
     for it in range(1, a.iters + 1):
+        # linear schedules over the run: the learning rate to lr_final, the entropy bonus to ent_final
+        frac = (it - 1) / max(1, a.iters - 1)
+        lr_now = a.lr + (a.lr_final - a.lr) * frac if a.lr_final is not None else a.lr
+        ent_now = a.ent + (a.ent_final - a.ent) * frac if a.ent_final is not None else a.ent
+        for gp in opt.param_groups:
+            gp["lr"] = lr_now
         model.eval()
         for t in range(T):
             with torch.no_grad():
@@ -378,7 +384,7 @@ def train_ppo_cpp(a):
                 ploss = -torch.min(s1, s2).mean()
                 vloss = F.mse_loss(v, flat_ret[mb])
                 ent = dist.entropy().mean()
-                loss = ploss + a.vf * vloss - a.ent * ent
+                loss = ploss + a.vf * vloss - ent_now * ent
                 opt.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -391,7 +397,8 @@ def train_ppo_cpp(a):
                "ent": round(float(np.mean(ents)), 3), "kl": round(float(np.mean(kls)), 4),
                "min": round(el / 60, 1), "phase": a.phase, "env_steps": it * T * N,
                "sps": round(it * T * N / max(el, 1e-9)), "sim%": round(100 * sim_s / max(el, 1e-9), 1),
-               "games": games, "wins": wins, "antes": ante_hist[1:].tolist()}   # antes: lost in 1..8, then won
+               "games": games, "wins": wins, "antes": ante_hist[1:].tolist(),   # antes: lost in 1..8, then won
+               "lr": lr_now, "ent_coef": ent_now}
         ante_hist[:] = 0
         row.update(stats.summary())
         log(a.log, row)
@@ -458,6 +465,8 @@ def main():
                         "many times faster; use hundreds of --envs)")
     p.add_argument("--threads", type=int, default=0, help="--engine cpp: simulation threads (0: one per core)")
     p.add_argument("--stats-window", type=int, default=5000, help="--engine cpp: games the logged averages cover")
+    p.add_argument("--lr-final", type=float, default=None, help="--engine cpp: anneal the learning rate linearly to this")
+    p.add_argument("--ent-final", type=float, default=None, help="--engine cpp: anneal the entropy bonus linearly to this")
     p.add_argument("--amp-recompute", action="store_true",
                    help="--engine cpp --amp: recompute the rollout's log-probs at the update's batch size")
     p.add_argument("--save-every", type=int, default=10)
