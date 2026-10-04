@@ -159,6 +159,8 @@ def solver_prior(choice: Choice, tau: float) -> np.ndarray:
             v = best_p - 0.3
         elif k == "use":
             v = (c.p_clear if c.p_clear >= 0 else best_p) - 0.03
+        elif k == "sell_joker" and c.p_clear >= 0:          # Verdant Leaf: the sale that lifts the debuff
+            v = c.p_clear + 0.02 * min(c.e_chips, 3.0) - 0.001
         else:                                               # sell / move: the solver has no opinion
             v = None
         u.append(v)

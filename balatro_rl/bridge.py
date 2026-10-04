@@ -37,7 +37,7 @@ class RPCError(Exception):
 
 
 class Client:
-    def __init__(self, url="http://127.0.0.1:12346", timeout=30):
+    def __init__(self, url="http://127.0.0.1:12346", timeout=120):
         self.url = url
         self.timeout = timeout
         self._id = 0
@@ -49,8 +49,15 @@ class Client:
             body["params"] = params
         req = urllib.request.Request(self.url, data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            resp = json.loads(r.read())
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                resp = json.loads(r.read())
+        except (TimeoutError, OSError) as e:          # the game is mid-animation (end of run): ask again
+            if method == "gamestate":
+                raise
+            print(f"  {method}: no answer in {self.timeout}s ({e}); re-reading the state")
+            time.sleep(2.0)
+            return self.call("gamestate")
         if "error" in resp:
             raise RPCError(f"{method} {params}: {resp['error']}")
         return resp["result"]
@@ -201,6 +208,8 @@ def game_from_state(gs: dict, deck="RED", stake="GOLD", memory: dict | None = No
         if b.get("status") in ("CURRENT", "SELECT"):
             g.blind_idx = t
             g.target = int(b.get("score", 0))
+    if g.boss == "verdant_leaf" and g.blind_idx == 2 and g.state == "SELECTING_HAND":
+        g.flags["verdant"] = True            # cleared below once the real hand shows the debuff lifted
 
     # hands
     hands = gs.get("hands") or {}
@@ -236,6 +245,8 @@ def game_from_state(gs: dict, deck="RED", stake="GOLD", memory: dict | None = No
             # played/discarded cards this round aren't listed: use the deck seen before the round
             g.full_deck = memory["full_deck"]
     hand_map = [c._real for c in sim_hand]
+    if g.flags.get("verdant") and real_hand and not any(c.debuffed for c in real_hand):
+        g.flags["verdant"] = False           # a joker was sold this round: the cards score again
     if isinstance(gs.get("hand"), dict) and gs["hand"].get("limit"):
         g.hand_size_override = min(MAX_HAND, int(gs["hand"]["limit"]))
 
@@ -368,9 +379,22 @@ BEST_AZ_CFG = {"shop_prior": "graded", "shop": {"rule_arcana": True}, "shop_eval
                "budget_round": 0, "budget_boss": 0}
 
 
+def az_rearrange(g: Game, a, hand_map: list[int], n_hand: int):
+    """When a play's card order differs from the hand order (Hanging Chad, Photograph, a Mult card before a
+    Glass card ...), the hand rearrangement that puts the played cards in that order, as the new order of
+    game indices; None when no rearrangement is needed."""
+    if a.kind != "play" or list(a.cards) == sorted(a.cards):
+        return None
+    order = list(range(n_hand))
+    slots = sorted(hand_map[p] for p in a.cards)           # the game slots these cards occupy now
+    for slot, p in zip(slots, a.cards):
+        order[slot] = hand_map[p]                           # the i-th played card goes to the i-th slot
+    return order
+
+
 def az_to_rpc(g: Game, a, hand_map: list[int]):
     """The BalatroBot call for an az Action. Cards are sent as game indices; the game scores a play in hand
-    order, so the agent's card order is not transmitted (it only matters with order-dependent jokers)."""
+    order, so a play whose order matters is preceded by a rearrange (az_rearrange) and then played by slot."""
     k = a.kind
     if k in ("play", "discard"):
         return k, {"cards": sorted(hand_map[p] for p in a.cards)}
@@ -412,6 +436,28 @@ def az_to_rpc(g: Game, a, hand_map: list[int]):
     return None, None                               # reroll_boss: BalatroBot has no call for it
 
 
+def start_run(cli, params, tries: int = 6):
+    """Back to the menu (waiting until the game is really there) and start a run; the start call fails while
+    the menu is still being built, so it is retried."""
+    gs = cli.call("gamestate")
+    if gs.get("state") != "MENU":
+        cli.call("menu")
+        for _ in range(50):
+            time.sleep(0.5)
+            gs = cli.call("gamestate")
+            if gs.get("state") == "MENU":
+                break
+        time.sleep(2.0)
+    for t in range(tries):
+        try:
+            return cli.call("start", params)
+        except RPCError as e:
+            if t == tries - 1:
+                raise
+            print("  start failed, retrying:", e)
+            time.sleep(3.0)
+
+
 def play_az(args):
     """The unified agent on the real game: the state is rebuilt as a simulator Game, the agent decides as in
     the simulator (exact solver in rounds, graded prior + value model in shops), and its action is sent."""
@@ -427,13 +473,10 @@ def play_az(args):
     cli.call("health")
     results = []
     for run in range(args.runs):
-        gs = cli.call("gamestate")
-        if gs.get("state") != "MENU":
-            gs = cli.call("menu")
         params = {"deck": args.deck, "stake": args.stake}
         if args.seed:
             params["seed"] = f"{args.seed}{run}" if args.runs > 1 else args.seed
-        gs = cli.call("start", params)
+        gs = start_run(cli, params)
         agent.reseed(run)
         cnt = Counters()
         memory = {}
@@ -468,6 +511,14 @@ def play_az(args):
                 if args.verbose:
                     from .az.train import describe
                     print(f"ante {g.ante} {g.state:15s} ${g.money:<4} {d.reason:9s} {describe(w, a)}")
+                new_order = az_rearrange(g, a, hmap, len(_cards(gs.get("hand"))))
+                if new_order is not None:                   # put the cards in the agent's order first
+                    try:
+                        cli.call("rearrange", {"hand": new_order})
+                        if args.verbose:
+                            print("    (hand rearranged for the card order)")
+                    except RPCError as e:
+                        print("  rearrange rejected (playing in hand order):", e)
                 try:
                     gs = cli.call(method, params)
                     sent = True
@@ -514,13 +565,10 @@ def play(args):
 
     results = []
     for run in range(args.runs):
-        gs = cli.call("gamestate")
-        if gs.get("state") != "MENU":
-            gs = cli.call("menu")
         params = {"deck": args.deck, "stake": args.stake}
         if args.seed:
             params["seed"] = f"{args.seed}{run}" if args.runs > 1 else args.seed
-        gs = cli.call("start", params)
+        gs = start_run(cli, params)
         cnt = Counters()
         memory = {}
         while True:

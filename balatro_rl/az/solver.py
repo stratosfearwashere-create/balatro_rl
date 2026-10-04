@@ -391,6 +391,19 @@ class RoundSolver:
                 c.e_chips = max(base_e, (g.chips / target) + c.best_after * (choice.need / target))
         if not self.use_playout:
             return
+        if g.boss_active() == "verdant_leaf" and g.flags.get("verdant"):
+            # every card is debuffed until a joker is sold: the sale is the move that makes scoring possible
+            from .world import determinize
+            for c in choice.cands:
+                if c.kind != "sell_joker":
+                    continue
+                g2 = determinize(g, rng)
+                try:
+                    g2.sell_joker(c.action.idx)
+                except (AssertionError, IndexError):
+                    continue
+                if g2.state == "SELECTING_HAND" and g2.hand:
+                    c.p_clear, c.e_chips = self.null_value(g2, rng, USE_SAMPLES)
         for c in use_candidates(choice):
             tot_p = tot_e = 0.0
             n = 0
