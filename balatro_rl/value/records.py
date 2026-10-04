@@ -16,6 +16,9 @@ and, once the game is over (GameRecorder.finish),
     boss_next the next ante's boss was beaten
     blinds_after   blinds beaten after this record / 24
     money_next     money at the start of the next ante / 100 (NaN if there was none)
+    group     a decision id when this record is the first of a branch rollout (gen.py --branch-k): the records
+              of one group are the builds the top options of the same shop decision led to, each played out,
+              and the trainer ranks them against each other (train.py --rank-weight); -1 otherwise
 Everything is float16 / int16 and about 2 KB per record.
 """
 from __future__ import annotations
@@ -32,7 +35,7 @@ from ..sim.items import item_id
 
 F_DECK = 13 + 4 + 52 + len(ENHANCEMENTS) + len(EDITIONS) + len(SEALS) + 4
 ARRAY_KEYS = ("glob", "deck", "jok", "jok_id", "cons", "cons_id", "lev")
-SCALAR_KEYS = ("phi", "ante", "blind_idx", "stake", "money", "step", "game",
+SCALAR_KEYS = ("phi", "ante", "blind_idx", "stake", "money", "step", "game", "group",
                "win", "ante_reached", "boss_now", "boss_next", "blinds_after", "money_next")
 LABEL_KEYS = ("win", "ante_reached", "boss_now", "boss_next", "blinds_after", "money_next")
 N_ORDINAL = 8                      # P(reach ante k) for k = 2..9 (9: the run is won)
@@ -94,6 +97,7 @@ def build_record(w, potential) -> dict:
     r["lev"] = lev
     r["phi"] = float(potential(g))
     r["ante"], r["blind_idx"], r["stake"], r["money"], r["step"] = g.ante, min(g.blind_idx, 2), g.stake, g.money, w.steps
+    r["group"] = -1
     return r
 
 
@@ -108,9 +112,10 @@ def build_signature(g) -> tuple:
 class GameRecorder:
     """Collects build records during one game and labels them at the end."""
 
-    def __init__(self, potential, game_id: int):
+    def __init__(self, potential, game_id: int, group: int = -1):
         self.potential = potential
         self.game_id = game_id
+        self.group = group                         # the first record taken belongs to this decision group
         self.rows: list[dict] = []
         self.last_sig = None
         self.ante_money: dict[int, int] = {}       # money at the start of each ante
@@ -126,7 +131,10 @@ class GameRecorder:
         if sig == self.last_sig and not blind_start:
             return
         self.last_sig = sig
-        self.rows.append(build_record(w, self.potential))
+        r = build_record(w, self.potential)
+        if self.group >= 0 and not self.rows:
+            r["group"] = self.group
+        self.rows.append(r)
 
     def boss(self, ante: int, cleared: bool):
         self.boss_cleared[ante] = cleared
@@ -159,4 +167,14 @@ def pack(rows: list[dict]) -> dict:
 
 
 def concat(parts: list[dict]) -> dict:
-    return {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
+    for p in parts:                                # data written before the group key
+        if "group" not in p:
+            p["group"] = np.full(len(p["game"]), -1, np.int32)
+    keys = [k for k in parts[0] if all(k in p for p in parts)]
+    return {k: np.concatenate([p[k] for p in parts]) for k in keys}
+
+
+def root_game(game: np.ndarray) -> np.ndarray:
+    """The game a record's game came from: branch rollouts (gen.py) get the ids -(8 x seed + 1 + b)."""
+    game = np.asarray(game)
+    return np.where(game >= 0, game, (-game) // 8)

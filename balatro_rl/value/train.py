@@ -7,8 +7,11 @@ Games are split by game id (5% held out). The report gives, on the held-out game
   - log-loss of P(win) and of P(reach the next ante) for the model, for a logistic fit of Phi alone (fitted
     on the training games, one per ante), and for the base rate;
   - AUC of P(reach next ante);
-  - calibration buckets of P(win).
+  - calibration buckets of P(win);
+  - decision accuracy: on held-out branch groups (gen.py --branch-k), the share of pairs of options whose
+    outcomes differ that the model's E[antes] orders correctly, against Phi's ordering.
 The model only earns its place in the agent if it beats the Phi fit on held-out log-loss.
+--rank-weight > 0 adds a pairwise ranking loss between a group's records (the better outcome first).
 """
 from __future__ import annotations
 
@@ -24,11 +27,11 @@ import torch.nn.functional as F
 
 from .gen import load
 from .model import BuildValueNet, ordinal_targets, save_model, load_model, to_tensors
-from .records import N_ORDINAL
+from .records import N_ORDINAL, root_game
 
 
 def split(data: dict, val_frac: float = 0.05, seed: int = 0):
-    games = data["game"]
+    games = root_game(data["game"])                   # a game and its branch rollouts stay on one side
     uniq = np.unique(games)
     rng = np.random.default_rng(seed)
     val_games = set(rng.choice(uniq, size=max(1, int(len(uniq) * val_frac)), replace=False).tolist())
@@ -58,6 +61,48 @@ def batches(data: dict, idx: np.ndarray, batch: int):
         yield {k: v[sel] for k, v in data.items()}
 
 
+def groups_of(data: dict) -> list[np.ndarray]:
+    """Record indices of each decision group with at least two different outcomes."""
+    if "group" not in data:
+        return []
+    grp = data["group"]
+    order = np.argsort(grp, kind="stable")
+    order = order[grp[order] >= 0]
+    out = []
+    if len(order) == 0:
+        return out
+    g_sorted = grp[order]
+    starts = np.flatnonzero(np.r_[True, g_sorted[1:] != g_sorted[:-1]])
+    ends = np.r_[starts[1:], len(order)]
+    for s, e in zip(starts, ends):
+        idx = order[s:e]
+        if len(idx) >= 2 and len(np.unique(data["ante_reached"][idx])) >= 2:
+            out.append(idx)
+    return out
+
+
+def rank_batches(data: dict, groups: list[np.ndarray], per_batch: int, rng: np.random.Generator):
+    """Batches of whole groups: (batch dict, group id per record)."""
+    order = rng.permutation(len(groups))
+    for lo in range(0, len(order), per_batch):
+        chosen = [groups[i] for i in order[lo:lo + per_batch]]
+        sel = np.concatenate(chosen)
+        gid = np.concatenate([np.full(len(c), k) for k, c in enumerate(chosen)])
+        yield {k: v[sel] for k, v in data.items()}, gid
+
+
+def rank_loss(scores: torch.Tensor, labels: torch.Tensor, gid: torch.Tensor, scale: float) -> tuple[torch.Tensor, int]:
+    """Pairwise logistic loss over pairs within a group whose labels differ: the better outcome should score
+    higher. (mean loss, pairs)."""
+    same = gid.unsqueeze(0) == gid.unsqueeze(1)
+    better = labels.unsqueeze(1) > labels.unsqueeze(0)              # [i, j]: i's outcome beats j's
+    m = same & better
+    if not m.any():
+        return scores.sum() * 0.0, 0
+    diff = (scores.unsqueeze(1) - scores.unsqueeze(0))[m]
+    return F.softplus(-scale * diff).mean(), int(m.sum().item())
+
+
 def losses(net, b: dict, device) -> tuple[torch.Tensor, dict]:
     x = to_tensors(b, device)
     out = net(x)
@@ -72,6 +117,30 @@ def losses(net, b: dict, device) -> tuple[torch.Tensor, dict]:
     bl = F.mse_loss(out["blinds"], torch.as_tensor(b["blinds_after"], device=device))
     loss = ol + 0.25 * bn + 0.25 * bx + 0.5 * bl
     return loss, {"ord": ol.item(), "boss_now": bn.item(), "boss_next": bx.item(), "blinds": bl.item()}
+
+
+def rank_step(net, b: dict, gid: np.ndarray, device, scale: float) -> tuple[torch.Tensor, int]:
+    out = net(to_tensors(b, device))
+    e = BuildValueNet.expected_antes(out["ord"])
+    labels = torch.as_tensor(b["ante_reached"], device=device)
+    return rank_loss(e, labels, torch.as_tensor(gid, device=device), scale)
+
+
+def decision_accuracy(reach: np.ndarray, data: dict, groups: list[np.ndarray]) -> dict:
+    """Share of within-group pairs with different outcomes ordered correctly by the model's E[antes] and by
+    Phi (ties count half)."""
+    e = 1.0 + reach.sum(-1)
+    n = ok_m = ok_p = 0.0
+    for idx in groups:
+        y, em, ph = data["ante_reached"][idx], e[idx], data["phi"][idx]
+        for a in range(len(idx)):
+            for b in range(len(idx)):
+                if y[a] > y[b]:
+                    n += 1
+                    ok_m += 1.0 if em[a] > em[b] else (0.5 if em[a] == em[b] else 0.0)
+                    ok_p += 1.0 if ph[a] > ph[b] else (0.5 if ph[a] == ph[b] else 0.0)
+    return {"groups": len(groups), "pairs": int(n), "model": float(ok_m / n) if n else math.nan,
+            "phi": float(ok_p / n) if n else math.nan}
 
 
 def td_targets(data: dict, reach: np.ndarray, lam: float) -> np.ndarray:
@@ -185,6 +254,7 @@ def report(net, train: dict, val: dict, device) -> dict:
         m = val["stake"] == s
         by_stake[int(s)] = {"n": int(m.sum()), "win_rate": float(y[m].mean()), "model_logloss": _logloss(p[m], y[m])}
     out["by_stake"] = by_stake
+    out["decision"] = decision_accuracy(pred["reach"], val, groups_of(val))
     tot_model = np.mean([r["win"]["model"] for r in out["by_ante"].values()]) if out["by_ante"] else math.nan
     tot_phi = np.mean([r["win"]["phi_fit"] for r in out["by_ante"].values()]) if out["by_ante"] else math.nan
     out["verdict"] = {"mean_logloss_win_model": float(tot_model), "mean_logloss_win_phi_fit": float(tot_phi),
@@ -216,6 +286,8 @@ def train(a):
     rng = np.random.default_rng(0)
     best = math.inf
     log_path = a.out.replace(".pt", "_log.jsonl")
+    groups = groups_of(tr) if a.rank_weight > 0 else []
+    print(f"{len(groups)} decision groups for the ranking loss (rank_weight {a.rank_weight})", flush=True)
     for ep in range(1, a.epochs + 1):
         if a.td_lambda > 0 and ep > 1:                  # epoch 1 trains on the Monte-Carlo labels
             tr["td_target"] = td_targets(tr, predict(net, tr, device)["reach"], a.td_lambda)
@@ -223,8 +295,18 @@ def train(a):
         t = time.time()
         idx = rng.permutation(len(tr["game"])) if a.per_game <= 0 else per_game_sample(tr, a.per_game, rng)
         agg, k = {}, 0
+        rb = rank_batches(tr, groups, a.rank_groups, rng) if groups else None
         for b in batches(tr, idx, a.batch):
             loss, parts = losses(net, b, device)
+            if rb is not None:                          # one batch of decision groups per ordinary batch
+                nxt = next(rb, None)
+                if nxt is None:
+                    rb = rank_batches(tr, groups, a.rank_groups, rng)
+                    nxt = next(rb, None)
+                if nxt is not None:
+                    rl, pairs = rank_step(net, nxt[0], nxt[1], device, a.rank_scale)
+                    loss = loss + a.rank_weight * rl
+                    parts["rank"] = rl.item()
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -255,6 +337,7 @@ def train(a):
     with open(a.out.replace(".pt", "_report.json"), "w") as f:
         json.dump(rep, f, indent=1, default=float)
     print(json.dumps(rep["verdict"]), flush=True)
+    print("  decision accuracy (held-out branch groups): " + json.dumps(rep["decision"]), flush=True)
     for ante, r in rep["by_ante"].items():
         nxt = r.get("next_ante", {})
         print(f"  ante {ante}: n={r['n']:6d} win logloss model {r['win']['model']:.4f} phi {r['win']['phi_fit']:.4f} "
@@ -277,6 +360,9 @@ def main():
                    help="> 0: TD(lambda) targets (the model's own estimate of the next build, blended with the outcome)")
     p.add_argument("--dropout", type=float, default=0.2)
     p.add_argument("--weight-decay", type=float, default=1e-3)
+    p.add_argument("--rank-weight", type=float, default=0.0, help="> 0: pairwise ranking loss on decision groups")
+    p.add_argument("--rank-scale", type=float, default=4.0, help="logistic scale on E[antes] differences")
+    p.add_argument("--rank-groups", type=int, default=128, help="decision groups per ranking batch")
     p.add_argument("--report-only", action="store_true")
     train(p.parse_args())
 

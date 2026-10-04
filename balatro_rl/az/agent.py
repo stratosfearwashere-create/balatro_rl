@@ -60,6 +60,12 @@ class AgentConfig:
                                   (onestep_samples copies for options with a random outcome: packs, rerolls,
                                   blind select, random consumables); score = logits + onestep_weight x V; no
                                   search into later shops. Only the onestep_top options by logit are evaluated.
+                                  onestep_rollouts > 0: the copy is played on by the no-search policy
+                                  onestep_rollouts times (fresh redraws), to the end of this shop visit
+                                  (onestep_horizon "shop": the next blind select or round) or through the next
+                                  blind ("blind"), and V is read there (a lost game: its value in V's units).
+                                  What this sees that V alone cannot: the rest of the shop (money left for a
+                                  reroll or a pack, a slot freed) and, with "blind", the boss already known.
                        "prior"    nothing: the network's logits (close calls can still apply)
       close_calls    with shop_eval "onestep" or "prior": when the two best options are within close_margin
                      logits, each is played out close_rollouts times by the agent's own no-search policy on
@@ -107,6 +113,10 @@ class AgentConfig:
     onestep_top: int = 24
     onestep_margin: float = 0.0     # > 0: one-step V only decides when the prior's top two options are within
                                     #   this many logits (a clear preference of the pricer stands)
+    onestep_rollouts: int = 0       # > 0: lookahead (doc above); options evaluated = onestep_top x this
+    onestep_horizon: str = "shop"   # "shop" | "blind"
+    onestep_max_steps: int = 60     # decisions per lookahead rollout at most
+    onestep_rollout_top: int = 3    # inside a lookahead rollout, build decisions check this many options with V
     close_calls: bool = False
     close_margin: float = 1.0
     close_rollouts: int = 4
@@ -128,6 +138,8 @@ class AgentConfig:
             raise ValueError("close_horizon is 'boss' or 'blind'; close_outcome is 'value' or 'blinds'")
         if self.value_mode not in ("win", "antes", "mix"):
             raise ValueError(f"unknown value_mode {self.value_mode!r}")
+        if self.onestep_horizon not in ("shop", "blind"):
+            raise ValueError(f"onestep_horizon is 'shop' or 'blind', not {self.onestep_horizon!r}")
 
 
 @dataclass
@@ -366,6 +378,18 @@ class Agent:
             self.stats["growth_changed"] += int(after != before)
         return np.clip(bonus * cfg.growth_scale, -cfg.growth_cap, 0.0)
 
+    def terminal_value(self, w: World) -> float:
+        """The value of a finished game in the units V uses: with a build-value model, P(win) is 0 / 1 and
+        E[antes] / 9 counts the antes reached (a loss at ante 3 is 3 / 9, not 0); otherwise the network's z."""
+        g = w.g
+        if self.build_value is None:
+            return self.terminal(w).value
+        won = g.state == "WON"
+        win = 1.0 if won else 0.0
+        antes = (9 if won else min(max(g.ante, 1), 8)) / 9.0
+        mode = self.cfg.value_mode
+        return win if mode == "win" else (antes if mode == "antes" else 0.5 * (win + antes))
+
     def terminal(self, w: World, lost: bool = False) -> Node:
         g = w.g
         v = z_target(float(g.state == "WON" and not lost), g.furthest_blind / 24.0, self.cfg.lam)
@@ -445,7 +469,7 @@ class Agent:
         live = []
         for i, w in enumerate(worlds):
             if w.done:
-                out[i] = self.terminal(w).value
+                out[i] = self.terminal_value(w)
             else:
                 live.append(i)
         if self.build_value is not None:            # the learned build value (value/model.py)
@@ -473,6 +497,41 @@ class Agent:
                 out[i] = float(x)
         return out
 
+    def _onestep(self, w: World, cands: list, score: np.ndarray, rng: random.Random, top: int, samples: int,
+                 rollouts: int) -> tuple[np.ndarray, int]:
+        """score + onestep_weight x V after each of the `top` options by score (AgentConfig shop_eval
+        "onestep"); rollouts > 0 plays each copy on to the lookahead horizon first. Returns (score, sims)."""
+        cfg = self.cfg
+        k = len(cands)
+        worlds, owner = [], []
+        sims = 0
+        for i in np.argsort(-score, kind="stable")[:top]:
+            n = samples if random_outcome(w.g, cands[i].action) else 1
+            if rollouts > 0:
+                n = rollouts
+            for _ in range(max(1, n)):
+                w2 = w.determinize(rng)
+                try:
+                    w2.step(cands[i].action)
+                except (AssertionError, IndexError):
+                    continue
+                if rollouts > 0:
+                    _, used = self._rollout(w2, rng, cfg.onestep_horizon, cfg.onestep_max_steps, value=False)
+                    sims += used
+                worlds.append(w2)
+                owner.append(int(i))
+        vals = self.values(worlds)
+        tot, cnt = np.zeros(k), np.zeros(k)
+        for i, v in zip(owner, vals):
+            tot[i] += v
+            cnt[i] += 1
+        seen = cnt > 0
+        if seen.any():                                  # options not evaluated count as the worst that was
+            q = tot / np.maximum(cnt, 1)
+            q = np.where(seen, q, q[seen].min())
+            score = score + cfg.onestep_weight * q
+        return score, sims + len(worlds)
+
     def _decide_build(self, w: World, root: Node, rng: random.Random, explore: bool) -> Decision:
         """A decision outside a round by one-step evaluation and / or paired rollouts (AgentConfig doc)."""
         cfg = self.cfg
@@ -485,28 +544,8 @@ class Agent:
             srt = np.sort(score)
             close_prior = (srt[-1] - srt[-2]) <= cfg.onestep_margin
         if cfg.shop_eval == "onestep" and close_prior:
-            worlds, owner = [], []
-            for i in np.argsort(-score, kind="stable")[:cfg.onestep_top]:
-                n = cfg.onestep_samples if random_outcome(w.g, cands[i].action) else 1
-                for _ in range(max(1, n)):
-                    w2 = w.determinize(rng)
-                    try:
-                        w2.step(cands[i].action)
-                    except (AssertionError, IndexError):
-                        continue
-                    worlds.append(w2)
-                    owner.append(int(i))
-            vals = self.values(worlds)
-            tot, cnt = np.zeros(k), np.zeros(k)
-            for i, v in zip(owner, vals):
-                tot[i] += v
-                cnt[i] += 1
-            seen = cnt > 0
-            if seen.any():                              # options not evaluated count as the worst that was
-                q = tot / np.maximum(cnt, 1)
-                q = np.where(seen, q, q[seen].min())
-                score = score + cfg.onestep_weight * q
-            sims, reason = len(worlds), "onestep"
+            score, sims = self._onestep(w, cands, score, rng, cfg.onestep_top, cfg.onestep_samples, cfg.onestep_rollouts)
+            reason = "onestep"
         if cfg.close_calls:
             top = [int(i) for i in np.argsort(-score, kind="stable")[:2]]
             self.stats["close_checked"] += 1
@@ -548,12 +587,19 @@ class Agent:
                 steps += used
         return [t / n for t in tot], steps
 
-    def _rollout(self, w: World, rng: random.Random) -> tuple[float, int]:
-        """Play `w` (a redrawn copy) on with the no-search policy to the horizon; (outcome, decisions)."""
+    def _rollout(self, w: World, rng: random.Random, horizon: str | None = None, max_steps: int | None = None,
+                 value: bool = True) -> tuple[float, int]:
+        """Play `w` (a redrawn copy) on with the no-search policy to the horizon: "boss" / "blind" (the next
+        boss / any blind beaten) or "shop" (this shop visit over: the next blind select or round reached);
+        (outcome, decisions). value=False skips the outcome (the caller values the world in a batch)."""
         cfg = self.cfg
+        horizon = horizon or cfg.close_horizon
+        limit = cfg.close_max_steps if max_steps is None else max_steps
         steps = 0
-        while not w.done and steps < cfg.close_max_steps:
+        while not w.done and steps < limit:
             g = w.g
+            if horizon == "shop" and g.state in ("BLIND_SELECT", "SELECTING_HAND"):
+                break                                   # valued at the first blind select / round start reached
             beaten, boss = g.blinds_beaten, g.blind_idx == 2
             a = self.policy_action(w, rng)
             if a is None:
@@ -561,8 +607,10 @@ class Agent:
                 break
             w.step(a)
             steps += 1
-            if g.blinds_beaten > beaten and (boss or cfg.close_horizon == "blind"):
+            if horizon != "shop" and g.blinds_beaten > beaten and (boss or horizon == "blind"):
                 break
+        if not value:
+            return 0.0, steps
         if cfg.close_outcome == "blinds":
             return w.g.furthest_blind / 24.0, steps
         return self.values([w])[0], steps
@@ -577,7 +625,13 @@ class Agent:
         node = self.evaluate(w, False, rng, choice)
         if node.terminal:
             return None
-        return choice.cands[int(np.argmax(node.logits))].action
+        score = np.array(node.logits, dtype=float)
+        if (self.cfg.onestep_rollout_top > 0 and self.build_value is not None and w.g.state != "SELECTING_HAND"
+                and len(choice.cands) > 1):
+            # inside a lookahead rollout the policy must not undo what V chose at the root (sell the joker it
+            # just picked): the top options by prior are checked against V, one copy each, no further rollout
+            score, _ = self._onestep(w, choice.cands, score, rng, self.cfg.onestep_rollout_top, 1, 0)
+        return choice.cands[int(np.argmax(score))].action
 
     def autoplay_rate(self) -> float:
         return self.stats["autoplay"] / max(1, self.stats["decisions"])
