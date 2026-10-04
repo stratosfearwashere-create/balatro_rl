@@ -300,11 +300,13 @@ def train_ppo_cpp(a):
     vals = np.zeros((T, N), dtype=np.float32)
     rews = np.zeros((T, N), dtype=np.float32)
     dones = np.zeros((T, N), dtype=np.float32)
-    stats = EpisodeStats()
+    stats = EpisodeStats(n=a.stats_window)          # outcomes of the last stats_window finished games
     ep_ret = np.zeros(N)
     t0 = time.time()
     best = -1.0
     sim_s = 0.0
+    games = wins = 0
+    ante_hist = np.zeros(10, dtype=np.int64)        # games by ante reached, since the last log row
     for it in range(1, a.iters + 1):
         model.eval()
         for t in range(T):
@@ -327,6 +329,9 @@ def train_ppo_cpp(a):
                 ep_ret[e] = 0.0
                 stats.add({"episode_end": True, "blinds": int(info["blinds"][e]), "ante": int(info["ante"][e]),
                            "won": bool(info["won"][e])})
+                games += 1
+                wins += int(info["won"][e])
+                ante_hist[min(int(info["ante"][e]), 8) + (1 if info["won"][e] else 0)] += 1
             ob = current()
         with torch.no_grad():
             _, last_v = fwd(ob)
@@ -382,7 +387,9 @@ def train_ppo_cpp(a):
         row = {"iter": it, "pi": round(float(np.mean(pl)), 4), "v": round(float(np.mean(vl)), 3),
                "ent": round(float(np.mean(ents)), 3), "kl": round(float(np.mean(kls)), 4),
                "min": round(el / 60, 1), "phase": a.phase, "env_steps": it * T * N,
-               "sps": round(it * T * N / max(el, 1e-9)), "sim%": round(100 * sim_s / max(el, 1e-9), 1)}
+               "sps": round(it * T * N / max(el, 1e-9)), "sim%": round(100 * sim_s / max(el, 1e-9), 1),
+               "games": games, "wins": wins, "antes": ante_hist[1:].tolist()}   # antes: lost in 1..8, then won
+        ante_hist[:] = 0
         row.update(stats.summary())
         log(a.log, row)
         if it % a.save_every == 0 or it == a.iters:
@@ -447,6 +454,7 @@ def main():
                    help="PPO: cpp runs the environments on the C++ engine (same game, observations and rewards; "
                         "many times faster; use hundreds of --envs)")
     p.add_argument("--threads", type=int, default=0, help="--engine cpp: simulation threads (0: one per core)")
+    p.add_argument("--stats-window", type=int, default=5000, help="--engine cpp: games the logged averages cover")
     p.add_argument("--save-every", type=int, default=10)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
