@@ -87,10 +87,34 @@ def _cpp_extension():
                      language="c++", extra_compile_args=extra, depends=glob.glob("balatro_rl/sim/cpp/*.hpp"))
 
 
+ENGINE = "balatro_rl/sim/cpp/engine/module.cpp"   # the C++ game engine + environment (standalone: no Cython)
+
+
+def _engine_extension():
+    """balatro_rl.sim._engine (game.hpp, env.hpp), or None without pybind11."""
+    from setuptools import Extension
+    try:
+        import pybind11
+    except ImportError:
+        print("pybind11 is not installed: the C++ engine is not built (pip install pybind11)")
+        return None
+    extra = ["-std=c++17", "-O2"] if sys.platform != "win32" else ["/std:c++17", "/O2", "/EHsc", "/bigobj"]
+    return Extension("balatro_rl.sim._engine", [ENGINE], include_dirs=[pybind11.get_include(), "balatro_rl/sim/cpp"],
+                     language="c++", extra_compile_args=extra,
+                     depends=glob.glob("balatro_rl/sim/cpp/engine/*.hpp") + ["balatro_rl/sim/cpp/pyrandom.hpp"])
+
+
 def build(only: str | None, jobs: int, force: bool = False, pure: bool = False):
     from Cython.Build import cythonize
     from setuptools import setup
     from setuptools import Extension
+    if only == ENGINE:
+        from setuptools import setup
+        sys.argv = [sys.argv[0], "build_ext", "--inplace"] + (["--force"] if force else [])
+        eng = _engine_extension()
+        if eng is not None:
+            setup(name="balatro_rl_engine", ext_modules=[eng], zip_safe=False)
+        return
     files = _targets(only, pure) if only != CPP else []
     exts = []
     for f in files:
@@ -105,6 +129,10 @@ def build(only: str | None, jobs: int, force: bool = False, pure: bool = False):
         cpp = _cpp_extension()
         if cpp is not None and os.path.exists(os.path.join(ROOT, "balatro_rl/sim/_cards_api.h")):
             setup(name="balatro_rl_core", ext_modules=[cpp], zip_safe=False)
+    if only is None:
+        eng = _engine_extension()
+        if eng is not None:
+            setup(name="balatro_rl_engine", ext_modules=[eng], zip_safe=False)
 
 
 def main():

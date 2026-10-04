@@ -265,6 +265,135 @@ def train_ppo(a):
     venv.close()
 
 
+def train_ppo_cpp(a):
+    """PPO on the C++ engine (engine_env.CppVecEnv): every environment is stepped in one call on a thread
+    pool and the observations arrive as batched arrays, which go straight to the device. The rollout is kept
+    there (action features as float16) and minibatches are slices of it. Same algorithm, rewards and log rows
+    as train_ppo; no --pipeline / --strategic / --shape-phi / joker pool (those need the Python environment)."""
+    from .engine_env import CppVecEnv
+    torch.manual_seed(a.seed)
+    dev = a.device
+    cuda = str(dev).startswith("cuda")
+    model = load_model(a.init, dev) if a.init else ActorCritic().to(dev)
+    opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
+    use_amp = a.amp and cuda
+
+    def fwd(ob):
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
+            logits, v = model(ob)
+        return logits.float(), v.float()
+    venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7, threads=a.threads, reward_kw=game_kw(a))
+    T, N = a.steps, a.envs
+
+    def current():
+        # the engine's buffers are overwritten by the next step: copy them (to the GPU, or on the CPU)
+        out = {}
+        for k in OBS_KEYS:
+            t = torch.from_numpy(venv.obs[k])
+            out[k] = t.to(dev) if cuda else t.clone()
+        return out
+    ob = current()
+    buf = {k: torch.empty((T, N) + tuple(v.shape[1:]), dtype=torch.float16 if k == "af" else v.dtype, device=dev)
+           for k, v in ob.items()}
+    acts = torch.empty((T, N), dtype=torch.long, device=dev)
+    lps = torch.empty((T, N), dtype=torch.float32, device=dev)
+    vals = np.zeros((T, N), dtype=np.float32)
+    rews = np.zeros((T, N), dtype=np.float32)
+    dones = np.zeros((T, N), dtype=np.float32)
+    stats = EpisodeStats()
+    ep_ret = np.zeros(N)
+    t0 = time.time()
+    best = -1.0
+    sim_s = 0.0
+    for it in range(1, a.iters + 1):
+        model.eval()
+        for t in range(T):
+            with torch.no_grad():
+                logits, v = fwd(ob)
+                dist = torch.distributions.Categorical(logits=logits)
+                act = dist.sample()
+                lp = dist.log_prob(act)
+            for k in OBS_KEYS:
+                buf[k][t] = ob[k]
+            acts[t], lps[t] = act, lp
+            vals[t] = v.cpu().numpy()
+            ts = time.time()
+            r, d, info = venv.step(act.cpu().numpy())
+            sim_s += time.time() - ts
+            rews[t], dones[t] = r, d
+            ep_ret += r
+            for e in np.flatnonzero(d):
+                stats.returns.append(float(ep_ret[e]))
+                ep_ret[e] = 0.0
+                stats.add({"episode_end": True, "blinds": int(info["blinds"][e]), "ante": int(info["ante"][e]),
+                           "won": bool(info["won"][e])})
+            ob = current()
+        with torch.no_grad():
+            _, last_v = fwd(ob)
+            last_v = last_v.cpu().numpy()
+        adv = np.zeros((T, N), dtype=np.float32)
+        gae = np.zeros(N, dtype=np.float32)
+        for t in reversed(range(T)):
+            nv = last_v if t == T - 1 else vals[t + 1]
+            nonterm = 1.0 - dones[t]
+            delta = rews[t] + a.gamma * nv * nonterm - vals[t]
+            gae = delta + a.gamma * a.lam * nonterm * gae
+            adv[t] = gae
+        ret = adv + vals
+        big = {k: v.reshape((T * N,) + tuple(v.shape[2:])) for k, v in buf.items()}
+        flat_act = acts.reshape(-1)
+        flat_lp = lps.reshape(-1)
+        flat_adv = torch.tensor(adv.reshape(-1), device=dev)
+        flat_ret = torch.tensor(ret.reshape(-1), device=dev)
+        flat_adv = (flat_adv - flat_adv.mean()) / (flat_adv.std() + 1e-8)
+        if use_amp:
+            with torch.no_grad():
+                chunks = []
+                for k in range(0, T * N, a.batch):
+                    sl = slice(k, k + a.batch)
+                    lg, _ = fwd({key: t[sl] for key, t in big.items()})
+                    chunks.append(torch.distributions.Categorical(logits=lg).log_prob(flat_act[sl]))
+                flat_lp = torch.cat(chunks)
+        model.train()
+        idx = np.arange(T * N)
+        pl, vl, ents, kls = [], [], [], []
+        for _ in range(a.epochs):
+            np.random.shuffle(idx)
+            for k in range(0, len(idx), a.batch):
+                mb = torch.from_numpy(idx[k:k + a.batch]).to(dev)
+                logits, v = fwd({key: t[mb] for key, t in big.items()})
+                dist = torch.distributions.Categorical(logits=logits)
+                lp = dist.log_prob(flat_act[mb])
+                ratio = torch.exp(lp - flat_lp[mb])
+                s1 = ratio * flat_adv[mb]
+                s2 = torch.clamp(ratio, 1 - a.clip, 1 + a.clip) * flat_adv[mb]
+                ploss = -torch.min(s1, s2).mean()
+                vloss = F.mse_loss(v, flat_ret[mb])
+                ent = dist.entropy().mean()
+                loss = ploss + a.vf * vloss - a.ent * ent
+                opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+                opt.step()
+                pl.append(ploss.detach()); vl.append(vloss.detach()); ents.append(ent.detach())
+                kls.append((flat_lp[mb] - lp).mean().detach())
+        pl, vl, ents, kls = (torch.stack(x).double().cpu().numpy() for x in (pl, vl, ents, kls))
+        el = time.time() - t0
+        row = {"iter": it, "pi": round(float(np.mean(pl)), 4), "v": round(float(np.mean(vl)), 3),
+               "ent": round(float(np.mean(ents)), 3), "kl": round(float(np.mean(kls)), 4),
+               "min": round(el / 60, 1), "phase": a.phase, "env_steps": it * T * N,
+               "sps": round(it * T * N / max(el, 1e-9)), "sim%": round(100 * sim_s / max(el, 1e-9), 1)}
+        row.update(stats.summary())
+        log(a.log, row)
+        if it % a.save_every == 0 or it == a.iters:
+            save_model(model, a.out, {"mode": "ppo", "iter": it, "engine": "cpp"})
+            s_ = stats.summary().get("blinds", -1)
+            if s_ > best:
+                best = s_
+                save_model(model, a.out.replace(".pt", "_best.pt"), {"mode": "ppo", "iter": it, "blinds": s_})
+    venv.close()
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("mode", choices=["bc", "ppo"])
@@ -314,6 +443,10 @@ def main():
     p.add_argument("--amp", action="store_true",
                    help="PPO, experimental: run the network in bfloat16 mixed precision (~12%% faster on an RTX 4080, "
                         "but in a short test updates moved the policy ~2x further and entropy rose faster)")
+    p.add_argument("--engine", choices=["py", "cpp"], default="py",
+                   help="PPO: cpp runs the environments on the C++ engine (same game, observations and rewards; "
+                        "many times faster; use hundreds of --envs)")
+    p.add_argument("--threads", type=int, default=0, help="--engine cpp: simulation threads (0: one per core)")
     p.add_argument("--save-every", type=int, default=10)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -331,6 +464,10 @@ def main():
     if a.log is None:
         a.log = a.out.replace(".pt", "_log.jsonl")
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    if a.engine == "cpp":
+        if a.mode != "ppo" or a.pipeline or a.strategic:
+            p.error("--engine cpp runs plain PPO (no bc, --pipeline or --strategic)")
+        return train_ppo_cpp(a)
     (train_bc if a.mode == "bc" else train_ppo)(a)
 
 
