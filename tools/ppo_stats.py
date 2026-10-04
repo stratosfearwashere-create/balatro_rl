@@ -16,10 +16,18 @@ import numpy as np
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("log")
+    p.add_argument("log", nargs="+", help="one log, or the logs of a run and its resumptions in order")
     p.add_argument("--rows", type=int, default=25)
     a = p.parse_args()
-    rows = [json.loads(l) for l in open(a.log) if l.strip()]
+    rows = []
+    for path in a.log:                       # a resumed run starts counting again: carry the totals over
+        part = [json.loads(l) for l in open(path) if l.strip()]
+        if rows and part:
+            base = rows[-1]
+            for r in part:
+                for k in ("games", "wins", "env_steps", "min"):
+                    r[k] = r.get(k, 0) + base.get(k, 0)
+        rows += part
     if not rows:
         raise SystemExit("empty log")
     edges = np.unique(np.linspace(0, len(rows), min(a.rows, len(rows)) + 1).astype(int))

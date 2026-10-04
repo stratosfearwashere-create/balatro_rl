@@ -41,6 +41,27 @@ class ActorCritic(nn.Module):
         self.head = mlp(128 * 3, 128, 1)
         self.value = mlp(d, 128, 1)
 
+    pack_legal = True      # score only the legal actions (same logits: the others are masked to -1e9 anyway)
+
+    def _legal_logits(self, ob: dict, ce: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
+        """The action logits computed for the legal (state, action) pairs only, scattered into [B, A]; every
+        other entry is -1e9, as the dense path's mask leaves it. Same weights, same values."""
+        mask = ob["mask"]
+        b, a_idx = mask.nonzero(as_tuple=True)                          # L legal pairs
+        rows = self.act(torch.cat([self.emb(ob["aid"][b, a_idx]), ob["af"][b, a_idx].float()], -1))   # L,128
+        is_sub = a_idx < 2 * N_SUB                                      # play / discard slots: + their cards
+        bs, as_ = b[is_sub], a_idx[is_sub]
+        subs = ob["subs"][bs, as_]                                      # Ls,5 (-1 = padding)
+        valid = (subs >= 0).to(ce.dtype).unsqueeze(-1)
+        picked = ce[bs.unsqueeze(1), subs.clamp(min=0)] * valid         # Ls,5,64
+        sub = self.sub_proj(picked.sum(1) / valid.sum(1).clamp(min=1))
+        rows = rows.index_add(0, is_sub.nonzero(as_tuple=True)[0], sub.to(rows.dtype))
+        sp = self.s_proj(s)[b]
+        out = self.head(torch.cat([sp, rows, sp * rows], -1)).squeeze(-1)
+        logits = torch.full(mask.shape, -1e9, dtype=out.dtype, device=out.device)
+        logits[b, a_idx] = out
+        return logits
+
     def forward(self, ob: dict):
         B = ob["g"].shape[0]
         cmask = ob["cards"][..., 0:1]                                  # present flag
@@ -55,6 +76,8 @@ class ActorCritic(nn.Module):
         s = self.state(torch.cat([ob["g"], cmean, cmax, jmean, jmax, cons], -1))
         s = F.relu(s)
 
+        if self.pack_legal:
+            return self._legal_logits(ob, ce, s), self.value(s).squeeze(-1)
         a = self.act(torch.cat([self.emb(ob["aid"]), ob["af"].float()], -1))   # B,A,128
         # each play/discard slot also sees the mean embedding of the cards it selects
         subs = ob["subs"]                                              # B,436,5 (-1 = padding)

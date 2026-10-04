@@ -351,7 +351,10 @@ def train_ppo_cpp(a):
         flat_adv = torch.tensor(adv.reshape(-1), device=dev)
         flat_ret = torch.tensor(ret.reshape(-1), device=dev)
         flat_adv = (flat_adv - flat_adv.mean()) / (flat_adv.std() + 1e-8)
-        if use_amp:
+        if use_amp and a.amp_recompute:
+            # an extra forward over the rollout (17% of an iteration): the old log-probs as the update's
+            # batches round them. Off by default: measured, the rollout's own log-probs differ from these by
+            # far less than a PPO step moves the policy
             with torch.no_grad():
                 chunks = []
                 for k in range(0, T * N, a.batch):
@@ -455,6 +458,8 @@ def main():
                         "many times faster; use hundreds of --envs)")
     p.add_argument("--threads", type=int, default=0, help="--engine cpp: simulation threads (0: one per core)")
     p.add_argument("--stats-window", type=int, default=5000, help="--engine cpp: games the logged averages cover")
+    p.add_argument("--amp-recompute", action="store_true",
+                   help="--engine cpp --amp: recompute the rollout's log-probs at the update's batch size")
     p.add_argument("--save-every", type=int, default=10)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
