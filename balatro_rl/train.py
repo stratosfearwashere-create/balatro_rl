@@ -274,7 +274,19 @@ def train_ppo_cpp(a):
     torch.manual_seed(a.seed)
     dev = a.device
     cuda = str(dev).startswith("cuda")
-    model = load_model(a.init, dev) if a.init else ActorCritic().to(dev)
+    # --resume: carry on a run from its own checkpoint and log (iteration count, schedules, totals); the
+    # optimiser's moments start again
+    it0, games0, wins0, min0 = 0, 0, 0, 0.0
+    if a.resume and os.path.exists(a.out) and os.path.exists(a.log):
+        with open(a.log) as f:
+            last = [l for l in f if l.strip()]
+        if last:
+            last = json.loads(last[-1])
+            it0, games0, wins0, min0 = last["iter"], last.get("games", 0), last.get("wins", 0), last.get("min", 0.0)
+        model = load_model(a.out, dev)
+        print(json.dumps({"resumed": a.out, "iter": it0, "games": games0, "lr_scale": a.lr_scale}), flush=True)
+    else:
+        model = load_model(a.init, dev) if a.init else ActorCritic().to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
     use_amp = a.amp and cuda
 
@@ -282,8 +294,8 @@ def train_ppo_cpp(a):
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
             logits, v = model(ob)
         return logits.float(), v.float()
-    venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7, threads=a.threads, reward_kw=game_kw(a),
-                     start_xmult=a.start_xmult)
+    venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7 + it0 * 1_000_003, threads=a.threads,
+                     reward_kw=game_kw(a), start_xmult=a.start_xmult)
     T, N = a.steps, a.envs
     from .env import _TYPE_OF, ACTION_TYPES
     type_onehot = torch.zeros((len(_TYPE_OF), len(ACTION_TYPES)), device=dev)
@@ -321,15 +333,15 @@ def train_ppo_cpp(a):
     dones = np.zeros((T, N), dtype=np.float32)
     stats = EpisodeStats(n=a.stats_window)          # outcomes of the last stats_window finished games
     ep_ret = np.zeros(N)
-    t0 = time.time()
+    t0 = time.time() - 60.0 * min0
     best = -1.0
     sim_s = 0.0
-    games = wins = 0
+    games, wins = games0, wins0
     ante_hist = np.zeros(10, dtype=np.int64)        # games by ante reached, since the last log row
-    for it in range(1, a.iters + 1):
+    for it in range(it0 + 1, a.iters + 1):
         # linear schedules over the run: the learning rate to lr_final, the entropy bonus to ent_final
         frac = (it - 1) / max(1, a.iters - 1)
-        lr_now = a.lr + (a.lr_final - a.lr) * frac if a.lr_final is not None else a.lr
+        lr_now = (a.lr + (a.lr_final - a.lr) * frac if a.lr_final is not None else a.lr) * a.lr_scale
         ent_now = a.ent + (a.ent_final - a.ent) * frac if a.ent_final is not None else a.ent
         for gp in opt.param_groups:
             gp["lr"] = lr_now
@@ -420,7 +432,8 @@ def train_ppo_cpp(a):
         row = {"iter": it, "pi": round(float(np.mean(pl)), 4), "v": round(float(np.mean(vl)), 3),
                "ent": round(float(np.mean(ents)), 3), "kl": round(float(np.mean(kls)), 4),
                "min": round(el / 60, 1), "phase": a.phase, "env_steps": it * T * N,
-               "sps": round(it * T * N / max(el, 1e-9)), "sim%": round(100 * sim_s / max(el, 1e-9), 1),
+               "sps": round(it * T * N / max(el, 1e-9)),
+               "sim%": round(100 * sim_s / max(time.time() - t0 - 60.0 * min0, 1e-9), 1),
                "games": games, "wins": wins, "antes": ante_hist[1:].tolist(),   # antes: lost in 1..8, then won
                "lr": lr_now, "ent_coef": ent_now,
                "gpu_gb": round(torch.cuda.max_memory_reserved() / 1e9, 1) if cuda else 0.0}
@@ -496,6 +509,9 @@ def main():
                    help="--engine cpp: share of the behaviour policy spread evenly over the legal kinds of action")
     p.add_argument("--start-xmult", type=float, default=0.0,
                    help="--engine cpp: share of training games that start with one random multiplier joker")
+    p.add_argument("--resume", action="store_true",
+                   help="--engine cpp: continue the run in --out from its checkpoint and log")
+    p.add_argument("--lr-scale", type=float, default=1.0, help="--engine cpp: multiplies the learning-rate schedule")
     p.add_argument("--amp-recompute", action="store_true",
                    help="--engine cpp --amp: recompute the rollout's log-probs at the update's batch size")
     p.add_argument("--save-every", type=int, default=10)

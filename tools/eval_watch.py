@@ -57,6 +57,12 @@ def evaluate(ckpt: str, a) -> dict:
             time.sleep(2)
     else:
         raise SystemExit(f"could not read {ckpt}")
+    # the checkpoint with the best greedy score so far is kept beside the run (<name>_best_greedy.pt): the
+    # trainer's own "_best" goes by training games, which include any training aids
+    out = ckpt.replace(".pt", "_eval.jsonl")
+    prev = [json.loads(l)["blinds"] for l in open(out) if l.strip()] if os.path.exists(out) else []
+    if not prev or float(blinds.mean()) > max(prev):
+        shutil.copy(snap, ckpt.replace(".pt", "_best_greedy.pt"))
     os.remove(snap)
     ante = 1 + np.minimum(blinds, 23) // 3
     row = {"time": time.strftime("%Y-%m-%d %H:%M"), "blinds": round(float(blinds.mean()), 3), "wins": int(won.sum()),
