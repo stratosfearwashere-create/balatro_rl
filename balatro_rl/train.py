@@ -287,7 +287,8 @@ def train_ppo_cpp(a):
         print(json.dumps({"resumed": a.out, "iter": it0, "games": games0, "lr_scale": a.lr_scale}), flush=True)
     else:
         model = load_model(a.init, dev) if a.init else ActorCritic().to(dev)
-    opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
+    # fused: the same Adam step in one kernel (measured 1.11x on the update)
+    opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5, fused=cuda)
     use_amp = a.amp and cuda
 
     def fwd(ob):
@@ -308,20 +309,22 @@ def train_ppo_cpp(a):
         within a kind, so no kind of action can fall to probability zero and stop being tried. The update uses
         the same mixture, so PPO's ratio is exact."""
         if a.explore_types <= 0:
-            return torch.distributions.Categorical(logits=logits)
+            return torch.distributions.Categorical(logits=logits, validate_args=False)
         m = mask.float()
         per_type = m @ type_onehot                                   # legal actions of each kind  [B, 16]
         kinds = (per_type > 0).float().sum(1, keepdim=True).clamp(min=1)
         floor = m / (kinds * per_type[:, type_of].clamp(min=1))      # [B, A], sums to 1 over the legal actions
         probs = (1 - a.explore_types) * torch.softmax(logits, 1) + a.explore_types * floor
-        return torch.distributions.Categorical(probs=probs)
+        return torch.distributions.Categorical(probs=probs, validate_args=False)
 
     def current():
         # the engine's buffers are overwritten by the next step: copy them (to the GPU, or on the CPU)
         out = {}
         for k in OBS_KEYS:
             t = torch.from_numpy(venv.obs[k])
-            out[k] = t.to(dev) if cuda else t.clone()
+            if k == "af" and cuda:
+                t = t.half()         # the rollout stores them as float16 anyway: a smaller copy, and the policy
+            out[k] = t.to(dev) if cuda else t.clone()      # acting sees exactly what the update will see
         return out
     ob = current()
     buf = {k: torch.empty((T, N) + tuple(v.shape[1:]), dtype=torch.float16 if k == "af" else v.dtype, device=dev)
