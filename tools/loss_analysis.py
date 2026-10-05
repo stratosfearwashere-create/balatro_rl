@@ -51,7 +51,8 @@ def play(path: str, games: int, seed0: int, deck: str, stake: str, device: str) 
                     {436: "select", 437: "skip", 438: "reroll_boss"}.get(ai) or
                     ("buy" if ai < 443 else "buy_pack" if ai < 445 else "voucher" if ai < 447 else "reroll" if ai == 447
                      else "leave" if ai == 448 else "sell_joker" if ai < 457 else "sell_cons" if ai < 460
-                     else "use" if ai < 463 else "pick" if ai < 468 else "pack_skip" if ai == 468 else "swap"))
+                     else "use" if ai < 463 else "pick" if ai < 468 else "pack_skip" if ai == 468
+                     else "swap" if ai < 476 else "replace"))
             acts[i][kind] += 1
             steps[i] += 1
             o, r, done, info = envs[i].step(ai)
@@ -68,6 +69,25 @@ def play(path: str, games: int, seed0: int, deck: str, stake: str, device: str) 
                 nxt.append(i)
         live = nxt
     return out
+
+
+def order_stats(gs: list[dict]) -> dict:
+    """Joker order: additive mult should sit left of multipliers (jokers score left to right)."""
+    from balatro_rl.az.guide import MULT
+    both = pairs = good = perfect = 0
+    for g in gs:
+        keys = [j["key"] for j in g["jokers"]]
+        add = [i for i, k in enumerate(keys) if k in MULT and k not in XMULT]
+        mul = [i for i, k in enumerate(keys) if k in XMULT]
+        if not add or not mul:
+            continue
+        both += 1
+        ok = sum(1 for a_ in add for m_ in mul if a_ < m_)
+        pairs += len(add) * len(mul)
+        good += ok
+        perfect += ok == len(add) * len(mul)
+    return {"games": both, "pairs": pairs, "pairs in the right order %": 100 * good / max(pairs, 1),
+            "builds fully in order %": 100 * perfect / max(both, 1)}
 
 
 def pct(n, d):
@@ -103,6 +123,8 @@ def build_stats(gs: list[dict]) -> dict:
         "packs bought per game": np.mean([g["acts"].get("buy_pack", 0) for g in gs]),
         "cards / jokers bought per game": np.mean([g["acts"].get("buy", 0) for g in gs]),
         "jokers sold per game": np.mean([g["acts"].get("sell_joker", 0) for g in gs]),
+        "jokers replaced per game (sell + buy in one)": np.mean([g["acts"].get("replace", 0) for g in gs]),
+        "joker position swaps per game": np.mean([g["acts"].get("swap", 0) for g in gs]),
         "consumables used per game": np.mean([g["acts"].get("use", 0) for g in gs]),
         "discards per hand played": np.mean([g["acts"].get("discard", 0) / max(g["acts"].get("play", 0), 1) for g in gs]),
     }
@@ -162,6 +184,10 @@ def main():
     for k in keys:
         print(f"  {k:46s}" + "".join(f"{(st.get(k, float('nan'))):15.2f}" for _, st in cols))
 
+    o = order_stats(gs)
+    print(f"\nJOKER ORDER (+mult left of xMult; chance is 50%): {o['games']} end states hold both; "
+          f"{o['pairs in the right order %']:.1f}% of +mult / xMult pairs in the right order, "
+          f"{o['builds fully in order %']:.1f}% of those builds fully in order")
     print("\nMOST PLAYED HAND (share of games where it is the main hand)")
     for name, part in (("wins", wins), ("losses", losses)):
         c = Counter(max(range(12), key=lambda h: (g["hand_played"][h], h)) for g in part)
