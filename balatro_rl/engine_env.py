@@ -20,7 +20,7 @@ except ImportError:                                    # not built
     _engine = None
     AVAILABLE = False
 
-OBS_KEYS = ("g", "cards", "jid", "jf", "cid", "aid", "af", "mask", "subs")
+OBS_KEYS = ("g", "cards", "jid", "jf", "cid", "aid", "af", "mask", "subs", "aid2")
 
 
 def _check(reward_kw: dict):

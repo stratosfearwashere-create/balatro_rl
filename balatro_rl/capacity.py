@@ -34,7 +34,7 @@ import time
 import numpy as np
 
 from .env import BalatroEnv, Counters, encode, encode_joker_feats, blind_weights, F_JOKER, VOCAB_SIZE
-from .env import A_BUY, A_BUY_PACK, A_SELL_J, A_USE_C, A_PICK, A_PSKIP, A_SWAP, N_ACTIONS, MAX_SHOP
+from .env import A_BUY, A_BUY_PACK, A_SELL_J, A_USE_C, A_PICK, A_PSKIP, A_SWAP, A_SWAP_END, N_ACTIONS, MAX_SHOP
 from .sim.cards import ENHANCEMENTS, EDITIONS, SEALS, Card
 from .sim.game import Game, MAX_JOKERS
 from .sim.hands import N_HANDS, HC, PAIR, TWO_PAIR, TRIPS, STRAIGHT, FLUSH, FULL_HOUSE, QUADS
@@ -346,7 +346,7 @@ def check(model, policy, games=200, procs=8, draws=4, tactical=TACTICAL, seed0=1
 
 # ------------------------------------------------------------------ capacity-guided shopping
 BUILD_ACTIONS = list(range(A_BUY, A_BUY + MAX_SHOP)) + list(range(A_SELL_J, A_SELL_J + MAX_JOKERS)) + \
-    list(range(A_USE_C, A_USE_C + 3)) + list(range(A_PICK, A_PSKIP)) + list(range(A_SWAP, N_ACTIONS))
+    list(range(A_USE_C, A_USE_C + 3)) + list(range(A_PICK, A_PSKIP)) + list(range(A_SWAP, A_SWAP_END))
 
 
 def capacity_choice(senv, obs, net_action, cap, threshold):

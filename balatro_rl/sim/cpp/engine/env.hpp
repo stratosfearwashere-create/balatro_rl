@@ -32,7 +32,9 @@ static const int A_USE_C = A_SELL_C + MAX_CONSUMABLES;
 static const int A_PICK = A_USE_C + MAX_CONSUMABLES;
 static const int A_PSKIP = A_PICK + MAX_PACK;
 static const int A_SWAP = A_PSKIP + 1;
-static const int N_ACTIONS = A_SWAP + MAX_JOKERS - 1;
+static const int A_SWAP_END = A_SWAP + MAX_JOKERS - 1;
+static const int A_REPLACE = A_SWAP_END;       // sell joker j, buy shop joker i: A_REPLACE + i * MAX_JOKERS + j
+static const int N_ACTIONS = A_REPLACE + MAX_SHOP * MAX_JOKERS;
 static const int N_ACTION_TYPES = 16;
 static const int MAX_REROLLS_PER_SHOP = 8, MAX_SWAPS_PER_PHASE = 4, MAX_STEPS = 2500;
 
@@ -68,9 +70,10 @@ struct SubsetTable {
         }
         static const int bounds[17] = {A_PLAY, A_DISC, A_SELECT, A_SKIP, A_REROLL_BOSS, A_BUY, A_BUY_PACK, A_VOUCHER,
                                        A_REROLL, A_LEAVE, A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP, A_SWAP,
-                                       N_ACTIONS};
+                                       A_SWAP_END};
         for (int t = 0; t < 16; t++)
             for (int a = bounds[t]; a < bounds[t + 1]; a++) type_of[a] = (int8_t)t;
+        for (int a = A_REPLACE; a < N_ACTIONS; a++) type_of[a] = 5;      // a replace is a buy in the feature one-hot
         for (int m = 0; m < (1 << 15); m++) {
             int best = 0;
             for (int sh = 1; sh < 11; sh++) {
@@ -98,6 +101,7 @@ struct ObsPtr {
     float* af;           // [N_ACTIONS, F_ACT]
     bool* mask;          // [N_ACTIONS]
     int64_t* subs;       // [2 * N_SUB, 5]
+    int64_t* aid2;       // [N_ACTIONS]: replace rows, the joker given up
 };
 struct Obs {
     float g[F_GLOBAL];
@@ -109,7 +113,8 @@ struct Obs {
     float af[N_ACTIONS * F_ACT];
     bool mask[N_ACTIONS];
     int64_t subs[2 * N_SUB * 5];
-    ObsPtr ptr() { return ObsPtr{g, cards, jid, jf, cid, aid, af, mask, subs}; }
+    int64_t aid2[N_ACTIONS];
+    ObsPtr ptr() { return ObsPtr{g, cards, jid, jf, cid, aid, af, mask, subs, aid2}; }
 };
 
 struct StepResult {
@@ -567,6 +572,16 @@ struct Env {
                 m[A_VOUCHER + i] = g.can_afford(g.shop_vouchers[i].cost);
             m[A_REROLL] = rerolls < MAX_REROLLS_PER_SHOP && (g.free_rerolls > 0 || g.can_afford(g.reroll_cost));
             m[A_LEAVE] = true;
+            if ((int)g.jokers.size() >= g.joker_slots)
+                for (int i = 0; i < (int)g.shop.size() && i < MAX_SHOP; i++) {
+                    const ShopItem& it = g.shop[i];
+                    if (it.kind != SK_JOKER || it.joker.edition == ED_NEG) continue;
+                    for (int j = 0; j < (int)g.jokers.size() && j < MAX_JOKERS; j++) {
+                        const Joker& jk = g.jokers[j];
+                        m[A_REPLACE + i * MAX_JOKERS + j] =
+                            !jk.eternal && jk.edition != ED_NEG && g.can_afford((long long)it.cost - jk.sell_value());
+                    }
+                }
         } else if (st == ST_PACK) {
             for (int i = 0; i < (int)g.pack_cards.size() && i < MAX_PACK; i++) m[A_PICK + i] = g.pack_pick_ok(i);
             m[A_PSKIP] = true;
@@ -649,6 +664,16 @@ struct Env {
                 put(A_VOUCHER + i, VOUCHER_DEFS[g.shop_vouchers[i].key].vocab, 0, nullptr, nullptr, nullptr,
                     g.shop_vouchers[i].cost);
             p.af[(size_t)A_REROLL * F_ACT + OFF_ITEM] = (float)((g.free_rerolls ? 0 : g.reroll_cost) / 10.0);
+            for (int i = 0; i < (int)g.shop.size() && i < MAX_SHOP; i++) {
+                const ShopItem& it = g.shop[i];
+                if (it.kind != SK_JOKER) continue;
+                for (int j = 0; j < (int)g.jokers.size() && j < MAX_JOKERS; j++) {
+                    int a = A_REPLACE + i * MAX_JOKERS + j;
+                    if (p.mask[a])
+                        put(a, JOKER_DEFS[it.key].vocab, 1, &it.joker, nullptr, nullptr,
+                            (long long)it.cost - g.jokers[j].sell_value());
+                }
+            }
         }
         if (g.state == ST_BLIND_SELECT) p.af[(size_t)A_REROLL_BOSS * F_ACT + OFF_ITEM] = 1.0f;
         if (g.state == ST_PACK) {
@@ -694,6 +719,11 @@ struct Env {
         for (int i = 0; i < (int)g.consumables.size() && i < MAX_CONSUMABLES; i++)
             p.cid[i] = CONS_DEFS[g.consumables[i].id].vocab;
         encode_global();
+        std::memset(p.aid2, 0, N_ACTIONS * sizeof(int64_t));
+        if (g.state == ST_SHOP && !g.targeting)
+            for (int j = 0; j < (int)g.jokers.size() && j < MAX_JOKERS; j++)
+                for (int i = 0; i < MAX_SHOP; i++)
+                    if (p.mask[A_REPLACE + i * MAX_JOKERS + j]) p.aid2[A_REPLACE + i * MAX_JOKERS + j] = p.jid[j];
         for (int i = 0; i < N_SUB; i++)
             for (int q = 0; q < 5; q++) {
                 p.subs[(size_t)i * 5 + q] = plays[i][q];
@@ -729,7 +759,12 @@ struct Env {
         else if (a < A_PICK) g.use_consumable(a - A_USE_C, true);
         else if (a < A_PSKIP) g.pack_pick(a - A_PICK, true);
         else if (a == A_PSKIP) g.pack_skip();
-        else if (a < N_ACTIONS) g.swap_jokers(a - A_SWAP);
+        else if (a < A_SWAP_END) g.swap_jokers(a - A_SWAP);
+        else if (a < N_ACTIONS) {
+            int i = (a - A_REPLACE) / MAX_JOKERS, j = (a - A_REPLACE) % MAX_JOKERS;
+            g.sell_joker(j);
+            if (i < (int)g.shop.size() && g.can_buy(g.shop[i])) g.buy_card(i);
+        }
         else throw std::runtime_error("bad action");
     }
     StepResult step(int a) {
@@ -739,7 +774,7 @@ struct Env {
         apply_action(a);
         steps += 1;
         if (a == A_REROLL) rerolls += 1;
-        if (a >= A_SWAP && a < N_ACTIONS) swaps += 1;
+        if (a >= A_SWAP && a < A_SWAP_END) swaps += 1;
         if (g.state != prev) {
             if (g.state == ST_SHOP && prev != ST_PACK) rerolls = 0;
             bool shop_pack = (prev == ST_SHOP && g.state == ST_PACK) || (prev == ST_PACK && g.state == ST_SHOP);
@@ -783,7 +818,7 @@ struct VecEnv {
     std::vector<uint64_t> episode;
     // batch buffers
     std::vector<float> b_g, b_cards, b_jf, b_af;
-    std::vector<int64_t> b_jid, b_cid, b_aid, b_subs;
+    std::vector<int64_t> b_jid, b_cid, b_aid, b_subs, b_aid2;
     std::vector<uint8_t> b_mask;
     // thread pool
     int threads;
@@ -814,6 +849,7 @@ struct VecEnv {
         b_af.resize((size_t)n * N_ACTIONS * F_ACT);
         b_mask.resize((size_t)n * N_ACTIONS);
         b_subs.resize((size_t)n * 2 * N_SUB * 5);
+        b_aid2.resize((size_t)n * N_ACTIONS);
         episode.assign(n, 0);
         for (int i = 0; i < n; i++) {
             Env* e = new Env(deck, stake, ante_weight, win_bonus, win_ante, shape_chips, shape_gamma);
@@ -828,6 +864,7 @@ struct VecEnv {
             ptr.af = b_af.data() + (size_t)i * N_ACTIONS * F_ACT;
             ptr.mask = (bool*)(b_mask.data() + (size_t)i * N_ACTIONS);
             ptr.subs = b_subs.data() + (size_t)i * 2 * N_SUB * 5;
+            ptr.aid2 = b_aid2.data() + (size_t)i * N_ACTIONS;
             e->bind(ptr);
             envs.push_back(e);
         }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from .env import (SUBSETS, N_SUB, A_PLAY, A_DISC, A_SELECT, A_SKIP, A_BUY, A_BUY_PACK, A_VOUCHER,
-                  A_REROLL, A_LEAVE, A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP, A_SWAP, N_ACTIONS,
+                  A_REROLL, A_LEAVE, A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP, A_SWAP, A_SWAP_END, N_ACTIONS,
                   RATIO_COL, subset_of)
 from .sim.game import Game, Consumable
 from .sim.hands import N_HANDS, PAIR, FLUSH, HAND_BASE
@@ -283,7 +283,7 @@ class HeuristicPolicy:
             a, b = g.jokers[i], g.jokers[i + 1]
             if b.key == "blueprint" or a.key == "blueprint":
                 continue
-            if cat(a) > cat(b) and A_SWAP + i < N_ACTIONS and m[A_SWAP + i]:
+            if cat(a) > cat(b) and A_SWAP + i < A_SWAP_END and m[A_SWAP + i]:
                 return A_SWAP + i
         return None
 

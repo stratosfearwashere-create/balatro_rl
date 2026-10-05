@@ -202,7 +202,7 @@ def heuristic_action(w: World) -> Action | None:
                          (E.A_USE_C, E.A_PICK, "use"), (E.A_PICK, E.A_PSKIP, "pick")):
         if lo <= a < hi:
             return Action(kind, a - lo)
-    if E.A_SWAP <= a < E.N_ACTIONS:
+    if E.A_SWAP <= a < E.A_SWAP_END:
         return Action("move_joker", a - E.A_SWAP, to=a - E.A_SWAP + 1)
     return None
 

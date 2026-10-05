@@ -45,15 +45,24 @@ A_USE_C = A_SELL_C + MAX_CONSUMABLES
 A_PICK = A_USE_C + MAX_CONSUMABLES
 A_PSKIP = A_PICK + MAX_PACK
 A_SWAP = A_PSKIP + 1                                   # swap joker i with joker i+1
-N_ACTIONS = A_SWAP + MAX_JOKERS - 1
+A_SWAP_END = A_SWAP + MAX_JOKERS - 1
+# replace: sell joker j and buy shop joker i in one action (slot A_REPLACE + i * MAX_JOKERS + j), offered when
+# the joker slots are full. Selling first and buying after takes two decisions with a worse state in between,
+# which a learning agent almost never strings together by exploring; one action makes the swap findable.
+A_REPLACE = A_SWAP_END
+N_ACTIONS = A_REPLACE + MAX_SHOP * MAX_JOKERS
 
 ACTION_TYPES = ["play", "discard", "select", "skip", "reroll_boss", "buy", "buy_pack", "voucher", "reroll",
                 "leave", "sell_joker", "sell_cons", "use_cons", "pick", "pack_skip", "swap_joker"]
 _BOUNDS = [A_PLAY, A_DISC, A_SELECT, A_SKIP, A_REROLL_BOSS, A_BUY, A_BUY_PACK, A_VOUCHER, A_REROLL, A_LEAVE,
-           A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP, A_SWAP, N_ACTIONS]
+           A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP, A_SWAP, A_SWAP_END]
 _TYPE_OF = np.zeros(N_ACTIONS, dtype=np.int64)
 for _t, (_lo, _hi) in enumerate(zip(_BOUNDS[:-1], _BOUNDS[1:])):
     _TYPE_OF[_lo:_hi] = _t
+_TYPE_OF[A_REPLACE:] = ACTION_TYPES.index("buy")       # the feature one-hot: a replace is a buy (F_ACT unchanged)
+KIND_OF = _TYPE_OF.copy()                              # kinds of action for exploration: replace is its own
+KIND_OF[A_REPLACE:] = len(ACTION_TYPES)
+N_KINDS = len(ACTION_TYPES) + 1
 
 MAX_REROLLS_PER_SHOP = 8
 MAX_SWAPS_PER_PHASE = 4
@@ -325,6 +334,13 @@ def legal_mask(g: Game, cnt: Counters, plays=None, discs=None) -> np.ndarray:
             m[A_VOUCHER + i] = g.can_afford(it.cost)
         m[A_REROLL] = cnt.rerolls < MAX_REROLLS_PER_SHOP and (g.free_rerolls > 0 or g.can_afford(g.reroll_cost))
         m[A_LEAVE] = True
+        if len(g.jokers) >= g.joker_slots:               # replace: only when a plain buy has no slot
+            for i, it in enumerate(g.shop[:MAX_SHOP]):
+                if it.kind != "joker" or it.joker.edition == "NEGATIVE":
+                    continue
+                for j, jk in enumerate(g.jokers[:MAX_JOKERS]):
+                    m[A_REPLACE + i * MAX_JOKERS + j] = (not jk.eternal and jk.edition != "NEGATIVE"
+                                                         and g.can_afford(it.cost - jk.sell_value()))
     elif st == "PACK":
         for i in range(min(len(g.pack_cards), MAX_PACK)):
             m[A_PICK + i] = g.pack_pick_ok(i)
@@ -431,6 +447,12 @@ def action_features(g: Game, mask: np.ndarray, plays, discs, preds):
         for i, it in enumerate(g.shop_vouchers[:MAX_VOUCHERS]):
             put(A_VOUCHER + i, it.key, None, it.cost)
         feats[A_REROLL, off_item] = (0 if g.free_rerolls else g.reroll_cost) / 10
+        for i, it in enumerate(g.shop[:MAX_SHOP]):       # replace rows: the joker bought, at its net cost
+            if it.kind != "joker":
+                continue
+            for j, jk in enumerate(g.jokers[:MAX_JOKERS]):
+                if mask[A_REPLACE + i * MAX_JOKERS + j]:
+                    put(A_REPLACE + i * MAX_JOKERS + j, it.key, it.joker, it.cost - jk.sell_value())
     if g.state == "BLIND_SELECT":
         feats[A_REROLL_BOSS, off_item] = 1.0
     if g.state == "PACK":
@@ -485,8 +507,14 @@ def encode(g: Game, cnt: Optional[Counters] = None) -> dict:
     cid = np.zeros(MAX_CONSUMABLES, dtype=np.int64)
     for i, c in enumerate(g.consumables[:MAX_CONSUMABLES]):
         cid[i] = item_id(c.key)
+    aid2 = np.zeros(N_ACTIONS, dtype=np.int64)          # replace rows: the joker given up
+    if g.state == "SHOP" and g.targeting is None:
+        for j, jk in enumerate(g.jokers[:MAX_JOKERS]):
+            for i in range(MAX_SHOP):
+                if mask[A_REPLACE + i * MAX_JOKERS + j]:
+                    aid2[A_REPLACE + i * MAX_JOKERS + j] = jid[j]
     return {"g": encode_global(g, cnt), "cards": cards, "jid": jid, "jf": jf, "cid": cid,
-            "aid": aid, "af": af, "mask": mask, "subs": _subs_array(plays, discs)}
+            "aid": aid, "af": af, "mask": mask, "subs": _subs_array(plays, discs), "aid2": aid2}
 
 
 def subset_of(obs: dict, a: int) -> list[int]:
@@ -530,8 +558,13 @@ def apply_action(g: Game, a: int, obs: dict):
         g.pack_pick(a - A_PICK, choose_targets=True)
     elif a == A_PSKIP:
         g.pack_skip()
-    elif A_SWAP <= a < N_ACTIONS:
+    elif A_SWAP <= a < A_SWAP_END:
         g.swap_jokers(a - A_SWAP)
+    elif A_REPLACE <= a < N_ACTIONS:
+        i, j = divmod(a - A_REPLACE, MAX_JOKERS)
+        g.sell_joker(j)
+        if i < len(g.shop) and g.can_buy(g.shop[i]):     # (a sold Invisible Joker can refill the slot)
+            g.buy_card(i)
 
 
 def describe_action(g: Game, a: int, obs: Optional[dict] = None) -> str:
@@ -547,6 +580,9 @@ def describe_action(g: Game, a: int, obs: Optional[dict] = None) -> str:
              A_REROLL: "reroll", A_LEAVE: "leave shop", A_PSKIP: "skip pack"}
     if a in names:
         return names[a]
+    if a >= A_REPLACE:
+        i, j = divmod(a - A_REPLACE, MAX_JOKERS)
+        return f"replace j_{g.jokers[j].key} with {g.shop[i].key}"
     if a < A_BUY_PACK:
         return f"buy {g.shop[a - A_BUY].key}"
     if A_VOUCHER <= a < A_REROLL:
@@ -642,7 +678,7 @@ class BalatroEnv:
         self.steps += 1
         if a == A_REROLL:
             self.cnt.rerolls += 1
-        if A_SWAP <= a < N_ACTIONS:
+        if A_SWAP <= a < A_SWAP_END:
             self.cnt.swaps += 1
         if g.state != prev_state:
             if g.state == "SHOP" and prev_state != "PACK":

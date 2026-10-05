@@ -196,6 +196,7 @@ static py::dict obs_dict_single(Obs& o) {
     d["af"] = py::array_t<float>(Shape{N_ACTIONS, F_ACT}, o.af);
     d["mask"] = py::array_t<bool>(Shape{N_ACTIONS}, o.mask);
     d["subs"] = py::array_t<int64_t>(Shape{2 * N_SUB, 5}, o.subs);
+    d["aid2"] = py::array_t<int64_t>(Shape{N_ACTIONS}, o.aid2);
     return d;
 }
 
@@ -359,6 +360,7 @@ PYBIND11_MODULE(_engine, m) {
             d["af"] = py::array_t<float>(Shape{n, N_ACTIONS, F_ACT}, v.b_af.data(), self);
             d["mask"] = py::array_t<bool>(Shape{n, N_ACTIONS}, (bool*)v.b_mask.data(), self);
             d["subs"] = py::array_t<int64_t>(Shape{n, 2 * N_SUB, 5}, v.b_subs.data(), self);
+            d["aid2"] = py::array_t<int64_t>(Shape{n, N_ACTIONS}, v.b_aid2.data(), self);
             return d;
         })
         .def("step", [](VecEnv& v, py::array_t<int64_t, py::array::c_style | py::array::forcecast> actions) {

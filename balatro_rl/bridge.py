@@ -23,7 +23,7 @@ import numpy as np
 
 from .env import (encode, subset_of, Counters, A_PLAY, A_DISC, A_SELECT, A_SKIP, A_REROLL_BOSS, A_BUY,
                   A_BUY_PACK, A_VOUCHER, A_REROLL, A_LEAVE, A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP,
-                  A_SWAP, N_ACTIONS, describe_action)
+                  A_SWAP, A_SWAP_END, A_REPLACE, N_ACTIONS, describe_action)
 from .heuristic import HeuristicPolicy
 from .sim.cards import Card, CHAR_RANKS, SUITS, sort_hand
 from .sim.game import Game, ShopItem, Consumable, MAX_HAND, MAX_SHOP
@@ -329,7 +329,7 @@ def to_rpc(g: Game, a: int, hand_map: list[int], obs: dict, targets: list[int] |
         play = a < A_DISC
         sub = subset_of(obs, a)
         return ("play" if play else "discard"), {"cards": sorted(hand_map[p] for p in sub)}
-    if A_SWAP <= a < N_ACTIONS:
+    if A_SWAP <= a < A_SWAP_END:
         i = a - A_SWAP
         perm = list(range(len(g.jokers)))
         perm[i], perm[i + 1] = perm[i + 1], perm[i]
@@ -584,6 +584,7 @@ def play(args):
                 continue
             g, hmap = game_from_state(gs, args.deck, args.stake, memory)
             obs = encode(g, cnt)
+            obs["mask"][A_REPLACE:] = False              # replace is two calls on the real game: not wired up here
             obs["mask"][A_REROLL_BOSS] = False      # BalatroBot has no Director's Cut call
             scores = np.where(obs["mask"], policy(g, obs), -np.inf)
             sent = False
@@ -599,7 +600,7 @@ def play(args):
                     sent = True
                     if a == A_REROLL:
                         cnt.rerolls += 1
-                    elif A_SWAP <= a < N_ACTIONS:
+                    elif A_SWAP <= a < A_SWAP_END:
                         cnt.swaps += 1
                     else:
                         if a == A_LEAVE:

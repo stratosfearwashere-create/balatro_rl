@@ -182,8 +182,15 @@ def apply_cpp(cg, a: int, obs: dict, targeting: bool):
         cg.pack_pick(a - E.A_PICK, True)
     elif a == E.A_PSKIP:
         cg.pack_skip()
-    else:
+    elif a < E.A_SWAP_END:
         cg.swap_jokers(a - E.A_SWAP)
+    else:                                                  # replace: sell joker j, then buy shop joker i if it fits
+        i, j = divmod(a - E.A_REPLACE, E.MAX_JOKERS)
+        cg.sell_joker(j)
+        try:
+            cg.buy_card(i)
+        except RuntimeError:
+            pass
 
 
 def spice(g: Game, cg, rng: random.Random) -> str:
@@ -266,7 +273,7 @@ def spice(g: Game, cg, rng: random.Random) -> str:
     return ""
 
 
-OBS_KEYS = ("g", "cards", "jid", "jf", "cid", "aid", "af", "mask", "subs")
+OBS_KEYS = ("g", "cards", "jid", "jf", "cid", "aid", "af", "mask", "subs", "aid2")
 
 
 def obs_diff(po: dict, co: dict) -> list[str]:
@@ -375,6 +382,8 @@ def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, 
             cov["misc"].add("face-down cards in hand")
         if any(j.key in ("blueprint", "brainstorm") for j in g.jokers) and in_round:
             cov["misc"].add("a copier joker in a round")
+        if not targeting and a >= E.A_REPLACE:
+            cov["misc"].add("a joker replaced in one action")
         if in_round and not targeting and a < E.A_SELECT:
             cov["joker"] |= {j.key for j in g.jokers if not j.debuffed}
             if g.blind_idx == 2 and not g.boss_disabled:
@@ -467,7 +476,7 @@ def main():
                 "misc": {"a hand of more than 8 cards", "targets chosen among more than 8 cards",
                          "targets chosen in a pack", "targets chosen in a round",
                          "The Hook with a held-card joker (averaged prediction)", "face-down cards in hand",
-                         "a copier joker in a round"}}
+                         "a copier joker in a round", "a joker replaced in one action"}}
         names = {"joker": "jokers held while a hand was played or discarded", "joker_end": "jokers held at a round's end",
                  "cons": "consumables used", "boss": "bosses played against", "tag": "tags taken by skipping",
                  "voucher": "vouchers owned", "pack": "packs bought", "deck": "decks", "stake": "stakes",

@@ -270,7 +270,7 @@ def train_ppo_cpp(a):
     pool and the observations arrive as batched arrays, which go straight to the device. The rollout is kept
     there (action features as float16) and minibatches are slices of it. Same algorithm, rewards and log rows
     as train_ppo; no --pipeline / --strategic / --shape-phi / joker pool (those need the Python environment)."""
-    from .engine_env import CppVecEnv
+    from .engine_env import CppVecEnv, OBS_KEYS
     torch.manual_seed(a.seed)
     dev = a.device
     cuda = str(dev).startswith("cuda")
@@ -297,10 +297,10 @@ def train_ppo_cpp(a):
     venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7 + it0 * 1_000_003, threads=a.threads,
                      reward_kw=game_kw(a), start_xmult=a.start_xmult)
     T, N = a.steps, a.envs
-    from .env import _TYPE_OF, ACTION_TYPES
-    type_onehot = torch.zeros((len(_TYPE_OF), len(ACTION_TYPES)), device=dev)
-    type_onehot[torch.arange(len(_TYPE_OF)), torch.as_tensor(_TYPE_OF)] = 1.0
-    type_of = torch.as_tensor(_TYPE_OF, device=dev)
+    from .env import KIND_OF, N_KINDS
+    type_onehot = torch.zeros((len(KIND_OF), N_KINDS), device=dev)
+    type_onehot[torch.arange(len(KIND_OF)), torch.as_tensor(KIND_OF)] = 1.0
+    type_of = torch.as_tensor(KIND_OF, device=dev)
 
     def policy(logits, mask):
         """The behaviour policy: the network's, mixed with a floor that spreads explore_types evenly over the
