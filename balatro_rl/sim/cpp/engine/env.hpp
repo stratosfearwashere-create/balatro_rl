@@ -119,8 +119,17 @@ struct StepResult {
 
 inline double log_feat(double x, double scale = 6.0) { return std::log10((x > 0 ? x : 0) + 1) / scale; }
 
+// multiplier jokers a training game may start with (Env::start_xmult): no legendaries, nothing that eats jokers
+static const int16_t START_XMULT[] = {
+    J_DUO, J_TRIO, J_FAMILY, J_ORDER, J_TRIBE, J_BARON, J_ANCIENT, J_OBELISK, J_CAVENDISH, J_CARD_SHARP,
+    J_LOYALTY_CARD, J_ACROBAT, J_BLACKBOARD, J_FLOWER_POT, J_SEEING_DOUBLE, J_IDOL, J_CONSTELLATION, J_RAMEN,
+    J_STENCIL, J_PHOTOGRAPH, J_BLOODSTONE, J_VAMPIRE, J_HOLOGRAM, J_STEEL_JOKER, J_LUCKY_CAT, J_BASEBALL,
+    J_CAMPFIRE, J_THROWBACK, J_GLASS, J_HIT_THE_ROAD, J_DRIVERS_LICENSE};
+static const int N_START_XMULT = (int)(sizeof(START_XMULT) / sizeof(START_XMULT[0]));
+
 struct Env {
     int deck, stake, win_ante;
+    double start_xmult = 0.0;        // share of games that start holding one random multiplier joker (training aid)
     double weights[24];
     double win_bonus, shape_chips, shape_gamma;
     Game g;
@@ -162,6 +171,15 @@ struct Env {
     }
     void reset(uint64_t seed) {
         g = Game(seed, deck, stake, win_ante);
+        if (start_xmult > 0.0) {
+            PyRandom r(seed ^ 0x9e3779b97f4a7c15ull);       // its own stream: the choice does not shift the game's draws
+            if (r.random() < start_xmult) {
+                Joker j;
+                j.key = START_XMULT[r.choice_index((size_t)N_START_XMULT)];
+                j.base_cost = j.d().cost;
+                g.add_joker(j);
+            }
+        }
         steps = 0; rerolls = 0; swaps = 0;
         encode();
         phi = potential();
@@ -785,7 +803,7 @@ struct VecEnv {
     std::string error;
 
     VecEnv(int n_, int deck, int stake, uint64_t seed0_, int threads_, double ante_weight, double win_bonus,
-           int win_ante, double shape_chips, double shape_gamma)
+           int win_ante, double shape_chips, double shape_gamma, double start_xmult = 0.0)
         : n(n_), seed0(seed0_) {
         b_g.resize((size_t)n * F_GLOBAL);
         b_cards.resize((size_t)n * MAX_HAND * F_CARD);
@@ -799,6 +817,7 @@ struct VecEnv {
         episode.assign(n, 0);
         for (int i = 0; i < n; i++) {
             Env* e = new Env(deck, stake, ante_weight, win_bonus, win_ante, shape_chips, shape_gamma);
+            e->start_xmult = start_xmult;
             ObsPtr ptr;
             ptr.g = b_g.data() + (size_t)i * F_GLOBAL;
             ptr.cards = b_cards.data() + (size_t)i * MAX_HAND * F_CARD;

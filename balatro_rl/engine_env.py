@@ -63,11 +63,13 @@ class CppVecEnv:
     (or move to the GPU) what must outlive the next step."""
 
     def __init__(self, n: int, deck: str = "RED", stake: str = "GOLD", seed0: int = 0, threads: int = 0,
-                 reward_kw: dict | None = None):
+                 reward_kw: dict | None = None, start_xmult: float = 0.0):
+        # start_xmult: share of games that start holding one random multiplier joker (a training aid: the agent
+        # meets scaling builds it would rarely assemble by exploring; evaluate without it)
         kw = _check(reward_kw or {})
         self.n = n
         self.v = _engine.VecEnv(n, deck, stake, int(seed0), int(threads), kw["ante_weight"], kw["win_bonus"],
-                                kw["win_ante"], kw["shape_chips"], kw["shape_gamma"])
+                                kw["win_ante"], kw["shape_chips"], kw["shape_gamma"], float(start_xmult))
         self.obs = self.v.obs()
 
     def step(self, actions):

@@ -282,8 +282,27 @@ def train_ppo_cpp(a):
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
             logits, v = model(ob)
         return logits.float(), v.float()
-    venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7, threads=a.threads, reward_kw=game_kw(a))
+    venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7, threads=a.threads, reward_kw=game_kw(a),
+                     start_xmult=a.start_xmult)
     T, N = a.steps, a.envs
+    from .env import _TYPE_OF, ACTION_TYPES
+    type_onehot = torch.zeros((len(_TYPE_OF), len(ACTION_TYPES)), device=dev)
+    type_onehot[torch.arange(len(_TYPE_OF)), torch.as_tensor(_TYPE_OF)] = 1.0
+    type_of = torch.as_tensor(_TYPE_OF, device=dev)
+
+    def policy(logits, mask):
+        """The behaviour policy: the network's, mixed with a floor that spreads explore_types evenly over the
+        kinds of action that are legal (play, discard, buy, sell a joker, reroll, voucher, skip ...) and evenly
+        within a kind, so no kind of action can fall to probability zero and stop being tried. The update uses
+        the same mixture, so PPO's ratio is exact."""
+        if a.explore_types <= 0:
+            return torch.distributions.Categorical(logits=logits)
+        m = mask.float()
+        per_type = m @ type_onehot                                   # legal actions of each kind  [B, 16]
+        kinds = (per_type > 0).float().sum(1, keepdim=True).clamp(min=1)
+        floor = m / (kinds * per_type[:, type_of].clamp(min=1))      # [B, A], sums to 1 over the legal actions
+        probs = (1 - a.explore_types) * torch.softmax(logits, 1) + a.explore_types * floor
+        return torch.distributions.Categorical(probs=probs)
 
     def current():
         # the engine's buffers are overwritten by the next step: copy them (to the GPU, or on the CPU)
@@ -318,7 +337,7 @@ def train_ppo_cpp(a):
         for t in range(T):
             with torch.no_grad():
                 logits, v = fwd(ob)
-                dist = torch.distributions.Categorical(logits=logits)
+                dist = policy(logits, ob["mask"])
                 act = dist.sample()
                 lp = dist.log_prob(act)
             for k in OBS_KEYS:
@@ -366,7 +385,7 @@ def train_ppo_cpp(a):
                 for k in range(0, T * N, a.batch):
                     sl = slice(k, k + a.batch)
                     lg, _ = fwd({key: t[sl] for key, t in big.items()})
-                    chunks.append(torch.distributions.Categorical(logits=lg).log_prob(flat_act[sl]))
+                    chunks.append(policy(lg, big["mask"][sl]).log_prob(flat_act[sl]))
                 flat_lp = torch.cat(chunks)
         model.train()
         idx = np.arange(T * N)
@@ -375,8 +394,9 @@ def train_ppo_cpp(a):
             np.random.shuffle(idx)
             for k in range(0, len(idx), a.batch):
                 mb = torch.from_numpy(idx[k:k + a.batch]).to(dev)
-                logits, v = fwd({key: t[mb] for key, t in big.items()})
-                dist = torch.distributions.Categorical(logits=logits)
+                mbo = {key: t[mb] for key, t in big.items()}
+                logits, v = fwd(mbo)
+                dist = policy(logits, mbo["mask"])
                 lp = dist.log_prob(flat_act[mb])
                 ratio = torch.exp(lp - flat_lp[mb])
                 s1 = ratio * flat_adv[mb]
@@ -472,6 +492,10 @@ def main():
     p.add_argument("--stats-window", type=int, default=5000, help="--engine cpp: games the logged averages cover")
     p.add_argument("--lr-final", type=float, default=None, help="--engine cpp: anneal the learning rate linearly to this")
     p.add_argument("--ent-final", type=float, default=None, help="--engine cpp: anneal the entropy bonus linearly to this")
+    p.add_argument("--explore-types", type=float, default=0.0,
+                   help="--engine cpp: share of the behaviour policy spread evenly over the legal kinds of action")
+    p.add_argument("--start-xmult", type=float, default=0.0,
+                   help="--engine cpp: share of training games that start with one random multiplier joker")
     p.add_argument("--amp-recompute", action="store_true",
                    help="--engine cpp --amp: recompute the rollout's log-probs at the update's batch size")
     p.add_argument("--save-every", type=int, default=10)
