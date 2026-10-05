@@ -40,8 +40,9 @@ def _check(reward_kw: dict):
 class CppEnv:
     """One environment (BalatroEnv's interface). `game` is the C++ game (dump(), state, money ...)."""
 
-    def __init__(self, deck: str = "RED", stake: str = "GOLD", **reward_kw):
+    def __init__(self, deck: str = "RED", stake: str = "GOLD", verdant_bonus: float = 0.0, **reward_kw):
         self.e = _engine.Env(deck, stake, **_check(reward_kw))
+        self.e.verdant_bonus = float(verdant_bonus)
         self.obs = None
 
     @property
@@ -63,14 +64,21 @@ class CppVecEnv:
     (or move to the GPU) what must outlive the next step."""
 
     def __init__(self, n: int, deck: str = "RED", stake: str = "GOLD", seed0: int = 0, threads: int = 0,
-                 reward_kw: dict | None = None, start_xmult: float = 0.0):
+                 reward_kw: dict | None = None, start_xmult: float = 0.0, start_any: float = 0.0,
+                 verdant_bonus: float = 0.0):
         # start_xmult: share of games that start holding one random multiplier joker (a training aid: the agent
         # meets scaling builds it would rarely assemble by exploring; evaluate without it)
         kw = _check(reward_kw or {})
         self.n = n
         self.v = _engine.VecEnv(n, deck, stake, int(seed0), int(threads), kw["ante_weight"], kw["win_bonus"],
-                                kw["win_ante"], kw["shape_chips"], kw["shape_gamma"], float(start_xmult))
+                                kw["win_ante"], kw["shape_chips"], kw["shape_gamma"], float(start_xmult),
+                                float(start_any), float(verdant_bonus))
+        self.seed0 = int(seed0)
         self.obs = self.v.obs()
+
+    def set_start(self, xmult: float, any_: float):
+        """Head-start shares for the games that begin from now on."""
+        self.v.set_start(float(xmult), float(any_))
 
     def step(self, actions):
         """-> (rewards [n] float32, dones [n] bool, infos). infos: ante / won / blinds arrays describing the

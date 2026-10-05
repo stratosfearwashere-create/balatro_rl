@@ -330,6 +330,8 @@ PYBIND11_MODULE(_engine, m) {
         })
         .def_property_readonly("game", [](Env& e) -> Game& { return e.g; }, py::return_value_policy::reference_internal)
         .def_readwrite("start_xmult", &Env::start_xmult)
+        .def_readwrite("start_any", &Env::start_any)
+        .def_readwrite("verdant_bonus", &Env::verdant_bonus)
         .def_readonly("steps", &Env::steps)
         .def_readonly("rerolls", &Env::rerolls)
         .def_readonly("swaps", &Env::swaps);
@@ -337,13 +339,14 @@ PYBIND11_MODULE(_engine, m) {
     py::class_<VecEnv>(m, "VecEnv")
         .def(py::init([](int n, const std::string& deck, const std::string& stake, uint64_t seed0, int threads,
                          double ante_weight, double win_bonus, int win_ante, double shape_chips, double shape_gamma,
-                         double start_xmult) {
+                         double start_xmult, double start_any, double verdant_bonus) {
             return new VecEnv(n, deck_id(deck), stake_id(stake), seed0, threads, ante_weight, win_bonus, win_ante,
-                              shape_chips, shape_gamma, start_xmult);
+                              shape_chips, shape_gamma, start_xmult, start_any, verdant_bonus);
         }), py::arg("n"), py::arg("deck") = "RED", py::arg("stake") = "GOLD", py::arg("seed0") = 0,
             py::arg("threads") = 0, py::arg("ante_weight") = 1.0, py::arg("win_bonus") = 10.0,
             py::arg("win_ante") = 8, py::arg("shape_chips") = 0.0, py::arg("shape_gamma") = 0.995,
-            py::arg("start_xmult") = 0.0)
+            py::arg("start_xmult") = 0.0, py::arg("start_any") = 0.0, py::arg("verdant_bonus") = 0.0)
+        .def("set_start", &VecEnv::set_start, py::arg("xmult"), py::arg("any"))
         .def_readonly("n", &VecEnv::n)
         .def_readonly("threads", &VecEnv::threads)
         // the batched observation: numpy views of the environments' buffers (no copy; step() overwrites them)

@@ -649,9 +649,13 @@ class BalatroEnv:
     def __init__(self, deck: str = "RED", stake: str = "GOLD", ante_weight: float = 1.0, win_bonus: float = 10.0,
                  win_ante: int = 8, joker_pool=None,
                  shape_chips: float = 0.0, shape_phi: float = 0.0, reward_config: Optional[str] = None,
-                 shape_gamma: float = 0.995):
+                 shape_gamma: float = 0.995, verdant_bonus: float = 0.0):
         self.deck = deck
         self.stake = stake
+        # paid once for the sale that lifts Verdant Leaf's debuff (every card is debuffed until a joker is
+        # sold): on the high stakes the boss cannot be beaten without it, and a policy that never sells never
+        # finds out
+        self.verdant_bonus = verdant_bonus
         self.game_kw = {"win_ante": win_ante, "joker_pool": joker_pool}
         self.weights = blind_weights(ante_weight)
         self.win_bonus = win_bonus
@@ -674,6 +678,7 @@ class BalatroEnv:
         g = self.g
         before = g.furthest_blind
         prev_state = g.state
+        verdant = g.boss_active() == "verdant_leaf" and bool(g.flags.get("verdant"))
         apply_action(g, a, self.obs)
         self.steps += 1
         if a == A_REROLL:
@@ -686,6 +691,8 @@ class BalatroEnv:
             if {prev_state, g.state} != {"SHOP", "PACK"}:
                 self.cnt.swaps = 0
         r = float(sum(self.weights[min(b, 23)] for b in range(before, g.furthest_blind)))
+        if verdant and A_SELL_J <= a < A_SELL_C:
+            r += self.verdant_bonus
         if g.state == "WON":
             r += self.win_bonus
         elif g.state == "GAME_OVER" and g.target > 0:

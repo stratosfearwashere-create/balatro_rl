@@ -135,6 +135,9 @@ static const int N_START_XMULT = (int)(sizeof(START_XMULT) / sizeof(START_XMULT[
 struct Env {
     int deck, stake, win_ante;
     double start_xmult = 0.0;        // share of games that start holding one random multiplier joker (training aid)
+    double start_any = 0.0;          // share that start holding one random joker of any kind but legendary:
+                                     //   rarity common 30% / uncommon 40% / rare 30% (the ones a run seldom meets)
+    double verdant_bonus = 0.0;      // reward, once, for the sale that lifts Verdant Leaf's debuff
     double weights[24];
     double win_bonus, shape_chips, shape_gamma;
     Game g;
@@ -181,6 +184,20 @@ struct Env {
             if (r.random() < start_xmult) {
                 Joker j;
                 j.key = START_XMULT[r.choice_index((size_t)N_START_XMULT)];
+                j.base_cost = j.d().cost;
+                g.add_joker(j);
+            }
+        }
+        if (start_any > 0.0) {
+            PyRandom r(seed ^ 0xc2b2ae3d27d4eb4full);
+            if (r.random() < start_any) {
+                double x = r.random();
+                int rarity = x < 0.3 ? 1 : (x < 0.7 ? 2 : 3);
+                int16_t opts[J_COUNT];
+                int n = 0;
+                for (int k = 0; k < J_COUNT; k++) if (JOKER_DEFS[k].rarity == rarity) opts[n++] = (int16_t)k;
+                Joker j;
+                j.key = opts[r.choice_index((size_t)n)];
                 j.base_cost = j.d().cost;
                 g.add_joker(j);
             }
@@ -771,6 +788,7 @@ struct Env {
         if (a < 0 || a >= N_ACTIONS || !p.mask[a]) throw std::runtime_error("illegal action");
         int before = g.furthest_blind;
         uint8_t prev = g.state;
+        bool verdant = g.boss_active() == B_VERDANT_LEAF && g.f_verdant;
         apply_action(a);
         steps += 1;
         if (a == A_REROLL) rerolls += 1;
@@ -782,6 +800,7 @@ struct Env {
         }
         double r = 0.0;
         for (int b = before; b < g.furthest_blind; b++) r += weights[std::min(b, 23)];
+        if (verdant && a >= A_SELL_J && a < A_SELL_C) r += verdant_bonus;
         if (g.state == ST_WON) {
             r += win_bonus;
         } else if (g.state == ST_GAME_OVER && g.target > 0) {
@@ -838,7 +857,8 @@ struct VecEnv {
     std::string error;
 
     VecEnv(int n_, int deck, int stake, uint64_t seed0_, int threads_, double ante_weight, double win_bonus,
-           int win_ante, double shape_chips, double shape_gamma, double start_xmult = 0.0)
+           int win_ante, double shape_chips, double shape_gamma, double start_xmult = 0.0,
+           double start_any = 0.0, double verdant_bonus = 0.0)
         : n(n_), seed0(seed0_) {
         b_g.resize((size_t)n * F_GLOBAL);
         b_cards.resize((size_t)n * MAX_HAND * F_CARD);
@@ -854,6 +874,8 @@ struct VecEnv {
         for (int i = 0; i < n; i++) {
             Env* e = new Env(deck, stake, ante_weight, win_bonus, win_ante, shape_chips, shape_gamma);
             e->start_xmult = start_xmult;
+            e->start_any = start_any;
+            e->verdant_bonus = verdant_bonus;
             ObsPtr ptr;
             ptr.g = b_g.data() + (size_t)i * F_GLOBAL;
             ptr.cards = b_cards.data() + (size_t)i * MAX_HAND * F_CARD;
@@ -882,6 +904,10 @@ struct VecEnv {
         cv_work.notify_all();
         for (std::thread& t : pool) t.join();
         for (Env* e : envs) delete e;
+    }
+    // head-start shares for the games that begin from now on (the trainer fades them over a run)
+    void set_start(double xmult, double any) {
+        for (Env* e : envs) { e->start_xmult = xmult; e->start_any = any; }
     }
     void new_episode(int i) {
         envs[i]->reset(seed0 + (uint64_t)i + (uint64_t)n * episode[i]);

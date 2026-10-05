@@ -303,11 +303,12 @@ def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, 
     """One game on both engines. Returns (mismatches, info). deep: every hand starts at this level, so the
     rule-based play reaches the late antes (finisher bosses, many shops)."""
     rng = random.Random(seed * 7919 + 13)
-    env = E.BalatroEnv(deck, stake, win_ante=win_ante)
+    env = E.BalatroEnv(deck, stake, win_ante=win_ante, verdant_bonus=0.75)
     obs = env.reset(seed)
     g = env.g
     if check_obs:
         cenv = _engine.Env(deck, stake, win_ante=win_ante)
+        cenv.verdant_bonus = 0.75
         cobs = cenv.reset(seed)
         cg = cenv.game
     else:

@@ -296,9 +296,11 @@ def train_ppo_cpp(a):
             logits, v = model(ob)
         return logits.float(), v.float()
     venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7 + it0 * 1_000_003, threads=a.threads,
-                     reward_kw=game_kw(a), start_xmult=a.start_xmult)
+                     reward_kw=game_kw(a), start_xmult=a.start_xmult, start_any=a.start_any,
+                     verdant_bonus=a.verdant_bonus)
     T, N = a.steps, a.envs
-    from .env import KIND_OF, N_KINDS
+    from .env import KIND_OF, N_KINDS, ACTION_TYPES
+    kind_names = list(ACTION_TYPES) + ["replace"]
     type_onehot = torch.zeros((len(KIND_OF), N_KINDS), device=dev)
     type_onehot[torch.arange(len(KIND_OF)), torch.as_tensor(KIND_OF)] = 1.0
     type_of = torch.as_tensor(KIND_OF, device=dev)
@@ -336,6 +338,8 @@ def train_ppo_cpp(a):
     dones = np.zeros((T, N), dtype=np.float32)
     stats = EpisodeStats(n=a.stats_window)          # outcomes of the last stats_window finished games
     ep_ret = np.zeros(N)
+    ep_count = np.zeros(N, dtype=np.int64)          # games each environment has finished: env e plays the seed
+    wins_path = a.out.replace(".pt", "_wins.jsonl")  #   venv.seed0 + e + N * ep_count[e]
     t0 = time.time() - 60.0 * min0
     best = -1.0
     sim_s = 0.0
@@ -344,6 +348,12 @@ def train_ppo_cpp(a):
     for it in range(it0 + 1, a.iters + 1):
         # linear schedules over the run: the learning rate to lr_final, the entropy bonus to ent_final
         frac = (it - 1) / max(1, a.iters - 1)
+        any_now = a.start_any + (a.start_any_final - a.start_any) * frac if a.start_any_final is not None else a.start_any
+        xm_now = (a.start_xmult + (a.start_xmult_final - a.start_xmult) * frac if a.start_xmult_final is not None
+                  else a.start_xmult)
+        venv.set_start(xm_now, any_now)
+        kinds = torch.zeros(N_KINDS, device=dev)
+        final_boss = 0
         lr_now = (a.lr + (a.lr_final - a.lr) * frac if a.lr_final is not None else a.lr) * a.lr_scale
         ent_now = a.ent + (a.ent_final - a.ent) * frac if a.ent_final is not None else a.ent
         for gp in opt.param_groups:
@@ -358,6 +368,7 @@ def train_ppo_cpp(a):
             for k in OBS_KEYS:
                 buf[k][t] = ob[k]
             acts[t], lps[t] = act, lp
+            kinds += torch.bincount(type_of[act], minlength=N_KINDS)
             vals[t] = v.cpu().numpy()
             ts = time.time()
             r, d, info = venv.step(act.cpu().numpy())
@@ -370,6 +381,13 @@ def train_ppo_cpp(a):
                 stats.add({"episode_end": True, "blinds": int(info["blinds"][e]), "ante": int(info["ante"][e]),
                            "won": bool(info["won"][e])})
                 games += 1
+                final_boss += int(info["blinds"][e] >= 23)       # reached the ante-8 boss (23 beaten: lost to it)
+                if info["won"][e]:
+                    with open(wins_path, "a") as f:
+                        f.write(json.dumps({"iter": it, "games": games, "seed": int(venv.seed0 + e + N * ep_count[e]),
+                                            "stake": a.stake, "start_any": round(any_now, 3),
+                                            "start_xmult": round(xm_now, 3)}) + "\n")
+                ep_count[e] += 1
                 wins += int(info["won"][e])
                 ante_hist[min(int(info["ante"][e]), 8) + (1 if info["won"][e] else 0)] += 1
             ob = current()
@@ -405,6 +423,7 @@ def train_ppo_cpp(a):
         model.train()
         idx = np.arange(T * N)
         pl, vl, ents, kls = [], [], [], []
+        e_round, e_build = [], []
         for _ in range(a.epochs):
             np.random.shuffle(idx)
             for k in range(0, len(idx), a.batch):
@@ -418,8 +437,15 @@ def train_ppo_cpp(a):
                 s2 = torch.clamp(ratio, 1 - a.clip, 1 + a.clip) * flat_adv[mb]
                 ploss = -torch.min(s1, s2).mean()
                 vloss = F.mse_loss(v, flat_ret[mb])
-                ent = dist.entropy().mean()
-                loss = ploss + a.vf * vloss - ent_now * ent
+                ent_all = dist.entropy()
+                ent = ent_all.mean()
+                in_round = mbo["g"][:, 5] > 0.5                  # obs "g" column 5: state == SELECTING_HAND
+                # the bonus counts decisions outside rounds ent_build times: per decision a round has hundreds
+                # of near-equal plays to be vague about, a shop a handful of choices that decide the run
+                ent_w = torch.where(in_round, torch.ones_like(ent_all), torch.full_like(ent_all, a.ent_build))
+                loss = ploss + a.vf * vloss - ent_now * (ent_w * ent_all).mean()
+                e_round.append(ent_all[in_round].mean().detach() if in_round.any() else ent.detach())
+                e_build.append(ent_all[~in_round].mean().detach() if (~in_round).any() else ent.detach())
                 opt.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -439,6 +465,10 @@ def train_ppo_cpp(a):
                "sim%": round(100 * sim_s / max(time.time() - t0 - 60.0 * min0, 1e-9), 1),
                "games": games, "wins": wins, "antes": ante_hist[1:].tolist(),   # antes: lost in 1..8, then won
                "lr": lr_now, "ent_coef": ent_now,
+               "ent_round": round(float(torch.stack(e_round).mean()), 3),
+               "ent_build": round(float(torch.stack(e_build).mean()), 3),
+               "start_any": round(any_now, 3), "start_xmult": round(xm_now, 3), "final_boss": final_boss,
+               "kinds": {k: int(v) for k, v in zip(kind_names, kinds.cpu().tolist()) if v > 0},
                "gpu_gb": round(torch.cuda.max_memory_reserved() / 1e9, 1) if cuda else 0.0}
         ante_hist[:] = 0
         row.update(stats.summary())
@@ -515,6 +545,14 @@ def main():
     p.add_argument("--resume", action="store_true",
                    help="--engine cpp: continue the run in --out from its checkpoint and log")
     p.add_argument("--lr-scale", type=float, default=1.0, help="--engine cpp: multiplies the learning-rate schedule")
+    p.add_argument("--start-xmult-final", type=float, default=None, help="--engine cpp: fade --start-xmult to this")
+    p.add_argument("--start-any", type=float, default=0.0,
+                   help="--engine cpp: share of training games that start with one random joker of any kind")
+    p.add_argument("--start-any-final", type=float, default=None, help="--engine cpp: fade --start-any to this")
+    p.add_argument("--verdant-bonus", type=float, default=0.0,
+                   help="--engine cpp: reward, once, for the sale that lifts Verdant Leaf's debuff")
+    p.add_argument("--ent-build", type=float, default=1.0,
+                   help="--engine cpp: the entropy bonus counts decisions outside rounds this many times")
     p.add_argument("--amp-recompute", action="store_true",
                    help="--engine cpp --amp: recompute the rollout's log-probs at the update's batch size")
     p.add_argument("--save-every", type=int, default=10)
