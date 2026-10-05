@@ -84,7 +84,8 @@ class ActorCritic(nn.Module):
         jmean = je.sum(1) / jmask.sum(1).clamp(min=1)
         jmax = (je - (1 - jmask) * 1e4).max(1).values.clamp(min=-10)
         cons = self.emb(ob["cid"]).mean(1)
-        s = self.state(torch.cat([ob["g"], cmean, cmax, jmean, jmax, cons], -1))
+        g = ob["g"][:, :self.config["g_dim"]]            # older networks: without the columns added since
+        s = self.state(torch.cat([g, cmean, cmax, jmean, jmax, cons], -1))
         s = F.relu(s)
 
         if self.pack_legal:

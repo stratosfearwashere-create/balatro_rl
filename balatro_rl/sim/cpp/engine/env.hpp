@@ -41,7 +41,7 @@ static const int MAX_REROLLS_PER_SHOP = 8, MAX_SWAPS_PER_PHASE = 4, MAX_STEPS = 
 static const int F_CARD = 1 + 13 + 4 + 9 + 5 + 5 + 3;                 // 40
 static const int F_JOKER = 1 + 5 + 7;                                 // 13
 static const int F_ACT = N_ACTION_TYPES + 1 + N_HANDS + 5 + 6 + 13 + 8 + 2;   // 63
-static const int F_GLOBAL = 196;
+static const int F_GLOBAL = 204;
 static const int OFF_PLAY = N_ACTION_TYPES;
 static const int RATIO_COL = OFF_PLAY + 1 + N_HANDS;
 static const int OFF_DISC = OFF_PLAY + 1 + N_HANDS + 5;
@@ -531,6 +531,7 @@ struct Env {
         int np = 0;
         for (int q = 0; q < N_PLANETS; q++) if ((g.planets_used >> q) & 1u) np++;
         f[k++] = (float)(np / 12.0);
+        for (int st = 0; st < 8; st++) f[k++] = g.stake == st ? 1.0f : 0.0f;
         if (k != F_GLOBAL) throw std::runtime_error("encode_global: wrong size");
     }
     void encode_card(float* v, const Card& c, bool forced) const {
@@ -858,8 +859,10 @@ struct VecEnv {
 
     VecEnv(int n_, int deck, int stake, uint64_t seed0_, int threads_, double ante_weight, double win_bonus,
            int win_ante, double shape_chips, double shape_gamma, double start_xmult = 0.0,
-           double start_any = 0.0, double verdant_bonus = 0.0)
+           double start_any = 0.0, double verdant_bonus = 0.0, const std::vector<int>* stakes = nullptr)
         : n(n_), seed0(seed0_) {
+        // stakes: one per environment (a batch that mixes stakes), or none: every environment plays `stake`
+        if (stakes && !stakes->empty() && (int)stakes->size() != n) throw std::invalid_argument("stakes: one per environment");
         b_g.resize((size_t)n * F_GLOBAL);
         b_cards.resize((size_t)n * MAX_HAND * F_CARD);
         b_jid.resize((size_t)n * MAX_JOKERS);
@@ -872,7 +875,8 @@ struct VecEnv {
         b_aid2.resize((size_t)n * N_ACTIONS);
         episode.assign(n, 0);
         for (int i = 0; i < n; i++) {
-            Env* e = new Env(deck, stake, ante_weight, win_bonus, win_ante, shape_chips, shape_gamma);
+            int st = (stakes && !stakes->empty()) ? (*stakes)[i] : stake;
+            Env* e = new Env(deck, st, ante_weight, win_bonus, win_ante, shape_chips, shape_gamma);
             e->start_xmult = start_xmult;
             e->start_any = start_any;
             e->verdant_bonus = verdant_bonus;

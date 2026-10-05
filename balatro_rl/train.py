@@ -265,6 +265,19 @@ def train_ppo(a):
     venv.close()
 
 
+def stake_mix(spec: str, n: int, target: str) -> list | None:
+    """The stake of each of n environments for --stake-mix (None: all on the target stake)."""
+    if not spec:
+        return None
+    out = []
+    for part in spec.split(","):
+        name, _, w = part.partition(":")
+        out += [name.strip().upper()] * int(round(float(w) * n))
+    if len(out) >= n:
+        raise SystemExit("--stake-mix leaves no environment on the target stake")
+    return out + [target] * (n - len(out))
+
+
 def train_ppo_cpp(a):
     """PPO on the C++ engine (engine_env.CppVecEnv): every environment is stepped in one call on a thread
     pool and the observations arrive as batched arrays, which go straight to the device. The rollout is kept
@@ -297,7 +310,10 @@ def train_ppo_cpp(a):
         return logits.float(), v.float()
     venv = CppVecEnv(a.envs, a.deck, a.stake, seed0=a.seed * 1_000_000 + 7 + it0 * 1_000_003, threads=a.threads,
                      reward_kw=game_kw(a), start_xmult=a.start_xmult, start_any=a.start_any,
-                     verdant_bonus=a.verdant_bonus)
+                     verdant_bonus=a.verdant_bonus, stakes=stake_mix(a.stake_mix, a.envs, a.stake))
+    env_stake = np.array(venv.stakes)
+    target = env_stake == a.stake                    # the logged blinds / antes / wins are the target stake's
+    wins_other: dict = {}
     T, N = a.steps, a.envs
     from .env import KIND_OF, N_KINDS, ACTION_TYPES
     kind_names = list(ACTION_TYPES) + ["replace"]
@@ -376,20 +392,24 @@ def train_ppo_cpp(a):
             rews[t], dones[t] = r, d
             ep_ret += r
             for e in np.flatnonzero(d):
-                stats.returns.append(float(ep_ret[e]))
-                ep_ret[e] = 0.0
-                stats.add({"episode_end": True, "blinds": int(info["blinds"][e]), "ante": int(info["ante"][e]),
-                           "won": bool(info["won"][e])})
                 games += 1
-                final_boss += int(info["blinds"][e] >= 23)       # reached the ante-8 boss (23 beaten: lost to it)
+                if target[e]:
+                    stats.returns.append(float(ep_ret[e]))
+                    stats.add({"episode_end": True, "blinds": int(info["blinds"][e]), "ante": int(info["ante"][e]),
+                               "won": bool(info["won"][e])})
+                    final_boss += int(info["blinds"][e] >= 23)   # reached the ante-8 boss (23 beaten: lost to it)
+                ep_ret[e] = 0.0
                 if info["won"][e]:
                     with open(wins_path, "a") as f:
                         f.write(json.dumps({"iter": it, "games": games, "seed": int(venv.seed0 + e + N * ep_count[e]),
-                                            "stake": a.stake, "start_any": round(any_now, 3),
+                                            "stake": str(env_stake[e]), "start_any": round(any_now, 3),
                                             "start_xmult": round(xm_now, 3)}) + "\n")
                 ep_count[e] += 1
-                wins += int(info["won"][e])
-                ante_hist[min(int(info["ante"][e]), 8) + (1 if info["won"][e] else 0)] += 1
+                if target[e]:
+                    wins += int(info["won"][e])
+                    ante_hist[min(int(info["ante"][e]), 8) + (1 if info["won"][e] else 0)] += 1
+                elif info["won"][e]:
+                    wins_other[str(env_stake[e])] = wins_other.get(str(env_stake[e]), 0) + 1
             ob = current()
         with torch.no_grad():
             _, last_v = fwd(ob)
@@ -464,6 +484,7 @@ def train_ppo_cpp(a):
                "sps": round(it * T * N / max(el, 1e-9)),
                "sim%": round(100 * sim_s / max(time.time() - t0 - 60.0 * min0, 1e-9), 1),
                "games": games, "wins": wins, "antes": ante_hist[1:].tolist(),   # antes: lost in 1..8, then won
+               "wins_other": dict(wins_other),             # wins on the other stakes of the mix, in total
                "lr": lr_now, "ent_coef": ent_now,
                "ent_round": round(float(torch.stack(e_round).mean()), 3),
                "ent_build": round(float(torch.stack(e_build).mean()), 3),
@@ -553,6 +574,9 @@ def main():
                    help="--engine cpp: reward, once, for the sale that lifts Verdant Leaf's debuff")
     p.add_argument("--ent-build", type=float, default=1.0,
                    help="--engine cpp: the entropy bonus counts decisions outside rounds this many times")
+    p.add_argument("--stake-mix", default="",
+                   help="--engine cpp: shares of the environments on other stakes, e.g. WHITE:0.06,GREEN:0.05; the "
+                        "rest play --stake, whose results are the ones logged")
     p.add_argument("--amp-recompute", action="store_true",
                    help="--engine cpp --amp: recompute the rollout's log-probs at the update's batch size")
     p.add_argument("--save-every", type=int, default=10)

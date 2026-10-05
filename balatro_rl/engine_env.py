@@ -65,14 +65,15 @@ class CppVecEnv:
 
     def __init__(self, n: int, deck: str = "RED", stake: str = "GOLD", seed0: int = 0, threads: int = 0,
                  reward_kw: dict | None = None, start_xmult: float = 0.0, start_any: float = 0.0,
-                 verdant_bonus: float = 0.0):
+                 verdant_bonus: float = 0.0, stakes: list | None = None):
         # start_xmult: share of games that start holding one random multiplier joker (a training aid: the agent
         # meets scaling builds it would rarely assemble by exploring; evaluate without it)
         kw = _check(reward_kw or {})
         self.n = n
         self.v = _engine.VecEnv(n, deck, stake, int(seed0), int(threads), kw["ante_weight"], kw["win_bonus"],
                                 kw["win_ante"], kw["shape_chips"], kw["shape_gamma"], float(start_xmult),
-                                float(start_any), float(verdant_bonus))
+                                float(start_any), float(verdant_bonus), list(stakes or []))
+        self.stakes = list(stakes) if stakes else [stake] * n          # the stake each environment plays
         self.seed0 = int(seed0)
         self.obs = self.v.obs()
 

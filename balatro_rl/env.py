@@ -162,6 +162,8 @@ def encode_global(g: Game, cnt: Optional[Counters] = None) -> np.ndarray:
     f.append(float(g.deck_type == "PLASMA"))
     f.append(g.tarots_used / 20)
     f.append(len(g.planets_used) / 12)
+    # the stake (appended last: a network from before it existed reads the columns it knows, model.forward)
+    f += [float(g.stake == i) for i in range(8)]
     return np.asarray(f, dtype=np.float32)
 
 
