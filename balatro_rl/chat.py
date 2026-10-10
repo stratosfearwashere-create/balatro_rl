@@ -15,7 +15,7 @@ import json
 import os
 import urllib.request
 
-SYSTEM = "You are a helpful assistant for a project that trains a neural net to play Balatro."
+SYSTEM = "You are a helpful assistant."
 
 
 def api_reply(messages, model: str, base_url: str, key: str) -> str:
