@@ -1,0 +1,16 @@
+{"game": 7, "blinds": 0.0, "won": false, "ante": 1, "min": 0.5}
+{"game": 12, "blinds": 0.0, "won": false, "ante": 1, "min": 0.5}
+{"game": 0, "blinds": 1.0, "won": false, "ante": 1, "min": 1.3}
+{"game": 9, "blinds": 2.0, "won": false, "ante": 1, "min": 2.0}
+{"game": 13, "blinds": 11.0, "won": false, "ante": 4, "min": 8.9}
+{"game": 5, "blinds": 10.0, "won": false, "ante": 4, "min": 11.9}
+{"game": 6, "blinds": 9.0, "won": false, "ante": 4, "min": 12.1}
+{"game": 10, "blinds": 12.0, "won": false, "ante": 5, "min": 12.4}
+{"game": 2, "blinds": 12.0, "won": false, "ante": 5, "min": 12.5}
+{"game": 3, "blinds": 14.0, "won": false, "ante": 5, "min": 12.7}
+{"game": 14, "blinds": 13.0, "won": false, "ante": 5, "min": 14.4}
+{"game": 4, "blinds": 14.0, "won": false, "ante": 5, "min": 16.2}
+{"game": 8, "blinds": 19.0, "won": false, "ante": 7, "min": 17.2}
+{"game": 1, "blinds": 23.0, "won": false, "ante": 8, "min": 26.9}
+{"game": 11, "blinds": 17.0, "won": false, "ante": 6, "min": 28.1}
+{"games": 15, "blinds": 10.47, "wins": 0, "minutes": 35.2, "model": "claude-opus-5-5", "effort": "high", "usage": {"calls": 838, "input": 1676, "cache_read": 11122010, "cache_write": 2219834, "output": 744055, "cost_equiv": 34.87087800000002}}
