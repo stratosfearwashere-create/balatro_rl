@@ -1,21 +1,23 @@
 # Gold Stake heuristics from Balatro University (DrSpectred)
 
-Decision rules extracted from 300 Gold Stake videos on
-https://www.youtube.com/@drspectred (about 315 hours of commentary).
+Decision rules extracted from 341 Gold Stake videos on
+https://www.youtube.com/@drspectred (about 365 hours of commentary).
 
 - **001-177**: the "Gold Stake Lessons" series, newest first. Sections 1-15 are built from
   these.
 - **178-302**: his other Gold Stake videos (win streaks, deck runs, challenge runs, long
   streams, a few modded runs), newest first. Section 16 records what they add or change.
   186 and 188 have no captions and are not covered.
+- **303-343**: the 41 videos of the playlist "Completionist++ with NO losses" not
+  already covered above, in playlist order. Section 17 summarises the playlist.
 
 Per-item verdicts (138 jokers, vouchers, tags, consumables, packs, stickers) are in
 `GOLD_STAKE_ITEM_VERDICTS.md`; that table covers 001-177 only.
 
 ## How this was made, and how far to trust it
 
-- Source is YouTube's auto-generated captions, read by 36 subagents (about 10 videos each)
-  that wrote about 5,400 per-video rules; this file is the merge. Numbers in brackets are video
+- Source is YouTube's auto-generated captions, read by 41 subagents (about 10 videos each)
+  that wrote about 6,000 per-video rules; this file is the merge. Numbers in brackets are video
   indices; the "Video index" section at the end maps each to its title and YouTube id.
 - Captions have no punctuation and garble card names. Names were corrected where obvious
   (Grimbo = Green Joker, bus = Ride the Bus, pants = Spare Trousers, Todd = Odd Todd,
@@ -492,6 +494,132 @@ are left out here. 284-287 were played on the pre-release beta of the sticker st
   pairs with blue seals. The older rule depends on having thinned the deck.
 - **Wheel of Fortune targeting**: 299 and 300 contradict each other.
 
+## 17. Playlist "Completionist++ with NO losses" (303-343, plus 224-236)
+
+https://www.youtube.com/playlist?list=PLdNGt-ihEAcFnQ5pZnWw5rQHZWxS4dFU_ : 51 videos,
+about 61 hours. Ten were already covered as 224, 226-232, 235 and 236. The playlist has
+three phases, listed here oldest first:
+
+- **Completionist++ Win Streak** (331-342, and the earlier Gold Stake Win Streak videos
+  224-232): earning a gold sticker on every joker without losing a run. He reaches 100% at
+  66 straight wins (342). The streak ends at 67 on the Black deck (343).
+- **High Stakes Balatro, ante 9 goal** (304-316): a new streak where a run only counts if
+  it also beats ante 9, one deck per video.
+- **High Stakes Balatro, ante 10 goal** (317-330, 303): the same with ante 10. He reports
+  the first 15-deck cycle as 15 for 15 and reaches a 30th win at 330. 303 is a design
+  discussion about ante scaling. 308 and 311 are open-ended high-score attempts (ante 15
+  and about ante 16).
+
+Rules that only follow from a special goal are marked (ante 9+), (ante 10+), (endless) or
+(stickers).
+
+### What the playlist confirms
+Pairs for the first seven antes, blue seals as the levelling engine, Hanged Man and Death
+for thinning and copying, $25 interest before spending, Investment as the skip he takes,
+Grabber/hand-size/discard vouchers bought even below max interest, boss reroll kept for
+Violet Vessel. [327-330, 336-343, 303-310]
+
+### Pacing by ante
+His clearest statement of what a build needs when (320, 323; repeated in 303, 318):
+
+1. Antes 1-2: any +mult. "+12 mult on a x4 hand quadruples the score."
+2. Then a chips source, until planet levels supply the chips.
+3. Then sell the chips joker and money jokers for xMult.
+4. Antes 7-8: static xMult (Blackboard, Flower Pot, Card Sharp) is what you want; slow
+   starters like a fresh Constellation or Hologram are too late.
+5. (ante 9+) Scaling or retriggered xMult: glass and steel with Hanging Chad, Photograph,
+   Dusk, Sock and Buskin; or a large Constellation/Hologram/Lucky Cat.
+
+Rules of thumb from 318: Ride the Bus plus Square alone beats ante 6; one x3 joker beats
+ante 8; two xMult jokers beat ante 9; ante 10 wants roughly x3 times x3 on top of about
++80-100 mult and +300-400 chips.
+
+- Without any xMult you need two independent scalers to keep pace, and +mult plus chips is
+  better than two +mult. A second +mult joker only adds about +100%. [303, 320]
+- Stack a zero-start scaler (Bus, Green Joker) the moment you get it, using every hand,
+  before requirements get away from you. Supernova is the exception: it scales
+  retroactively, so it can be bought late, even perishable. [314, 316, 318, 320, 323]
+- Scalers must keep pace: he regrets skipping Constellation in the run that ended the
+  streak, where the build stalled at 20-50k per round. [343]
+- "A little chips, not a lot" still matters under xMult: foil, bonus and stone cards are
+  undervalued. [313, 315, 324]
+- Common jokers are his winningest (Red Card, Bus, Square, Trading Card); money commons
+  (Mail-In Rebate, Faceless) beat Rocket and Satellite. [325, 337-342]
+
+### Playing past ante 8
+- (ante 9+) A build that survives ante 8 gets ante 9 almost free; real pressure starts at
+  ante 10. But a pair or high-card build that is only just clearing ante 8 will not
+  survive 9-10 without repeatable xMult. [317, 303, 309]
+- (ante 9+) Start on pairs, end on something bigger. The extra rounds are what make a
+  pivot to four of a kind, flush house or flush five affordable; five-card hands also fit
+  five glass or steel cards. [303, 311, 312, 317, 330]
+- (ante 9+) Retriggers dominate: Hanging Chad needs only one good card and is ranked above
+  Hack and Sock and Buskin; Photograph plus Chad stacks; Dusk for glass. Glass does not
+  suit pairs unless Chad is present. [320, 322, 325, 330]
+- (ante 9+) Glass is the reliable route because tarots and Standard packs offer it every
+  run, while specific jokers may never appear. Use Death last, after Strength and Justice
+  have set the card up. Keep Justice for the endgame. [312, 308, 310]
+- (ante 9+) With only 2-3 glass cards, skip to the boss so they do not break on the big
+  blind; if the goal is ante 12+, play every round for the money instead. [306-308, 320]
+- (ante 10+) Chips-only fails around ante 9-10, even with level-41 straights; Plasma needs
+  about x7 xMult to match chips and x15 to dominate. [315, 329]
+- (ante 10+) Vampire is fine for ante 8, perhaps 9, and is not an ante 10 plan; it also
+  strips the enhancements that Chad and glass need. [314, 316]
+- (ante 10+) Blue seals matter less past ante 10. [323]
+- (ante 9+) Deck inflation hurts: DNA and Hologram grow the deck past 55-60 cards and the
+  glass or polychrome cards stop arriving. Thin to about 36-50 and stop adding. [304, 305,
+  328-335]
+- Tarot Merchant and Overstock are the vouchers he wants for long runs. Tycoon in ante 1
+  is wrong without spare money. [306-310, 322-326]
+- Buy all the packs you can afford before rerolling. [319, 321, 323]
+- (endless) Scores run to e14-e21 and chips stop mattering. Play glass early so it breaks
+  and thins the deck, then restock with Death. Leave slots for Blueprint, Brainstorm, Idol.
+  [308, 311]
+
+Score figures he quotes are inconsistent between videos (they vary by blind and deck, and
+some are garbled), so use them only as orders of magnitude: ante 9 is roughly 0.5-1M per
+blind, ante 10 millions to tens of millions, ante 11 and beyond billions and up.
+
+### Stickers when the run is longer
+- (ante 9+) Perishables matter more because they have time to expire; he passes on them,
+  or skips a blind to keep one alive. Rentals and perishables matter little very late.
+  [313, 319, 320, 324]
+- (ante 9+) Eternals: he says both things. "Avoid them, you cannot replace them later"
+  (311, 316, 317) and "do not be afraid of them, an early eternal money joker funds the
+  glass and steel endgame" (319, 321, 330). The line he draws: one eternal that gets you
+  past ante 8 is fine for an ante 9-10 goal; refuse them for ante 12+. Eternal Trading
+  Card and Gift Card are always taken. [303, 308, 311, 317]
+- Mail-In Rebate is taken even as a rental. [327, 328, 331, 334]
+
+### Hieroglyph and skipping, refined
+- Losing a hand is about 25% less score per round on a four-pair build, so Hieroglyph is
+  avoided with pairs, Bus, Trading Card or purple seals and taken with straights, three of
+  a kind or one-shot hands. With a healthy economy, delay it a couple of rounds.
+  [303, 313-317, 327-330]
+- Each skip makes the remaining rounds about 25% harder in his arithmetic; Throwback's
+  +0.25 per skip repays only about half of that. [328]
+- Investment at ante 2 is still taken. [337, 340, 343]
+
+### How protecting a streak changes his play
+He says little about this directly; most of it is inferred from choices.
+- Take the safe line: open the Buffoon pack when the next shop might have no joker, take a
+  rental Jolly Joker to guarantee a round, play the pair instead of the draw. [311, 312,
+  316, 320]
+- Buy insurance against forced-hand, debuff and face-down bosses: extra discard, hand
+  size, boss reroll, even at a cost in money. [336-342]
+- (stickers) Win first, stickers second. Let one or two jokers carry the run (Campfire,
+  Hologram, Bus, Swashbuckler) so other slots can hold sticker jokers; use Yellow for the
+  awkward ones. [331-334]
+- (stickers) He drops Black, Plasma and Erratic from the rotation to protect the streak.
+  When Black returns the streak ends. [339, 343]
+- The one streak loss in the ante-9 phase was a repeated hand type against a
+  one-hand-type boss, a sequencing error and not a weak build. [312]
+
+### His view of the stake itself
+- One fewer discard is what pushes everyone onto pairs: one straight per round at most
+  without an enabler. He would rather the top stake required ante 9 or 10 than remove a
+  discard. [303, 317, 328, 335]
+
 ## Video index
 
 Watch at `https://www.youtube.com/watch?v=<id>`.
@@ -798,3 +926,44 @@ Watch at `https://www.youtube.com/watch?v=<id>`.
 | 300 | Balatro Daily ep13: Gold Stake win streak with Pairs??? (Red Deck) | 70 min | sDrc8OCh0-Y |
 | 301 | Balatro Daily ep12: Easy Straight Flushes on Gold Stake??? (14 Cards, Abandoned Deck) | 88 min | TKNVXaQOoo4 |
 | 302 | Balatro Daily ep11: Easy Gold Stake win with High Card??? (Checkered Deck) | 82 min | xw3drHoIXbk |
+| 303 | Let's talk about Ante Scaling (High Stakes Balatro) | 53 min | vT7p-M0momI |
+| 304 | How many cards is too many? (High Stakes Balatro) | 63 min | iU6GWUCpSN0 |
+| 305 | I really do hate DNA (High Stakes Balatro) | 57 min | qou--tu-Fa4 |
+| 306 | Sorry, fell asleep at the wheel again (High Stakes Balatro) | 47 min | Opy11FG10gI |
+| 307 | Shortcut enables Straight Flushes more than Four Fingers does. (High Stakes Balatro) | 56 min | lpsXjhFbwsw |
+| 308 | High Stakes AND High Score Balatro | 146 min | xdWdx-ksIFM |
+| 309 | Is Dusk ever worth it? (High Stakes Balatro) | 55 min | -XlPhlQoBFs |
+| 310 | When Thunk gives you lemons (High Stakes Balatro) | 75 min | _9YKVtajb7U |
+| 311 | Ok, this might be excessive (High Stakes AND High Score Balatro) | 128 min | 5F9_fe57BHA |
+| 312 | Playing Straights is for Believers (High Stakes Balatro) | 58 min | 5phwAcAjlhI |
+| 313 | Let's make a nice amount of money on the Painted Deck (High Stakes Balatro) | 54 min | OZ3tamcC4BM |
+| 314 | Skipping Class is unsurprisingly fraught with peril (High Stakes Balatro) | 74 min | 1MHnQgULHVk |
+| 315 | Good advice, bad example (High Stakes Balatro) | 83 min | RVUdcOsHBeA |
+| 316 | A slightly more Erratic Deck (High Stakes Balatro) | 89 min | C1mbLr0mwrw |
+| 317 | Yeah. These Eternals get us past Ante 10 for sure. (High Stakes Balatro) | 96 min | ERDYTNj2324 |
+| 318 | How far can you go without Planets, Glass, or Steel? (High Stakes Balatro) | 64 min | dY2HjeH8vt8 |
+| 319 | The gang's all here (High Stakes Balatro) | 93 min | t_XGT9syxRs |
+| 320 | Rentals, you're doing it wrong (High Stakes Balatro) | 79 min | xpyi7ySKMrQ |
+| 321 | Black Deck going easy on us (High Stakes Balatro) | 53 min | QOhSxeTo7N4 |
+| 322 | World's first *useful* Fortune Teller (High Stakes Balatro) | 74 min | FABe4sZy7rc |
+| 323 | The Ox is a jerk. (High Stakes Balatro) | 56 min | yW79ojwMC5k |
+| 324 | You're undervaluing Bonus Cards and Stone Cards (High Stakes Balatro) | 65 min | o7zKGoK763E |
+| 325 | It's never too late to pivot (High Stakes Balatro) | 108 min | vvAtypXun2s |
+| 326 | We got Baron at home (High Stakes Balatro) | 99 min | DHoo8-SehSA |
+| 327 | Green Joker getting the job done (High Stakes Balatro) | 63 min | dv6hJMUEabo |
+| 328 | Is he cooked? or cooking? (High Stakes Balatro) | 69 min | 9mi0Qm5Lzxs |
+| 329 | Is Ante 10 beatable with "Chips Only?" (High Stakes Balatro) | 53 min | qC5mNEk9pkw |
+| 330 | Yeah, I can make this work (High Stakes Balatro) | 60 min | Q0NHW7hPyKQ |
+| 331 | You don't respect Castle enough (Completionist++ Win Streak) | 69 min | GvOL7ZRbFVY |
+| 332 | Hologram is busted (Completionist++ Win Streak) | 57 min | c8TTx0eXGDk |
+| 333 | Actually Calculated (Completionist++ Win Streak) | 77 min | 0KvKsoEExTc |
+| 334 | Believe in the space Pants (Completionist++ Win Streak) | 83 min | FF3i5eb_zEI |
+| 335 | Don't. Try this at home (Completionist++ Win Streak) | 42 min | LAEpGV_hXCQ |
+| 336 | Midas Mask secured. (Completionist++ Win Streak) | 69 min | uyIro4qCJ2o |
+| 337 | Hashtag rare Four of a Kind (Completionist++ Win Streak) | 57 min | iT8yt4A7pfU |
+| 338 | Trigger Warning: Photochad (Completionist++ Win Streak) | 56 min | 5aRMyQVfh8Y |
+| 339 | I have a doubt (Completionist++ Win Streak) | 73 min | 17Z_aon_li0 |
+| 340 | Ok, now we're chillin' (Completionist++ Win Streak) | 84 min | 0Wmh7Zf2BEE |
+| 341 | Team, I might be straight Flushin' it down (Completionist++ Win Streak) | 78 min | cE5C3cQfgQc |
+| 342 | I 100% Balatro with NO losses | 40 min | IuDjUhYTTgQ |
+| 343 | A tragedy involving Uranus and a Black Deck | 45 min | jA7-oOUU0i8 |

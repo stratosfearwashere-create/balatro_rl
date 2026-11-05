@@ -127,9 +127,12 @@ def test_joker_swap_and_boss_reroll():
     assert g.boss != old and g.money == 20 and not env.obs["mask"][A_REROLL_BOSS]
     env.g.state = "SHOP"
     env.obs = encode(g, env.cnt)
+    assert not env.obs["mask"][A_SWAP]               # +mult left of xMult scores best: the game keeps that order itself
+    g.add_joker(Joker("blueprint", base_cost=10))    # a joker that acts on its neighbour: the order is the player's
+    env.obs = encode(g, env.cnt)
     assert env.obs["mask"][A_SWAP]
     env.step(A_SWAP)
-    assert [j.key for j in g.jokers] == ["duo", "joker"]
+    assert [j.key for j in g.jokers] == ["duo", "joker", "blueprint"]
 
 
 def test_decks():

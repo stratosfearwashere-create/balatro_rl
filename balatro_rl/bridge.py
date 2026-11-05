@@ -23,7 +23,7 @@ import numpy as np
 
 from .env import (encode, subset_of, Counters, A_PLAY, A_DISC, A_SELECT, A_SKIP, A_REROLL_BOSS, A_BUY,
                   A_BUY_PACK, A_VOUCHER, A_REROLL, A_LEAVE, A_SELL_J, A_SELL_C, A_USE_C, A_PICK, A_PSKIP,
-                  A_SWAP, A_SWAP_END, A_REPLACE, N_ACTIONS, describe_action)
+                  A_SWAP, A_SWAP_END, A_REPLACE, N_ACTIONS, MAX_JOKERS, describe_action, joker_order)
 from .heuristic import HeuristicPolicy
 from .sim.cards import Card, CHAR_RANKS, SUITS, sort_hand
 from .sim.game import Game, ShopItem, Consumable, MAX_HAND, MAX_SHOP
@@ -317,7 +317,7 @@ def choose_targets(g: Game, a: int, cnt: Counters, policy) -> list[int] | None:
         g2.pack_pick(a - A_PICK, choose_targets=True)
     if g2.targeting is None:
         return None
-    obs2 = encode(g2, cnt)
+    obs2 = encode(g2, cnt, getattr(policy, "marginal", False))
     scores = np.where(obs2["mask"], policy(g2, obs2), -np.inf)
     return subset_of(obs2, int(np.argmax(scores)))
 
@@ -562,6 +562,7 @@ def play(args):
             with torch.no_grad():
                 logits, _ = model(batch_obs([obs]))
             return logits[0].numpy()
+        policy.marginal = int(getattr(model, "marg", 0))       # the marginal-value inputs (marginal.py)
 
     results = []
     for run in range(args.runs):
@@ -583,20 +584,45 @@ def play(args):
                 gs = cli.call("gamestate")
                 continue
             g, hmap = game_from_state(gs, args.deck, args.stake, memory)
-            obs = encode(g, cnt)
-            obs["mask"][A_REPLACE:] = False              # replace is two calls on the real game: not wired up here
+            perm = joker_order(g)                   # the simulator keeps the jokers in scoring order: so here
+            if perm is not None and perm != memory.get("joker_order_refused"):
+                try:
+                    gs = cli.call("rearrange", {"jokers": perm})
+                    continue
+                except RPCError as e:
+                    print("  joker rearrange rejected:", e)
+                    memory["joker_order_refused"] = perm
+            obs = encode(g, cnt, getattr(policy, "marginal", False))
             obs["mask"][A_REROLL_BOSS] = False      # BalatroBot has no Director's Cut call
+            if st == "SMODS_BOOSTER_OPENED":        # ... and its sell call is refused while a pack is open
+                obs["mask"][A_SELL_J:A_USE_C] = False
             scores = np.where(obs["mask"], policy(g, obs), -np.inf)
             sent = False
             for a in np.argsort(-scores)[:6]:
                 if not np.isfinite(scores[a]):
                     break
                 targets = choose_targets(g, int(a), cnt, policy) if A_USE_C <= a < A_PSKIP else None
-                method, params = to_rpc(g, int(a), hmap, obs, targets)
                 if args.verbose:
                     print(f"ante {g.ante} {g.state:15s} ${g.money:<4} {describe_action(g, int(a), obs)}")
                 try:
-                    gs = cli.call(method, params)
+                    if a < A_DISC and g.targeting is None:
+                        # the game scores a play in hand order: a play whose order was chosen is rearranged first
+                        sub = subset_of(obs, int(a))
+                        if list(sub) != sorted(sub):
+                            order = list(range(len(_cards(gs.get("hand")))))
+                            for slot, p in zip(sorted(hmap[p] for p in sub), sub):
+                                order[slot] = hmap[p]
+                            try:
+                                cli.call("rearrange", {"hand": order})
+                            except RPCError as e:
+                                print("  rearrange rejected (playing in hand order):", e)
+                    if a >= A_REPLACE:               # replace: sell joker j, then buy shop card i (two calls)
+                        i, j = divmod(int(a) - A_REPLACE, MAX_JOKERS)
+                        cli.call("sell", {"joker": j})
+                        gs = cli.call("buy", {"card": i})
+                    else:
+                        method, params = to_rpc(g, int(a), hmap, obs, targets)
+                        gs = cli.call(method, params)
                     sent = True
                     if a == A_REROLL:
                         cnt.rerolls += 1

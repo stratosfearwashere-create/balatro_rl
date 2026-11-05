@@ -107,19 +107,26 @@ class ScoreCtx:
     def x_mult(self, x):
         self.mult *= x
 
-    def x_chance(self, x, p):
+    def cons_room_for_more(self) -> bool:
+        """The game rolls for a created consumable only while there is room (the cards plus those pending from this hand)."""
+        g = self.g
+        if g.sg is None:
+            return True
+        return g.cons_used() + sum(1 for e in self.events if e[0] == "create") < g.consumable_slots
+
+    def x_chance(self, x, p, key=None):
         if self.rng is None:
             self.mult *= 1 + (x - 1) * p
-        elif self.rng.random() < p:
+        elif roll(self.rng, key) < p:
             self.mult *= x
 
     def money_now(self, x):
         self.money += x
 
-    def money_chance(self, x, p):
+    def money_chance(self, x, p, key=None):
         if self.rng is None:
             self.money += x * p
-        elif self.rng.random() < p:
+        elif roll(self.rng, key) < p:
             self.money += x
 
     def event(self, *e):
@@ -166,6 +173,17 @@ def _hook_expected(g: "Game", played: list[Card], variants: list, plan: Plan, ar
     n = len(variants)
     first.chips, first.mult, first.money = chips / n, mult / n, money / n
     return math.floor(total / n), first
+
+
+def roll(rng, key):
+    """A probability roll: on the game's named stream `key` in exact mode (rng is an ExactRng), else the plain generator."""
+    k = getattr(rng, "keyed", None)
+    return k(key) if k is not None and key else rng.random()
+
+
+def roll_int(rng, key, lo, hi):
+    k = getattr(rng, "keyed_int", None)
+    return k(key, lo, hi) if k is not None else rng.randint(lo, hi)
 
 
 def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[random.Random] = None,
@@ -229,7 +247,7 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
                 if rng is None:
                     ctx.add_mult(20 * p)
                     ctx.lucky_now += p
-                elif rng.random() < p:
+                elif roll(rng, "lucky_mult") < p:
                     ctx.add_mult(20)
                     ctx.lucky_now += 1
             if c.seal == "GOLD":
@@ -239,7 +257,7 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
                 if rng is None:
                     ctx.money += 20 * p2
                     ctx.lucky_now += p2
-                elif rng.random() < p2:
+                elif roll(rng, "lucky_money") < p2:
                     ctx.money += 20
                     ctx.lucky_now += 1
             if e == "GLASS":
@@ -253,7 +271,7 @@ def score_hand(g: "Game", played: list[Card], held: list[Card], rng: Optional[ra
             # then the jokers' per-card effects
             for j, f in plan.card:
                 f(ctx, j, ctx.st(j), c)
-        if e == "GLASS" and rng is not None and rng.random() < g.prob(1, 4):
+        if e == "GLASS" and rng is not None and roll(rng, "glass") < g.prob(1, 4):
             glass_broken.append(c)
 
     # --- held-in-hand effects; Red seals and Mime repeat a card only if it had an effect

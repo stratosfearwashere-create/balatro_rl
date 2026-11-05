@@ -1,0 +1,29 @@
+{
+"x": [
+0.0,
+0.271,
+0.429,
+0.521,
+0.653,
+0.758,
+0.854,
+0.946,
+1.112,
+2.885,
+1000.0
+],
+"p": [
+0.0,
+0.067,
+0.233,
+0.467,
+0.467,
+0.667,
+0.75,
+0.867,
+0.921,
+0.962,
+0.962
+],
+"what": "P(clear the next blind | engine fast_power share, 256 hands, CRN 12345), Yellow Gold, round player lm/rounds.MCRounds (64 draw orders, money settings); 1,908 blinds from 300 games with random purchases (11-04)"
+}

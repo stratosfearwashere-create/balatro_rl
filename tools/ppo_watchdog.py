@@ -73,6 +73,64 @@ def launch(args: list[str], out: str, lr_scale: float):
     subprocess.Popen(cmd, cwd=ROOT, stdout=so, stderr=se, stdin=subprocess.DEVNULL, creationflags=flags)
 
 
+def progress(log: str, window: int, lag: int):
+    """(games so far, gain): the mean of the training blinds over the last `window` games minus the mean over
+    the `window` games that ended `lag` games earlier; gain is None until the run is that long."""
+    games, blinds = [], []
+    try:
+        with open(log, "rb") as f:
+            for l in f:
+                try:
+                    r = json.loads(l)
+                    games.append(r["games"])
+                    blinds.append(r["blinds"])
+                except (ValueError, KeyError):
+                    pass
+    except OSError:
+        return 0, None
+    if not games or games[-1] < lag + 2 * window:
+        return (games[-1] if games else 0), None
+    g = games[-1]
+
+    def mean(lo, hi):
+        v = [b for x, b in zip(games, blinds) if lo < x <= hi]
+        return sum(v) / len(v) if v else None
+    now, then = mean(g - window, g), mean(g - lag - window, g - lag)
+    return g, (now - then if now is not None and then is not None else None)
+
+
+def apply_stage(cfg: dict, stage: dict, cfg_path: str):
+    """Change the trainer's arguments as the stage says ("set": replace or add option values) and write the
+    config back, so every later restart keeps the change."""
+    args = cfg["args"]
+    for k, v in stage.get("set", {}).items():
+        if k in args:
+            args[args.index(k) + 1] = str(v)
+        else:
+            i = args.index("--iters")
+            args[i:i] = [k, str(v)]
+    cfg.setdefault("stages_applied", []).append({"name": stage["name"], "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+    with open(cfg_path, "w") as f:
+        json.dump({k: v for k, v in cfg.items() if k not in DEFAULTS or cfg[k] != DEFAULTS[k] or k in ("every",)}, f, indent=1)
+
+
+def wait_for_save(out: str, limit: float = 120.0):
+    """Until the trainer writes its checkpoint again (so stopping it loses nothing)."""
+    try:
+        m = os.path.getmtime(out)
+    except OSError:
+        return
+    t = time.time()
+    while time.time() - t < limit:
+        try:
+            if os.path.getmtime(out) != m:
+                time.sleep(2.0)
+                return
+        except OSError:
+            pass
+        time.sleep(0.2)
+
+
 def main():
     cfg = dict(DEFAULTS)
     cfg.update(json.load(open(sys.argv[1])))
@@ -84,13 +142,15 @@ def main():
     restarts = 0
     slow = 0
     last = None                                  # (time, env_steps) at the previous check
+    launched = time.time()                       # when the trainer was last (re)started, as far as this knows
     say(wlog, f"watching {out}: every {cfg['every']} min, restart if stalled {cfg['stall_minutes']} min, "
               f"< {cfg['min_sps']} steps/s x{cfg['slow_checks']}, entropy < {cfg['min_entropy']}")
     while True:
         time.sleep(cfg["every"] * 60)
         rows = tail_rows(log, cfg["window"])
         now = time.time()
-        age = (now - os.path.getmtime(log)) / 60 if os.path.exists(log) else 1e9
+        # (a run that has not written its first row yet is as old as its launch, not infinitely old)
+        age = (now - (os.path.getmtime(log) if os.path.exists(log) else launched)) / 60
         reason, restore = "", False
         if rows and rows[-1]["iter"] >= int(args[args.index("--iters") + 1]):
             say(wlog, "the run has finished")
@@ -112,6 +172,22 @@ def main():
             elif len(ents) >= cfg["window"] // 2 and sum(ents) / len(ents) < cfg["min_entropy"]:
                 reason, restore = f"policy entropy {sum(ents) / len(ents):.2f} (the policy has collapsed)", True
         if not reason:
+            # staged changes when progress flattens: each stage once, in order (config "stages": name, min_games,
+            # window, lag, min_gain, set); see progress()
+            done_names = {s["name"] for s in cfg.get("stages_applied", [])}
+            todo = [s for s in cfg.get("stages", []) if s["name"] not in done_names]
+            if todo and rows:
+                st = todo[0]
+                g, gain = progress(log, int(st.get("window", 100000)), int(st.get("lag", 300000)))
+                if g >= int(st.get("min_games", 0)) and gain is not None and gain < float(st["min_gain"]):
+                    say(wlog, f"progress has flattened ({gain:+.2f} blinds over the last {st.get('lag', 300000):,} games, at "
+                              f"{g:,} games): applying stage '{st['name']}': {st.get('set', {})}")
+                    wait_for_save(out)
+                    kill_trainer(out)
+                    apply_stage(cfg, st, sys.argv[1])
+                    launch(args, out, lr_scale)
+                    slow, last = 0, None
+                    time.sleep(180)
             continue
         if restarts >= cfg["max_restarts"]:
             say(wlog, f"{reason}; not restarting again ({restarts} restarts made)")
@@ -127,6 +203,7 @@ def main():
             lr_scale *= 0.5
             say(wlog, f"learning rate scale now {lr_scale}")
         launch(args, out, lr_scale)
+        launched = time.time()
         restarts += 1
         slow, last = 0, None
         time.sleep(180)                           # let it load and write a few rows before judging it

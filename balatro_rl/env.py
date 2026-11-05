@@ -23,6 +23,7 @@ from .sim.hands import N_HANDS
 from .sim.items import BOSS_KEYS, TAGS, VOUCHERS, PLANETS, item_id, VOCAB
 from .sim.jokers import Joker
 from .sim.scoring import Plan
+from .marginal import MARG_G, MARG_J, MARG_A, POT_G, POT_J, POT_A
 
 # ------------------------------------------------------------------ action layout
 BASE_HAND = 8
@@ -75,6 +76,12 @@ VOUCHER_KEYS = list(VOUCHERS)
 F_CARD = 1 + 13 + 4 + len(ENHANCEMENTS) + len(EDITIONS) + len(SEALS) + 3
 F_JOKER = 1 + len(EDITIONS) + 7
 F_ACT = len(ACTION_TYPES) + 1 + N_HANDS + 5 + 6 + 13 + 8 + 2
+# the arrays encode() makes carry the marginal-value columns after these (zeros unless encode(marginal=True)); a
+# network reads the first F_JOKER / F_ACT / (global_size() - MARG_G) of them, or all of them when it was made with marg
+F_JOKER_W = F_JOKER + MARG_J
+F_ACT_W = F_ACT + MARG_A
+F_JOKER_P = F_JOKER_W + POT_J                      # ... and the potential columns after the marginal ones
+F_ACT_P = F_ACT_W + POT_A
 VOCAB_SIZE = len(VOCAB)
 _OFF_PLAY = len(ACTION_TYPES)
 RATIO_COL = _OFF_PLAY + 1 + N_HANDS                  # score / chips still needed
@@ -163,7 +170,8 @@ def encode_global(g: Game, cnt: Optional[Counters] = None) -> np.ndarray:
     f.append(g.tarots_used / 20)
     f.append(len(g.planets_used) / 12)
     # the stake (appended last: a network from before it existed reads the columns it knows, model.forward)
-    f += [float(g.stake == i) for i in range(8)]
+    f += [float(g.stake == i) for i in range(9)]
+    f += [0.0] * (MARG_G + POT_G)                         # marginal.fill, outside rounds
     return np.asarray(f, dtype=np.float32)
 
 
@@ -237,6 +245,87 @@ def _kept_feats_many(hand, subs) -> list[list[float]]:
     return got if got is not None else [_kept_feats(hand, s) for s in subs]
 
 
+# The cards of a play score in the order they are played. That changes the score only when something acts on
+# "the first card" or multiplies as a card scores: these jokers, or a Glass / Polychrome card in the hand.
+ORDER_JOKERS = ("photograph", "hanging_chad", "bloodstone", "triboulet", "idol", "ancient")
+SWAP_NEIGHBOUR = ("blueprint", "brainstorm", "ceremonial")      # act on the joker beside them / the leftmost
+_SWAP_ROLE: dict = {}
+
+
+def swap_role(key: str) -> int:
+    """How a joker's position matters: 3 it acts on a neighbour, 2 a multiplier, 1 additive mult, 0 not at all."""
+    if not _SWAP_ROLE:
+        from .az.guide import MULT, XMULT                        # (imported late: guide imports the rewards)
+        from .sim.jokers import JOKERS
+        for k in JOKERS:
+            _SWAP_ROLE[k] = 3 if k in SWAP_NEIGHBOUR else 2 if k in XMULT else 1 if k in MULT else 0
+    return _SWAP_ROLE.get(key, 0)
+
+
+def swaps_matter(g: Game) -> bool:
+    """Is the order of the jokers the player's to choose? Only with a joker that acts on its neighbour;
+    otherwise order_jokers keeps them in scoring order."""
+    return any(swap_role(j.key) == 3 for j in g.jokers)
+
+
+def _order_rank(j) -> int:
+    add = swap_role(j.key) == 1 or j.edition == "HOLO"
+    mul = swap_role(j.key) == 2 or j.edition == "POLYCHROME"
+    return 0 if add and not mul else 2 if mul and not add else 1
+
+
+def joker_order(g: Game) -> Optional[list]:
+    """The order the jokers should score in, as indices into g.jokers: additive mult first, multipliers last
+    (jokers score left to right, and (mult + a) * x >= mult * x + a), the rest and ties as they are. None when
+    nothing moves, when a joker acts on its neighbour (swaps_matter: the player orders them) or when one is
+    face down."""
+    if len(g.jokers) < 2 or swaps_matter(g) or any(j.hidden for j in g.jokers):
+        return None
+    perm = sorted(range(len(g.jokers)), key=lambda i: _order_rank(g.jokers[i]))      # (stable)
+    return None if perm == list(range(len(g.jokers))) else perm
+
+
+def order_jokers(g: Game):
+    perm = joker_order(g)
+    if perm is not None:
+        g.jokers[:] = [g.jokers[i] for i in perm]
+
+
+def order_matters(g: Game) -> bool:
+    return (any(j.key in ORDER_JOKERS and not j.debuffed for j in g.jokers)
+            or any(c.enh == "GLASS" or c.edition == "POLYCHROME" for c in g.hand))
+
+
+def _alt_orders(s: tuple) -> list[tuple]:
+    """The orders tried for a play: reversed, each card moved to the front, each card moved to the back."""
+    n = len(s)
+    return ([s[::-1]] + [(s[j],) + s[:j] + s[j + 1:] for j in range(1, n)]
+            + [s[:j] + s[j + 1:] + (s[j],) for j in range(n - 1)])
+
+
+def best_orders(g: Game, plan, view, subs: list[tuple], preds: list) -> tuple[list, list]:
+    """Each play in the best-scoring of its tried orders (the given order on ties), with that order's
+    prediction. A play whose reversed and rotated orders score the same is left alone."""
+    multi = [i for i, s in enumerate(subs) if len(s) >= 2]
+    if not multi:
+        return subs, preds
+    quick = []
+    for i in multi:
+        quick += [subs[i][::-1], subs[i][1:] + subs[i][:1]]
+    res = g.predict_many(quick, plan, view)
+    subs, preds = list(subs), list(preds)
+    for k, i in enumerate(multi):
+        base = preds[i][0]
+        if res[2 * k][0] == base and res[2 * k + 1][0] == base:
+            continue
+        alts = _alt_orders(subs[i])
+        best = base
+        for alt, p in zip(alts, g.predict_many(alts, plan, view)):
+            if p[0] > best:
+                best, subs[i], preds[i] = p[0], alt, p
+    return subs, preds
+
+
 def candidates(g: Game, plan: Optional[Plan] = None):
     """Returns (plays, discards): lists of N_SUB entries, each a tuple of hand positions or None,
     plus a dict of predicted (score, hand type) for the play candidates."""
@@ -248,8 +337,13 @@ def candidates(g: Game, plan: Optional[Plan] = None):
     if n <= BASE_HAND:
         plays = [s if (s[-1] < n and (forced < 0 or forced in s)) else None for s in SUBSETS]
         valid = [s for s in plays if s is not None]
-        preds = dict(zip(valid, g.predict_many(valid, plan, view)))
+        pl = g.predict_many(valid, plan, view)
         discs = list(plays) if g.discards_left > 0 else [None] * N_SUB
+        if order_matters(g):
+            valid, pl = best_orders(g, plan, view, valid, pl)
+            it = iter(valid)
+            plays = [next(it) if s is not None else None for s in plays]
+        preds = dict(zip(valid, pl))
         return plays, discs, preds
     # big hand: enumerate plays over the (at most) 10 most useful cards,
     # and discards over the 10 least useful ones
@@ -274,11 +368,15 @@ def candidates(g: Game, plan: Optional[Plan] = None):
             low = sorted(low[1:] + [forced])
     allsubs = [s for k in range(1, 6) for s in combinations(pool, k) if forced < 0 or forced in s]
     scored = []
-    for s, p in zip(allsubs, g.predict_many(allsubs, plan, view)):
-        preds[s] = p
-        scored.append((-p[0], len(s), s))
+    pl = g.predict_many(allsubs, plan, view)
+    ordered = allsubs
+    if order_matters(g):
+        ordered, pl = best_orders(g, plan, view, allsubs, pl)
+    for s, o, p in zip(allsubs, ordered, pl):
+        preds[o] = p
+        scored.append((-p[0], len(s), s, o))
     scored.sort()
-    plays = [x[2] for x in scored[:N_SUB]]
+    plays = [x[3] for x in scored[:N_SUB]]
     plays += [None] * (N_SUB - len(plays))
     discs = [None] * N_SUB
     if g.discards_left > 0:
@@ -347,14 +445,16 @@ def legal_mask(g: Game, cnt: Counters, plays=None, discs=None) -> np.ndarray:
         for i in range(min(len(g.pack_cards), MAX_PACK)):
             m[A_PICK + i] = g.pack_pick_ok(i)
         m[A_PSKIP] = True
-    if st in ("SHOP", "SELECTING_HAND"):
-        for i, j in enumerate(g.jokers[:MAX_JOKERS]):
+    if st in ("SHOP", "SELECTING_HAND", "PACK"):         # selling: also with a pack open (to make room for a
+        for i, j in enumerate(g.jokers[:MAX_JOKERS]):    # joker from a Buffoon pack, The Soul, Judgement ...)
             m[A_SELL_J + i] = not j.eternal
         for i, c in enumerate(g.consumables[:MAX_CONSUMABLES]):
             m[A_SELL_C + i] = True
+    if st in ("SHOP", "SELECTING_HAND"):
+        for i, c in enumerate(g.consumables[:MAX_CONSUMABLES]):
             cards = g.hand if st == "SELECTING_HAND" else []
             m[A_USE_C + i] = g.consumable_usable(c, cards)
-        if cnt.swaps < MAX_SWAPS_PER_PHASE and len(g.jokers) >= 2:
+        if cnt.swaps < MAX_SWAPS_PER_PHASE and len(g.jokers) >= 2 and swaps_matter(g):
             for i in range(min(len(g.jokers), MAX_JOKERS) - 1):
                 m[A_SWAP + i] = True
     return m
@@ -394,7 +494,7 @@ def _item_feats(g: Game, obj, cost: int) -> list[float]:
 def action_features(g: Game, mask: np.ndarray, plays, discs, preds):
     """Returns (item ids [N_ACTIONS], dense features [N_ACTIONS, F_ACT]). Only legal rows are filled."""
     ids = np.zeros(N_ACTIONS, dtype=np.int64)
-    feats = np.zeros((N_ACTIONS, F_ACT), dtype=np.float32)
+    feats = np.zeros((N_ACTIONS, F_ACT_P), dtype=np.float32)
     feats[np.arange(N_ACTIONS), _TYPE_OF] = 1.0
     off_play = _OFF_PLAY
     off_disc = off_play + 1 + N_HANDS + 5
@@ -486,7 +586,8 @@ def _subs_array(plays, discs) -> np.ndarray:
     return arr
 
 
-def encode(g: Game, cnt: Optional[Counters] = None) -> dict:
+def encode(g: Game, cnt: Optional[Counters] = None, marginal=0) -> dict:
+    """marginal: 0 off; 1 the marginal-value inputs; 2 also the potential of growing jokers (marginal.py)."""
     cnt = cnt or Counters()
     if g.targeting is not None:
         plays, discs, preds = target_candidates(g), [None] * N_SUB, {}
@@ -502,10 +603,10 @@ def encode(g: Game, cnt: Optional[Counters] = None) -> dict:
     for i, c in enumerate(src[:MAX_HAND]):
         cards[i] = encode_card(c, i == forced)
     jid = np.zeros(MAX_JOKERS, dtype=np.int64)
-    jf = np.zeros((MAX_JOKERS, F_JOKER), dtype=np.float32)
+    jf = np.zeros((MAX_JOKERS, F_JOKER_P), dtype=np.float32)
     for i, j in enumerate(g.jokers[:MAX_JOKERS]):
         jid[i] = item_id("j_unknown" if j.hidden else f"j_{j.key}")
-        jf[i] = encode_joker_feats(j)
+        jf[i, :F_JOKER] = encode_joker_feats(j)
     cid = np.zeros(MAX_CONSUMABLES, dtype=np.int64)
     for i, c in enumerate(g.consumables[:MAX_CONSUMABLES]):
         cid[i] = item_id(c.key)
@@ -515,7 +616,11 @@ def encode(g: Game, cnt: Optional[Counters] = None) -> dict:
             for i in range(MAX_SHOP):
                 if mask[A_REPLACE + i * MAX_JOKERS + j]:
                     aid2[A_REPLACE + i * MAX_JOKERS + j] = jid[j]
-    return {"g": encode_global(g, cnt), "cards": cards, "jid": jid, "jf": jf, "cid": cid,
+    glob = encode_global(g, cnt)
+    if marginal and g.state != "SELECTING_HAND":
+        from . import marginal as _marg
+        _marg.fill(g, mask, glob, jf, af, potential=int(marginal) >= 2)
+    return {"g": glob, "cards": cards, "jid": jid, "jf": jf, "cid": cid,
             "aid": aid, "af": af, "mask": mask, "subs": _subs_array(plays, discs), "aid2": aid2}
 
 
@@ -526,6 +631,11 @@ def subset_of(obs: dict, a: int) -> list[int]:
 
 # ------------------------------------------------------------------ executing actions
 def apply_action(g: Game, a: int, obs: dict):
+    _apply_action(g, a, obs)
+    order_jokers(g)
+
+
+def _apply_action(g: Game, a: int, obs: dict):
     if g.targeting is not None:
         assert A_PLAY <= a < A_DISC, "a consumable is waiting for its target cards"
         g.apply_targets(subset_of(obs, a))
@@ -648,11 +758,15 @@ class BalatroEnv:
     rewards.Potential, configured by the `reward_config` file), with `shape_gamma` set to the
     discount PPO uses."""
 
+    marginal = 0          # (class default: an environment made without __init__ reads it)
+
     def __init__(self, deck: str = "RED", stake: str = "GOLD", ante_weight: float = 1.0, win_bonus: float = 10.0,
                  win_ante: int = 8, joker_pool=None,
                  shape_chips: float = 0.0, shape_phi: float = 0.0, reward_config: Optional[str] = None,
-                 shape_gamma: float = 0.995, verdant_bonus: float = 0.0):
+                 shape_gamma: float = 0.995, verdant_bonus: float = 0.0, marginal: int = 0, exact: bool = False):
         self.deck = deck
+        self.exact = exact          # the game's own named random streams (the 8-character seed is made from the integer seed)
+        self.marginal = marginal
         self.stake = stake
         # paid once for the sale that lifts Verdant Leaf's debuff (every card is debuffed until a joker is
         # sold): on the high stakes the boss cannot be beaten without it, and a policy that never sells never
@@ -669,10 +783,15 @@ class BalatroEnv:
         return potential(self.g, self.weights, self.shape_chips, self.build, self.shape_phi)
 
     def reset(self, seed: Optional[int] = None) -> dict:
-        self.g = Game(seed=seed, deck_type=self.deck, stake=self.stake, **self.game_kw)
+        kw = self.game_kw
+        if getattr(self, "exact", False):
+            import random as _random
+            from .sim.seedrng import seed_string
+            kw = dict(kw, exact_seed=seed_string(seed if seed is not None else _random.getrandbits(40)))
+        self.g = Game(seed=seed, deck_type=self.deck, stake=self.stake, **kw)
         self.steps = 0
         self.cnt = Counters()
-        self.obs = encode(self.g, self.cnt)
+        self.obs = encode(self.g, self.cnt, self.marginal)
         self.phi = self.potential()
         return self.obs
 
@@ -702,7 +821,7 @@ class BalatroEnv:
             if lost + 1 > g.furthest_blind:
                 r += 0.5 * self.weights[min(lost, 23)] * min(1.0, g.chips / g.target)
         done = g.done or self.steps >= MAX_STEPS
-        obs = None if done else encode(g, self.cnt)
+        obs = None if done else encode(g, self.cnt, self.marginal)
         if obs is not None and not obs["mask"].any():
             g.state = "GAME_OVER"
             done, obs = True, None

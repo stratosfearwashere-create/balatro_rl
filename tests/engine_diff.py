@@ -126,11 +126,16 @@ def canon(d: dict) -> dict:
     return sub(d)
 
 
+CPP_ONLY = {"planet_uses", "planet_level_gains"}
+
+
 def diff(a, b, path="") -> list[str]:
     out = []
     if isinstance(a, dict) and isinstance(b, dict):
         for k in sorted(set(a) | set(b)):
             if k not in a or k not in b:
+                if k in CPP_ONLY and k not in a:                 # the sandbox's bookkeeping (planet cap), which the Python game does not have
+                    continue
                 out.append(f"{path}.{k}: only in {'python' if k in a else 'c++'}")
             else:
                 out += diff(a[k], b[k], f"{path}.{k}")
@@ -145,6 +150,11 @@ def diff(a, b, path="") -> list[str]:
 
 
 def rng_equal(g: Game, cg) -> bool:
+    if g.sg is not None:                                    # exact-seed mode: the named streams and the global state too
+        st = {k: round(v, 15) for k, v in g.sg.streams.state.items()}
+        cs = {k: round(v, 15) for k, v in cg.exact_streams().items()}
+        if st != cs or list(g.sg.streams.rng.u) != list(cg.exact_rng()):
+            return False
     return tuple(g.rng.getstate()[1]) == tuple(cg.rng_state())
 
 
@@ -191,6 +201,7 @@ def apply_cpp(cg, a: int, obs: dict, targeting: bool):
             cg.buy_card(i)
         except RuntimeError:
             pass
+    cg.order_jokers()
 
 
 def spice(g: Game, cg, rng: random.Random) -> str:
@@ -299,21 +310,32 @@ def new_cov() -> dict:
 
 def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, verbose: bool = False,
              max_steps: int = 2500, p_random_round: float = 0.1, p_random_build: float = 0.5,
-             win_ante: int = 8, deep: int = 0, p_spice: float = 0.15) -> tuple[list[str], dict]:
+             win_ante: int = 8, deep: int = 0, p_spice: float = 0.15, marginal: int = 0,
+             exact: bool = False) -> tuple[list[str], dict]:
     """One game on both engines. Returns (mismatches, info). deep: every hand starts at this level, so the
     rule-based play reaches the late antes (finisher bosses, many shops)."""
     rng = random.Random(seed * 7919 + 13)
-    env = E.BalatroEnv(deck, stake, win_ante=win_ante, verdant_bonus=0.75)
+    env = E.BalatroEnv(deck, stake, win_ante=win_ante, verdant_bonus=0.75, marginal=marginal)
+    if exact:
+        from balatro_rl.sim.seedrng import seed_string
+        env.game_kw = dict(getattr(env, "game_kw", None) or {}, exact_seed=seed_string(seed))
     obs = env.reset(seed)
     g = env.g
     if check_obs:
         cenv = _engine.Env(deck, stake, win_ante=win_ante)
         cenv.verdant_bonus = 0.75
+        cenv.marginal = marginal
+        cenv.marg_verify = bool(marginal)                   # the cached build values are recomputed and compared on every hit
+        cenv.exact = exact
         cobs = cenv.reset(seed)
         cg = cenv.game
     else:
         cenv = None
-        cg = _engine.Game(seed, deck, stake, win_ante)
+        if exact:
+            from balatro_rl.sim.seedrng import seed_string
+            cg = _engine.Game(seed, deck, stake, win_ante, exact_seed=seed_string(seed))
+        else:
+            cg = _engine.Game(seed, deck, stake, win_ante)
     pol = HeuristicPolicy(rng=np.random.default_rng(seed), lookahead=False)
     cov = new_cov()
     cov["deck"].add(deck)
@@ -323,7 +345,7 @@ def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, 
         for h in range(12):
             g.hand_levels[h] = deep
             cg.debug_set_hand_level(h, deep)
-        env.obs = obs = E.encode(g, env.cnt)
+        env.obs = obs = E.encode(g, env.cnt, marginal)
         if check_obs:
             cobs = cenv.observe()
 
@@ -331,6 +353,12 @@ def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, 
         d = diff(canon(py_dump(g)), canon(cg.dump()))
         if not rng_equal(g, cg):
             d.append("rng: the generators' states differ")
+            if g.sg is not None:
+                st = {k: round(v, 15) for k, v in g.sg.streams.state.items()}
+                cs = {k: round(v, 15) for k, v in cg.exact_streams().items()}
+                d.append("streams only in python: %s; only in c++: %s; differing: %s; global equal: %s" % (
+                    sorted(set(st) - set(cs)), sorted(set(cs) - set(st)),
+                    sorted(k for k in st if k in cs and st[k] != cs[k]), list(g.sg.streams.rng.u) == list(cg.exact_rng())))
         if check_obs and not d and not g.done:
             d = obs_diff(env.obs, cobs)
         return [f"{where}: {x}" for x in d[:25]]
@@ -345,7 +373,7 @@ def play_one(seed: int, deck: str, stake: str, do_spice: bool, check_obs: bool, 
                 info["spices"] += 1
                 if verbose:
                     print(f"  spice: {what}")
-                env.obs = obs = E.encode(g, env.cnt)
+                env.obs = obs = E.encode(g, env.cnt, marginal)
                 if check_obs:
                     cobs = cenv.observe()
                 bad = check(f"step {step} after spice ({what})")
@@ -444,7 +472,10 @@ def main():
     p.add_argument("--keep-going", action="store_true")
     p.add_argument("--deep", type=int, default=0, help="every hand starts at this level (reaches the late antes)")
     p.add_argument("--p-spice", type=float, default=0.15)
+    p.add_argument("--marginal", type=int, nargs="?", const=1, default=0,
+                   help="compare the marginal-value inputs too (needs --obs): 1 the marginal values, 2 also the potential")
     p.add_argument("--coverage", action="store_true", help="list the content the games never exercised")
+    p.add_argument("--exact", action="store_true", help="exact-seed mode: the game's named random streams (both engines)")
     a = p.parse_args()
     seeds = [a.seed] if a.seed is not None else list(range(a.seed0, a.seed0 + a.games))
     t = time.time()
@@ -454,7 +485,7 @@ def main():
     for s in seeds:
         deck = a.deck or DECKS[s % len(DECKS)]
         stake = a.stake or STAKES[(s // 3) % len(STAKES)]
-        bad, info = play_one(s, deck, stake, a.spice, a.obs, a.verbose, deep=a.deep, p_spice=a.p_spice)
+        bad, info = play_one(s, deck, stake, a.spice, a.obs, a.verbose, deep=a.deep, p_spice=a.p_spice, marginal=a.marginal, exact=a.exact)
         for k, v in info["cov"].items():
             cov[k] |= v
         steps += info["steps"]

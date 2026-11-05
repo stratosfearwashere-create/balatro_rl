@@ -25,6 +25,8 @@ def play(path: str, games: int, seed0: int, deck: str, stake: str, greedy: bool,
     """The first episode of each of `games` environments: seeds seed0 + i. -> (blinds [games], won [games])."""
     model = load_model(path, device)
     venv = CppVecEnv(games, deck, stake, seed0=seed0, threads=0)
+    if getattr(model, "marg", 0):                              # a network made with the marginal-value inputs
+        venv.set_marginal(int(model.marg))
     blinds = np.full(games, -1, dtype=np.int64)
     won = np.zeros(games, dtype=bool)
     gen = torch.Generator(device=device).manual_seed(seed)

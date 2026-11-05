@@ -54,6 +54,14 @@ def generate() -> str:
     # joker ids in alphabetical order of their keys (sorted(joker_pool))
     L.append("static const int16_t JOKERS_SORTED[J_COUNT] = {" + ", ".join(str(keys.index(k)) for k in JOKER_KEYS) + "};")
     L.append("static const int EDITION_COST[5] = {" + ", ".join(str(EDITION_COST[e]) for e in EDITIONS) + "};")
+    from balatro_rl.env import swap_role
+    L.append("// how a joker's position matters (env.py swap_role): 3 acts on a neighbour, 2 multiplier, 1 additive mult")
+    L.append("static const int8_t JOKER_SWAP_ROLE[J_COUNT] = {" + ", ".join(str(swap_role(k)) for k in keys) + "};")
+    from balatro_rl.marginal import POTENTIAL
+    L.append("// the growth of a growing joker's counter if its events happen, and the counter before it has one (marginal.py)")
+    L.append("static const bool JOKER_POT_ON[J_COUNT] = {" + ", ".join(cbool(k in POTENTIAL) for k in keys) + "};")
+    L.append("static const double JOKER_POT_DELTA[J_COUNT] = {" + ", ".join(repr(float(POTENTIAL[k][0])) if k in POTENTIAL else "0.0" for k in keys) + "};")
+    L.append("static const double JOKER_POT_VAL0[J_COUNT] = {" + ", ".join(repr(float(POTENTIAL[k][1])) if k in POTENTIAL else "0.0" for k in keys) + "};")
     L.append("")
     # ---- consumables: planets, tarots, spectrals in their dict orders
     cons = [("planet", p) for p in PLANETS] + [("tarot", t) for t in TAROTS] + [("spectral", s) for s in SPECTRALS]
@@ -110,7 +118,8 @@ def generate() -> str:
     # ---- decks, stakes
     L.append("enum DeckId : int8_t { " + ", ".join(f"D_{d} = {i}" for i, d in enumerate(DECKS)) + f", D_COUNT = {len(DECKS)} }};")
     L.append("static const char* const DECK_KEYS[D_COUNT] = {" + ", ".join(f'"{d}"' for d in DECKS) + "};")
-    L.append("static const char* const STAKE_KEYS[8] = {" + ", ".join(f'"{s}"' for s in STAKES) + "};")
+    L.append(f"static const int N_STAKES = {len(STAKES)};")
+    L.append("static const char* const STAKE_KEYS[N_STAKES] = {" + ", ".join(f'"{s}"' for s in STAKES) + "};")
     L.append("")
     # ---- bosses (BOSSES then FINISHERS: the order of BOSS_KEYS)
     bk = list(ALL_BOSSES)
@@ -125,8 +134,66 @@ def generate() -> str:
     L += ["};", ""]
     L.append("static const int BLIND_BASE[3][8] = {" + ", ".join("{" + ", ".join(map(str, BLIND_BASE[s])) + "}" for s in (1, 2, 3)) + "};")
     L.append(f"static const int VOCAB_SIZE = {len(VOCAB)};")
+    L += exact_pools(keys, cons, vk, bk)
     L += ["", "}  // namespace bal", ""]
     return "\n".join(L)
+
+
+def exact_pools(jkeys, cons, vkeys, bkeys):
+    """The real game's pools in its own order (balatro_rl/sim/pools.json), as indices into the tables above: the exact-seed mode
+    draws from these. Joker pools by rarity, tarots, planets (softlock + hand), spectrals, vouchers, boosters (pack index, kind,
+    real weight), tags (min ante), bosses (key order, min ante, showdown), enhancements, the 52 playing cards in key order."""
+    import json
+    from balatro_rl.sim.items import PACK_KEYS
+    from balatro_rl.sim.cards import SUITS
+    P = json.load(open(os.path.join(ROOT, "balatro_rl", "sim", "pools.json")))
+    cid = {n: i for i, (_, n) in enumerate(cons)}
+    kinds = {"Arcana": 0, "Celestial": 1, "Standard": 2, "Buffoon": 3, "Spectral": 4}
+    fin = {"final_acorn": "amber_acorn", "final_bell": "cerulean_bell", "final_heart": "crimson_heart",
+           "final_leaf": "verdant_leaf", "final_vessel": "violet_vessel"}
+    L = ["", "// ---- the real game's pools, in the game's order (exact-seed mode)"]
+    for r in range(1, 5):
+        ids = [jkeys.index(x["key"][2:]) for x in P[f"rarity{r}"]]
+        L.append(f"static const int16_t POOL_J{r}[{len(ids)}] = {{" + ", ".join(map(str, ids)) + "};")
+    L.append("static const int N_POOL_J[4] = {" + ", ".join(str(len(P[f"rarity{r}"])) for r in range(1, 5)) + "};")
+    L.append("static const int16_t* const POOL_J[4] = {POOL_J1, POOL_J2, POOL_J3, POOL_J4};")
+    L.append(f"static const int N_POOL_TAROT = {len(P['Tarot'])};")
+    L.append("static const int8_t POOL_TAROT[" + str(len(P["Tarot"])) + "] = {" + ", ".join(str(cid[x["key"][2:]]) for x in P["Tarot"]) + "};")
+    L.append("struct PlanetPool { int8_t cons; bool softlock; int8_t hand; };")
+    from balatro_rl.sim.items import PLANETS
+    L.append(f"static const int N_POOL_PLANET = {len(P['Planet'])};")
+    L.append("static const PlanetPool POOL_PLANET[" + str(len(P["Planet"])) + "] = {" + ", ".join(
+        "{%d, %s, %d}" % (cid[x["key"][2:]], cbool(x["softlock"]), PLANETS[x["key"][2:]]) for x in P["Planet"]) + "};")
+    L.append(f"static const int N_POOL_SPECTRAL = {len(P['Spectral'])};")
+    L.append("static const int8_t POOL_SPECTRAL[" + str(len(P["Spectral"])) + "] = {" + ", ".join(str(cid[x["key"][2:]]) for x in P["Spectral"]) + "};")
+    L.append(f"static const int N_POOL_VOUCHER = {len(P['Voucher'])};")
+    L.append("static const int8_t POOL_VOUCHER[" + str(len(P["Voucher"])) + "] = {" + ", ".join(str(vkeys.index(x["key"][2:])) for x in P["Voucher"]) + "};")
+    L.append("struct BoosterPool { int8_t pack; int8_t kind; double weight; };")
+    L.append(f"static const int N_POOL_BOOSTER = {len(P['Booster'])};")
+    rows = []
+    for x in P["Booster"]:
+        _, k, sz = x["key"].split("_")[:3]
+        rows.append("{%d, %d, %r}" % (PACK_KEYS.index((k, sz)), kinds[x["kind"]], float(x["weight"] or 1)))
+    L.append("static const BoosterPool POOL_BOOSTER[" + str(len(rows)) + "] = {" + ", ".join(rows) + "};")
+    from balatro_rl.sim.items import TAGS
+    L.append("struct TagPool { int8_t tag; int8_t min_ante; };")
+    L.append(f"static const int N_POOL_TAG = {len(P['Tag'])};")
+    L.append("static const TagPool POOL_TAG[" + str(len(P["Tag"])) + "] = {" + ", ".join(
+        "{%d, %d}" % (TAGS.index("speed" if x["key"] == "tag_skip" else x["key"][4:]), x["min_ante"] or 0) for x in P["Tag"]) + "};")
+    L.append("struct BossPool { int8_t boss; int8_t min_ante; bool showdown; };")
+    L.append(f"static const int N_POOL_BOSS = {len(P['Boss'])};")
+    L.append("static const BossPool POOL_BOSS[" + str(len(P["Boss"])) + "] = {" + ", ".join(
+        "{%d, %d, %s}" % (bkeys.index(fin.get(x["key"][3:], x["key"][3:])), x["min"], cbool(x["showdown"])) for x in P["Boss"]) + "};")
+    egate = {"m_bonus": 1, "m_mult": 2, "m_wild": 3, "m_glass": 4, "m_steel": 5, "m_stone": 6, "m_gold": 7, "m_lucky": 8}
+    gate = {x["key"][2:]: egate[x["enhancement_gate"]] for x in P["Joker"] if x["enhancement_gate"]}
+    L.append("// jokers that only enter the pool when the deck has a card with this enhancement (Enh enum), else 0")
+    L.append("static const int8_t JOKER_GATE[J_COUNT] = {" + ", ".join(str(gate.get(k, 0)) for k in jkeys) + "};")
+    L.append("static const int8_t POOL_ENH[8] = {0, 1, 2, 3, 4, 5, 6, 7};      // BONUS MULT WILD GLASS STEEL STONE GOLD LUCKY")
+    ck = sorted(f"{s}_{r}" for s in "CDHS" for r in "23456789TJQKA")
+    rk = {"2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "T": 10, "J": 11, "Q": 12, "K": 13, "A": 14}
+    L.append("static const int8_t P_CARD_SUIT[52] = {" + ", ".join(str(SUITS.index(k[0])) for k in ck) + "};")
+    L.append("static const int8_t P_CARD_RANK[52] = {" + ", ".join(str(rk[k[2]]) for k in ck) + "};")
+    return L
 
 
 def main():

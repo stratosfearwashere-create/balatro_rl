@@ -102,7 +102,9 @@ BLIND_BASE = {
     2: [300, 900, 2600, 8000, 20000, 36000, 60000, 100000],
     3: [300, 1000, 3200, 9000, 25000, 60000, 110000, 200000],
 }
-STAKES = ["WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD"]
+# DIAMOND is not in the game: Gold's rules with every blind needing 25% more chips (game.blind_target), a
+# harder stake to train against
+STAKES = ["WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD", "DIAMOND"]
 
 # ------------------------------------------------------------------ global item vocabulary
 # Used to give every buyable/holdable thing an integer id for the neural net's embedding.

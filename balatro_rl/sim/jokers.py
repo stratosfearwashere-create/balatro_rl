@@ -11,6 +11,7 @@ from typing import Callable, Optional
 
 from .cards import next_uid
 from .hands import (PAIR, TWO_PAIR, TRIPS, STRAIGHT, FLUSH, QUADS, evaluate)
+from .scoring import roll, roll_int
 
 
 @dataclass
@@ -144,7 +145,7 @@ J("banner", "Banner", 1, 5, main=lambda ctx, j, st: ctx.add_chips(30 * ctx.g.dis
 J("mystic_summit", "Mystic Summit", 1, 5,
   main=lambda ctx, j, st: ctx.add_mult(15) if ctx.g.discards_left == 0 else None)
 J("misprint", "Misprint", 1, 4,
-  main=lambda ctx, j, st: ctx.add_mult(11.5 if ctx.rng is None else ctx.rng.randint(0, 23)))
+  main=lambda ctx, j, st: ctx.add_mult(11.5 if ctx.rng is None else roll_int(ctx.rng, "misprint", 0, 23)))
 
 
 def _raised_fist_held(ctx, j, st, c):
@@ -240,7 +241,7 @@ J("egg", "Egg", 1, 4, end_round=_egg_end)
 
 
 def _gros_end(g, j):
-    if g.rng.random() < g.prob(1, 6):
+    if g.roll("gros_michel") < g.prob(1, 6):
         g.destroy_joker(j)
         g.flags["gros_michel_extinct"] = True
     return 0
@@ -250,7 +251,7 @@ J("gros_michel", "Gros Michel", 1, 5, main=_const("m", 15), end_round=_gros_end,
 
 
 def _cav_end(g, j):
-    if g.rng.random() < g.prob(1, 1000):
+    if g.roll("cavendish") < g.prob(1, 1000):
         g.destroy_joker(j)
     return 0
 
@@ -267,7 +268,7 @@ J("delayed_grat", "Delayed Gratification", 1, 4, end_round=_delayed_end)
 
 def _business(ctx, j, st, c):
     if c.is_face(ctx.pareidolia):
-        ctx.money_chance(2, ctx.g.prob(1, 2))
+        ctx.money_chance(2, ctx.g.prob(1, 2), "business")
 
 
 J("business", "Business Card", 1, 4, card=_business)
@@ -316,8 +317,12 @@ J("fortune_teller", "Fortune Teller", 1, 6,
   main=lambda ctx, j, st: ctx.add_mult(ctx.g.tarots_used))
 
 
+def _todo_pick(g, exclude=-1):
+    return g.xpick("to_do", g.visible_hands(exclude))
+
+
 def _todo_end(g, j):
-    j.state["hand"] = g.rng.randrange(0, 9)
+    j.state["hand"] = _todo_pick(g, j.state.get("hand", -1)) if g.sg is not None else g.rng.randrange(0, 9)
     return 0
 
 
@@ -327,7 +332,7 @@ def _todo_before(ctx, j, st):
 
 
 J("todo_list", "To Do List", 1, 4, before=_todo_before, end_round=_todo_end,
-  init=lambda g, j: j.state.setdefault("hand", g.rng.randrange(0, 9)))
+  init=lambda g, j: j.state.setdefault("hand", _todo_pick(g) if g.sg is not None else g.rng.randrange(0, 9)))
 
 
 def _mail_discard(g, j, cards):
@@ -335,14 +340,15 @@ def _mail_discard(g, j, cards):
 
 
 def _mail_end(g, j):
-    j.state["rank"] = g.random_deck_rank()
+    if g.sg is None:
+        j.state["rank"] = g.random_deck_rank()
     return 0
 
 
 J("mail", "Mail-In Rebate", 1, 4, discard=_mail_discard, end_round=_mail_end,
-  init=lambda g, j: j.state.setdefault("rank", g.random_deck_rank()))
+  init=lambda g, j: g.sync_target_state(j) if g.sg is not None else j.state.setdefault("rank", g.random_deck_rank()))
 J("reserved_parking", "Reserved Parking", 1, 6,
-  held=lambda ctx, j, st, c: ctx.money_chance(1, ctx.g.prob(1, 2)) if c.is_face(ctx.pareidolia) else None)
+  held=lambda ctx, j, st, c: ctx.money_chance(1, ctx.g.prob(1, 2), "parking") if c.is_face(ctx.pareidolia) else None)
 J("hanging_chad", "Hanging Chad", 1, 4,
   retrig=lambda ctx, j, st, c, pos: 2 if pos == 0 else 0)
 J("splash", "Splash", 1, 3)              # passive: every played card scores
@@ -362,7 +368,7 @@ J("dusk", "Dusk", 2, 5, retrig=lambda ctx, j, st, c, pos: 1 if ctx.g.hands_left 
 
 
 def _space_before(ctx, j, st):
-    if ctx.rng is not None and ctx.rng.random() < ctx.g.prob(1, 4):
+    if ctx.rng is not None and roll(ctx.rng, "space") < ctx.g.prob(1, 4):
         ctx.level_up = ctx.level_up + 1
 
 
@@ -514,7 +520,7 @@ J("rough_gem", "Rough Gem", 2, 7, card=lambda ctx, j, st, c: ctx.money_now(1) if
 J("arrowhead", "Arrowhead", 2, 7, card=lambda ctx, j, st, c: ctx.add_chips(50) if c.has_suit(0, ctx.smeared) else None)
 J("onyx_agate", "Onyx Agate", 2, 7, card=lambda ctx, j, st, c: ctx.add_mult(7) if c.has_suit(2, ctx.smeared) else None)
 J("bloodstone", "Bloodstone", 2, 7,
-  card=lambda ctx, j, st, c: ctx.x_chance(1.5, ctx.g.prob(1, 2)) if c.has_suit(1, ctx.smeared) else None)
+  card=lambda ctx, j, st, c: ctx.x_chance(1.5, ctx.g.prob(1, 2), "bloodstone") if c.has_suit(1, ctx.smeared) else None)
 J("flash", "Flash Card", 2, 5, main=_val_mult, init=_init_val(0))
 J("to_the_moon", "To the Moon", 2, 5)    # passive: extra interest
 J("cloud_9", "Cloud 9", 2, 7, end_round=lambda g, j: sum(1 for c in g.full_deck if not c.is_stone and c.rank == 9))
@@ -528,13 +534,15 @@ def _idol(ctx, j, st, c):
 
 
 def _idol_end(g, j):
-    r, s = g.random_deck_card()
-    j.state["rank"], j.state["suit"] = r, s
+    if g.sg is None:
+        r, s = g.random_deck_card()
+        j.state["rank"], j.state["suit"] = r, s
     return 0
 
 
 J("idol", "The Idol", 2, 6, card=_idol, end_round=_idol_end,
-  init=lambda g, j: j.state.update(dict(zip(("rank", "suit"), g.random_deck_card()))) if "rank" not in j.state else None)
+  init=lambda g, j: (g.sync_target_state(j) if g.sg is not None else
+                     (j.state.update(dict(zip(("rank", "suit"), g.random_deck_card()))) if "rank" not in j.state else None)))
 
 
 # ---------------------------------------------------------------- rare
@@ -552,12 +560,13 @@ def _ancient(ctx, j, st, c):
 
 
 def _ancient_end(g, j):
-    j.state["suit"] = g.rng.choice([s for s in range(4) if s != j.state.get("suit")])
+    if g.sg is None:
+        j.state["suit"] = g.rng.choice([s for s in range(4) if s != j.state.get("suit")])
     return 0
 
 
 J("ancient", "Ancient Joker", 3, 8, card=_ancient, end_round=_ancient_end,
-  init=lambda g, j: j.state.setdefault("suit", g.rng.randrange(4)))
+  init=lambda g, j: g.sync_target_state(j) if g.sg is not None else j.state.setdefault("suit", g.rng.randrange(4)))
 
 
 def _obelisk_before(ctx, j, st):
@@ -669,15 +678,16 @@ J("ceremonial", "Ceremonial Dagger", 2, 6, blind_select=_dagger_select, main=_va
 
 def _marble_select(g, j):
     from .cards import Card
-    g.add_card(Card(2, g.rng.randrange(4), enh="STONE"))
+    g.add_card(g.marble_card())
 
 
 J("marble", "Marble Joker", 2, 6, blind_select=_marble_select)
 
 
 def _eight_ball(ctx, j, st, c):
-    if not c.is_stone and c.rank == 8 and ctx.real and ctx.rng.random() < ctx.g.prob(1, 4):
-        ctx.event("create", "tarot")
+    if (not c.is_stone and c.rank == 8 and ctx.real and ctx.cons_room_for_more()
+            and roll(ctx.rng, "8ball") < ctx.g.prob(1, 4)):
+        ctx.event("create", "tarot", "8ba")
 
 
 J("8_ball", "8 Ball", 1, 5, card=_eight_ball)
@@ -715,7 +725,7 @@ def _sixth_before(ctx, j, st):
     c = ctx.played[0]
     if ctx.first_hand and len(ctx.played) == 1 and not c.is_stone and c.rank == 6:
         ctx.event("destroy", c)
-        ctx.event("create", "spectral")
+        ctx.event("create", "spectral", "sixth")
 
 
 J("sixth_sense", "Sixth Sense", 2, 6, before=_sixth_before)
@@ -723,7 +733,7 @@ J("sixth_sense", "Sixth Sense", 2, 6, before=_sixth_before)
 
 def _superpos_before(ctx, j, st):
     if STRAIGHT in ctx.contains and any(not ctx.played[i].is_stone and ctx.played[i].rank == 14 for i in ctx.scoring):
-        ctx.event("create", "tarot")
+        ctx.event("create", "tarot", "sup")
 
 
 J("superposition", "Superposition", 1, 4, before=_superpos_before)
@@ -734,7 +744,7 @@ def _madness_select(g, j):
         j.state["val"] = j.state.get("val", 1.0) + 0.5
         cand = [o for o in g.jokers if o is not j and not o.eternal]
         if cand:
-            g.destroy_joker(g.rng.choice(cand))
+            g.destroy_joker(g.xpick("madness", cand))
 
 
 J("madness", "Madness", 2, 7, blind_select=_madness_select, main=_val_x, init=_init_val(1.0))
@@ -743,7 +753,7 @@ J("madness", "Madness", 2, 7, blind_select=_madness_select, main=_val_x, init=_i
 def _seance_before(ctx, j, st):
     from .hands import STRAIGHT_FLUSH
     if STRAIGHT_FLUSH in ctx.contains:
-        ctx.event("create", "spectral")
+        ctx.event("create", "spectral", "sea")
 
 
 J("seance", "Seance", 2, 6, before=_seance_before)
@@ -752,7 +762,7 @@ J("seance", "Seance", 2, 6, before=_seance_before)
 def _riff_select(g, j):
     for _ in range(2):
         if len(g.jokers) < g.joker_slots:
-            g.add_joker(g.random_joker(1, sticker=False))
+            g.add_joker(g.random_joker(1, sticker=False, src="rif"))
 
 
 J("riff_raff", "Riff-raff", 1, 6, blind_select=_riff_select)
@@ -773,7 +783,7 @@ J("hologram", "Hologram", 2, 7, main=_val_x, init=_init_val(1.0))    # grows in 
 
 def _vagabond_before(ctx, j, st):
     if ctx.g.money <= 4:
-        ctx.event("create", "tarot")
+        ctx.event("create", "tarot", "vag")
 
 
 J("vagabond", "Vagabond", 3, 8, before=_vagabond_before)
@@ -860,12 +870,14 @@ def _castle_discard(g, j, cards):
 
 
 def _castle_end(g, j):
-    j.state["suit"] = g.random_deck_card()[1]
+    if g.sg is None:
+        j.state["suit"] = g.random_deck_card()[1]
     return 0
 
 
 J("castle", "Castle", 2, 6, discard=_castle_discard, end_round=_castle_end, main=_val_chips,
-  init=lambda g, j: j.state.update({"val": j.state.get("val", 0), "suit": j.state.get("suit", g.random_deck_card()[1])}))
+  init=lambda g, j: (j.state.update({"val": j.state.get("val", 0)}), g.sync_target_state(j)) if g.sg is not None else
+  j.state.update({"val": j.state.get("val", 0), "suit": j.state.get("suit", g.random_deck_card()[1])}))
 J("campfire", "Campfire", 3, 9, main=_val_x, init=_init_val(1.0))   # grows in game.sell_*
 J("ticket", "Golden Ticket", 1, 5, card=lambda ctx, j, st, c: ctx.money_now(4) if ctx.enh(c) == "GOLD" else None)
 J("mr_bones", "Mr. Bones", 2, 5, eternal_ok=False)                  # game.play
@@ -909,7 +921,7 @@ def _invisible_sell(g, j):
     if j.state.get("val", 0) >= 2:
         cand = [o for o in g.jokers if o is not j]
         if cand:
-            src = g.rng.choice(cand)
+            src = g.xpick("invisible", cand)
             g.add_joker(Joker(src.key, edition="" if src.edition == "NEGATIVE" else src.edition,
                               base_cost=src.base_cost, state=dict(src.state), cost=src.cost), force=True)
 
@@ -921,7 +933,7 @@ J("drivers_license", "Driver's License", 3, 7,
 
 
 def _carto_select(g, j):
-    g.create_consumable("tarot")
+    g.create_consumable("tarot", src="car")
 
 
 J("cartomancer", "Cartomancer", 2, 6, blind_select=_carto_select)

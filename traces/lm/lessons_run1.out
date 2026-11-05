@@ -1,0 +1,506 @@
+{
+ "game": "game1.jsonl#0#7020000",
+ "summary": "The run found Baron (an eternal xMult) at ante 1 but took Raised Fist as a rental the same ante and kept it until ante 5. It never held the $25 bank after ante 2: it went from $47 down to $25 on rerolls that found nothing, then from $34 to $10 in ante 3 and from $17 to $0 in ante 4. It sold its only x3 joker (Flower Pot) for Mime and split its planets between Pair and Two Pair, so it reached ante 5 with Pair at level 2 and Two Pair at level 3. Entering The Tooth at $0 with a rental put it at -$12, so it had no shop at ante 5 and died to the 37,500 Big Blind at 17%. What decided it was the slow money drain from rentals and overspending, and the lost xMult.",
+ "lessons": [
+  {
+   "rule": "A rental taken for survival is a temporary loan. As soon as the next blind is 90%+ safe without it, or any non-rental scoring joker shows up, sell the rental first, before any other joker. Never take a second rental while carrying one, and never take a rental that is also perishable or eternal.",
+   "evidence": "Decision 7 took Raised Fist [rental] at ante 1. From decision 8 the outlook was 100% safe through the ante 2 boss, yet it was kept until decision 62. Decision 26 added Mystic Summit [perishable+rental] on top of it. At decision 58 the run sold Shoot the Moon, a non-rental, rather than Raised Fist. Decision 52 itself notes '$1 interest now and paying $3 a round for the rental'.",
+   "cost": "About $3 x 12 rounds = roughly $36 in rent, plus interest tiers it kept knocking out. This alone explains most of the gap between $47 at ante 2 and -$12 at ante 5."
+  },
+  {
+   "rule": "From ante 3, do not drop below $25 on packs or rerolls unless the outlook says the next blind or the current boss is below 70%. A weak outlook for the next ante is not a reason to spend the bank now. Spend only the surplus above $25 ($28 with a rental), and put it into targeted buys (main-hand planets, the xMult), not into chains of rerolls.",
+   "evidence": "Decisions 20-22: three rerolls ($18) at 100% safety found nothing. Ante 3, decisions 24-36: from $34 to $9 while the next blind sat at 99-100% and the boss at 60-85%. Ante 4, decisions 43-58: from $17 to $0 while the boss was 85-95% safe. Every one of these was justified by a weak outlook for the next ante, not by the blind in front of it.",
+   "cost": "Lost $3-5 of interest every round from ante 3 onward, and it left no money for the planets and xMult that ante 5 needed. The run ended with no buying power."
+  },
+  {
+   "rule": "Before a boss that costs money (The Tooth: $1 per card played), or with rentals active, enter with at least (cards you expect to play + $3 per rental + $5) in cash. Never spend to $0 the shop before such a boss when it is already 85%+ safe.",
+   "evidence": "At decision 58 the run spent its last $3 (Shoot the Moon -> Mystic Summit [eternal]) to lift The Tooth from 87% to 96%, then went in at $0 with a rental. It came out at -$12. At decisions 60-64 it could not buy anything at ante 5, and the outlook was 38% / 17% / 0%.",
+   "cost": "Gave up the whole ante 5 shop phase, the last chance to fix scoring. A 9-point gain on an already-safe boss cost the run."
+  },
+  {
+   "rule": "Do not sell a permanent x3 xMult to fix a single boss. Change how you play to fit it (for Flower Pot, play Two Pair or five-card hands that contain all four suits). Only swap it out if the replacement improves the outlook for the next ante, not just the current boss. Playbook rule 1 [measured]: one x3 joker is worth +2.5 blinds.",
+   "evidence": "Decision 38 took Flower Pot (x3, no stickers) as the second xMult, ahead of the target. Decision 41 sold it for Mime to answer The Mouth, when the boss was already 85% with Flower Pot. Mime only pays with Kings in hand or steel cards held in hand, and the deck had 4 Kings and, by ante 5, 2 steel cards.",
+   "cost": "Went from 2 xMult jokers to 1 conditional one. Ante 4 and ante 5 outlooks stayed at 0-15% for the boss from then on."
+  },
+  {
+   "rule": "Pick one main hand by ante 2 and take every planet for it, even when the one-blind outlook rates another planet higher. Measure progress against the level targets: 2-3 by ante 2, 3-5 by antes 3-4, 6-9 by antes 5-6.",
+   "evidence": "Decisions 19 and 25 took Uranus (Two Pair) over Mercury. Decision 25 said 'Mercury shows no measured gain', yet the plan said Pair was the default and the held-in-hand build wanted few played cards. Mercury only came at decision 53. At ante 5 the levels were Pair 2 and Two Pair 3, split across two hands.",
+   "cost": "The main hand was about 4-6 levels under target at ante 5, which is about +1 blind of measured value lost. That is part of why the ante 5 Big Blind was only 17%."
+  }
+ ]
+}
+{
+ "game": "smoke2.jsonl#0#7000100",
+ "summary": "The run got through antes 1-4 on cheap Pair jokers (Sly, Jolly), a holo Photograph, and a lucky Soul that gave Triboulet at ante 4. It never built around those two conditional xMult jokers. At ante 5 the deck still had 53 cards with only 4 Kings and 4 Queens, nothing was thinned, and Pair was level 4 against a target of 6-9. In ante 5 it spent $35 down to $10 on packs and a reroll. Two Standard Jumbos were opened and skipped, and the Celestial packs gave one Mercury. It then skipped the Big Blind for a Charm Tag and opened The Arm with a 3% clear chance, scoring about 3-6k per hand against 50k.",
+ "lessons": [
+  {
+   "rule": "Once a rank-conditional xMult joker lands (Triboulet, Photograph, Scary Face-style face payoffs, Baron, etc.), every deck-editing consumable should raise the density of the trigger ranks. Use Strength (J→Q, Q→K), Death (copy a K/Q onto a low card) and Hanged Man (destroy 2s-7s). Prefer them in Arcana/Spectral picks over Wheel of Fortune, suit changers and enhancements on non-trigger ranks. Aim for at least 12 trigger cards, or remove 8+ low cards, before the next boss.",
+   "evidence": "Triboulet arrived at #35 (ante 4). After that the Arcana picks were Wheel of Fortune (#37, over Moon/High Priestess), Justice on K♦ (#42), The Star used for a one-off flush (#43/#46), and Justice on a Jack that Triboulet ignores (#71). The ante 5 deck was 53 cards with 4 K and 4 Q, and the 3 2s, 5 3s and other low cards were never removed. The Arm round opened at 3% because the hand held no K/Q pair to trigger both xMults.",
+   "cost": "The two xMult jokers fired in only a minority of hands. A board that cleared the 25k Small Blind could not reach 50k on the boss. This was the main reason the run lost."
+  },
+  {
+   "rule": "From ante 5, when the next boss is under 50%, do not spend survival money on Standard packs hoping for specific ranks or on Celestial packs hoping for one planet. Weigh each $ against what it adds to the boss estimate. Prefer joker rerolls (any xMult or a big +Mult replacing a flat chips joker), a Pair planet sitting in the shop, or a tarot that directly edits trigger cards. If two buys in a row miss, stop and keep the interest.",
+   "evidence": "#55 Standard Jumbo $6, skipped. #57 Celestial Mega $8, one Mercury plus Pluto. #63 Standard Jumbo $6, skipped. #65 reroll $5. #66 Celestial $4, Venus (off-plan). That was $29 for +1 Pair level. Money fell from $35 to $10 and the boss chance stayed around 41%.",
+   "cost": "$29 spent and about $3/round of interest lost, with no gain in boss clear chance. There was no money left for a joker swap or rerolls before The Arm."
+  },
+  {
+   "rule": "Treat the boss outlook as optimistic when the board's xMult depends on drawing specific ranks or when the boss drains levels (The Arm, Plasma-like penalties). Do not skip the last shop before such a boss for a random pack tag. Play the Big Blind if it is at least 60% and use that shop to fix the board. Skipping only removes risk if the boss estimate is trustworthy.",
+   "evidence": "#69 skipped the Big Blind (65%) for a Charm Tag. The reasoning was that the boss at 43% was better than 0.67 × 0.5. The Mega Arcana gave Emperor and Justice (#70-71), and Judgement was useless with full joker slots. The Arm then opened at 3% (#72) and never went above 15%.",
+   "cost": "Lost the $4 reward, about $2 interest and the only shop before the boss, all to buy into a boss estimate that was 40 points too high."
+  },
+  {
+   "rule": "Main-hand levels are the second engine and the playbook targets (3-5 by ante 3-4, 6-9 by ante 5) must be met on time. From ante 3, buy every Mercury (or main-hand planet) seen in a shop. Prefer a Celestial pack to Arcana and Standard packs in any shop where the board is already safe. Value Telescope or Planet Merchant-type pickups highly when Pair is the plan.",
+   "evidence": "Pair was still level 1 after 11 plays at ante 3 (#23). It was only level 3 entering ante 5 and 4 at the boss. In ante 4, with the board at 84-95%, money went to three Arcana packs (#34, #36, #41) and The Star (#43). The one Celestial pack bought (#49) missed.",
+   "cost": "Every Pair hand at ante 5 scored about 2 levels below plan. The Arm's level drain then pushed it lower still, which is part of why the best hands reached only about 6k against a 50k boss."
+  },
+  {
+   "rule": "In antes 1-2, do not buy an Eternal joker that will be a weak flat effect by ante 4 (e.g. Eternal Sly/Arrowhead) unless the next blind is below 70% without it. Do not spend $15+ rerolling a single shop. Spread rerolls, and stop when the next reroll would take you below $10.",
+   "evidence": "#2 bought Eternal Sly. By ante 5 it was a permanently locked +50-chips slot that could not be sold for an upgrade (#68 found every swap negative, and Judgement had no room). #10-12 spent $18 on rerolls in one shop ($26→$8). Then #17 went to $0, and money stayed below $10 until the Handy Tag skip at ante 3.",
+   "cost": "About $8-10 of lost interest across antes 2-3, and one of the five joker slots blocked for the whole run."
+  }
+ ]
+}
+{
+ "game": "smoke2.jsonl#1#7000101",
+ "summary": "The run was stable through ante 5. Joker Stencil (made Negative by Ectoplasm), Square Joker and Two Pair levelled to 6 got it there, but it never found a second multiplier. It reached ante 6 scoring about 17k per hand against blinds that need 30k or more per hand. The deciding mistake was building around Stencil's empty slots: almost every joker was turned down because it would 'cost Stencil x1', including a free Rare joker. Money was then poured into rerolls that broke the playbook's limits, and both ante-7 blinds were skipped, so the run faced The Hook at 21% with no shop and died there.",
+ "lessons": [
+  {
+   "rule": "Joker Stencil is a stopgap, not a plan. From ante 4, do not turn down a joker just because it lowers Stencil by x1. If it is an xMult joker, a scaling joker, or anything that grows (Bloodstone, Baron, Blackboard, Loyalty Card, any free Rare), take it whenever the board is below 2 xMult jokers, and judge it by the score needed 1-2 antes ahead, not by the next blind's clear chance. Empty slots never grow. A Stencil at x2-x3 is worth less than a second real multiplier by ante 6.",
+   "evidence": "Jokers were turned down mainly to protect Stencil at 61 (Bloodstone), 68 (pack skipped), 73/77/81 (Jolly etc.), 89/91/93 (Blackboard), 97-100 (Loyalty Card), 112, 115 (Supernova), 133 (Baron, very likely the free Rare from the tag taken at 128) and 137. The board stayed at 3-5 jokers with one xMult. Best hand was about 17k at ante 6 and 28.6k at ante 7, against roughly 30k and 55k per hand needed.",
+   "cost": "The run missed the playbook target of 2 xMult jokers by ante 7. Ante 6's Needle was 28% before the glass fix, ante 7's Hook was 14-21%, and the run died in ante 7."
+  },
+  {
+   "rule": "Keep to the reroll limits even when a boss looks bad. Do at most 2-3 rerolls per shop. Never pay $9-10 for a reroll unless you hold $60 or more. Once one shop has used about $20 on rerolls, stop and save the rest for the next shop. If the boss itself is the problem, look first for a fix that targets that boss: a Director's Cut, glass from Justice, or a skip that avoids the boss.",
+   "evidence": "In the ante-6 shop (103-114) the strategist rerolled six times at $5/6/7/8/9/10 and opened two Arcana Jumbos, going from $67 to $25. The $10 reroll at 114 was made at $35. All of that bought Hanging Chad ($1), Odd Todd (perishable) and some tarots. The Needle was actually cleared with two Justice cards (129-131), which cost nothing in that shop. At ante 7, rerolls 135-136 took money from $21 to $10.",
+   "cost": "About $45 of rerolls bought no multiplier, and the run lost $3-4 of interest per round for the last two antes. It reached the ante-7 boss with nothing it could afford."
+  },
+  {
+   "rule": "Do not skip blinds in an ante where the boss is below about 40% unless the tag pays off before the boss. A Rare, Uncommon or Voucher tag appears in the shop after the boss, so skipping both blinds sends you into the boss with exactly the same board. If the board is too weak for the blinds, the shops between them are the only way to raise boss odds. And when a Rare Tag's free joker shows up, take it, selling a perishable or flat joker to make room.",
+   "evidence": "At 128 the strategist skipped the ante-6 Big Blind for a Rare Tag, so it met the Needle with no shop. At 133 it apparently turned down that free Rare (Baron) to protect Stencil. At 138-139 it skipped both ante-7 blinds (Speed Tag, then another Rare Tag that could only arrive after the Hook), and went into the Hook at 21% holding $25 it could not spend.",
+   "cost": "It faced the deciding boss with the same weak board and money it could not spend. The second Rare Tag was never used."
+  },
+  {
+   "rule": "In antes 3-4, while the board has only one multiplier, spend the surplus above $25 on Buffoon packs and on shop jokers, not on Spectral, Arcana or Standard packs that add one-card tweaks. Open a non-Buffoon pack only when you are aiming at a specific card the build needs (Uranus for the main hand, Justice for a Hanging Chad plan).",
+   "evidence": "At 31-34 a Spectral Jumbo gave Aura and an Arcana Jumbo gave The Devil (one gold card). At 48-49 a Standard pack gave a purple-seal Ace. At 73-76 Arcana packs gave The Hermit and The Empress (two Mult cards). That is about $30 for minor deck tweaks while the board had a single xMult. Meanwhile Buffoon pack picks at 68 were skipped because of Stencil.",
+   "cost": "About $30 of early surplus went to cards that added little scoring, instead of jokers that could have found the second multiplier while money was plentiful ($39-56)."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#8#7010008",
+ "summary": "The run ended in Ante 1 without beating a single blind. It lost the 300-chip Small Blind with no jokers. The log has only one decision (#1, playing the Small Blind instead of skipping), and that choice was correct. None of the hand or discard decisions were recorded, so it can't be said exactly which play lost. Still, 300 chips over 4 hands with no jokers and every hand at level 1 is only lost one way: by playing low hands like Pair and High Card. At level 1, a Pair scores about 50-65 and High Card about 15-25, and four of those can't reach 300. The playbook's 'Default: Pair' rule seems to have been followed in a spot where it doesn't work.",
+ "lessons": [
+  {
+   "rule": "Before the first joker (Ante 1, no scoring jokers), do not use Pair as the default hand. The Small Blind needs about 75 chips per hand over 4 hands. A level-1 Pair scores about 50-65, so play and discard toward Flush (about 280+ alone), Straight (about 200+), Three of a Kind (about 160-180) or Two Pair (about 100-120). Only fall back to Pair once a +Mult or chips joker is on the board.",
+   "evidence": "Decision 1 played the Small Blind with no jokers, and the plan note said 'Default main hand is Pair.' The run then lost a 300-chip blind with 4 hands and 2 discards, which only happens if the scoring hands averaged under 75. That points to pairs and high cards being played.",
+   "cost": "The whole run. It died on the first blind with 0 blinds beaten. The playbook's Pair default assumes jokers are already supplying mult, which isn't true in the first round."
+  },
+  {
+   "rule": "Before every hand, compute chips still needed ÷ hands left. If your best available hand doesn't reach that number, spend a discard to chase a better hand (keep 4 of a suit for a Flush, keep a pair or trips for Three or Four of a Kind) instead of playing a weak hand. On the last hand, play only a hand that clears the remainder, or the single highest-scoring option.",
+   "evidence": "No play or discard decisions were recorded after decision 1, but the blind was lost. With only 2 discards at Gold, every discard has to go toward reaching the per-hand target. Playing a weak hand early leaves later hands needing more than any level-1 hand can score.",
+   "cost": "Losing the Small Blind also cost the first shop, so no joker was ever bought."
+  },
+  {
+   "rule": "Log every play and discard as a numbered decision, with the chips needed, the expected score of the chosen hand, and the best alternative. A run that ends with no play decisions in its log should be treated as a bug in how hands are played or recorded, not as bad luck.",
+   "evidence": "The log jumps from decision 1 (blind_select) straight to 'lost, died in ante 1.' Nothing shows how the 4 hands and 2 discards were used, and the reason text for decision 1 is cut off.",
+   "cost": "The cause of the loss can't be pinned down, so the hand-play mistake that ended this run can't be confirmed or fixed for future runs."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#21#7010021",
+ "summary": "The run died on its first blind: the ante 1 Small Blind (300 chips) with no jokers and every hand at level 1. Only one decision was logged (#1, play the Small Blind). That choice was correct. The loss came in the hand-by-hand play that followed, and those plays were not recorded. The plan note going into the round said 'Default main hand is Pair' and 'lean on non-spade pairs'. With no jokers, a level-1 Pair scores about 44-64 chips (Pair of Aces: (10+22)x2 = 64). That is below the 75 per hand needed to make 300 in 4 hands. So the playbook's Pair default, applied to a board with no jokers, could not win this blind even if every hand drew well.",
+ "lessons": [
+  {
+   "rule": "Before playing any blind, divide the target by the hands left to get a per-hand score, and compare it with what your chosen hand type actually scores on the current board. With no jokers at ante 1 (300 needs 75 per hand), a level-1 Pair (at most about 64) cannot get there. Play the strongest hand the cards allow (Flush about 180+, Straight about 160+, Three of a Kind about 90-120, Two Pair about 60-80) and spend both discards digging for Flush, Straight or Trips. Do not discard toward a Pair.",
+   "evidence": "Decision 1 went into the Small Blind with the plan 'Default main hand is Pair'. The result was 0 blinds beaten, a loss at 300 chips with no jokers. Four Pairs at level 1 total about 180-256, which is short of 300 even with perfect draws.",
+   "cost": "The whole run. It ended on the first blind, before the first shop."
+  },
+  {
+   "rule": "The playbook's 'Default: Pair' is a rule for a built board (+Mult or chips jokers in place). It is not a rule for a hand with no jokers. Until you own at least one scoring joker or a planet for Pair, choose each hand by the highest score it makes now, not by your long-term main hand.",
+   "evidence": "The plan note at decision 1 tied hand choice to the long-term Pair plan while the board had no jokers and all hands were level 1. Here the playbook's advice was wrong for the situation: its Pair default assumes the 'cheap +Mult by ante 1-2' it recommends in the same section.",
+   "cost": "It turned an easy blind into a loss (300 in 4 hands is usually cleared with a Flush or Straight plus one more hand)."
+  },
+  {
+   "rule": "Keep boss-specific restrictions out of the earlier blinds. A boss debuff such as Goad (Spades debuffed) applies only to the boss blind. In the Small and Big Blinds, play and keep Spades normally. Also, fill in the outlook (per-hand target vs. expected score) before every blind. If it reads 'safe through -' with nothing computed, the risk check was skipped.",
+   "evidence": "The decision 1 note said 'lean on non-spade pairs' for a Goad boss two blinds away. The outlook field at decision 1 was empty ('next , boss , safe through -'), so no score check was done before the blind that lost the run.",
+   "cost": "Possibly cut down usable cards (Spade flushes and pairs) in the losing blind. With no outlook, nothing flagged that the planned hand type was below the needed score."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#13#7010013",
+ "summary": "The run died to the first boss, The Manacle (600 chips, hand size cut to 7). It beat the Small and Big Blinds with almost no scoring, then went into the boss with only Splash, which adds a few chips, and a rental Droll Joker that only works on Flushes. It still had $22 unspent. The outlook gave 87-93% clear chances for a board with no +Mult that works on ordinary hands, and the strategist treated those numbers as permission to save money instead of buying scoring. What lost the run was banking money at ante 1 while it owned no real scoring joker.",
+ "lessons": [
+  {
+   "rule": "In antes 1-2, until you own at least one joker that adds Mult (or xMult) on your main hand, do not leave a shop holding more than about $8-10. Reroll or buy until such a joker appears. 'Survival overrides interest' outranks 'don't reroll below $20-25' and 'never drop an interest tier' when the board has no real scoring.",
+   "evidence": "#4: left the shop at $15 with only Splash because the two jokers on offer were rentals and the outlook said 87%. #7: left at $22 with Splash plus a Flush-only Droll. A $5 reroll at either shop would have kept enough money to stay solvent. The run died to the Manacle with about $22 banked, so the $2-4 of interest it protected was never paid.",
+   "cost": "The whole run. It died in ante 1 holding enough money for 3-4 rerolls."
+  },
+  {
+   "rule": "Do not trust a high clear chance from the outlook when you have no unconditional +Mult. Check it yourself: a level-1 Pair scores about 60-110 chips, so 4 hands make roughly 250-450. That is below a 600 boss unless you land a Flush or three of a kind. If your own estimate of your main hand x 4 hands is below the blind, treat the blind as at risk, whatever percentage the outlook shows.",
+   "evidence": "#4 (87%) and #6/#7 (93%) estimated the Manacle boss with Splash and Droll. Against a Pair plan, Droll adds nothing. Under Manacle you hold 7 cards and have 2 discards, so Flushes rarely land. The boss was lost.",
+   "cost": "It cost the run. The strategist read a 7-13% risk as small and stopped spending."
+  },
+  {
+   "rule": "A survival bridge joker must work on the hand you actually plan to play. Do not buy a hand-type-specific joker (Droll/Crafty for Flush, Crazy for Straight) as the answer to a boss while your declared main hand is Pair. Buy unconditional +Mult or chips (Jolly, Half, Abstract, Banner, Blackboard, Popcorn), or reroll to find one.",
+   "evidence": "#6 bought a rental Droll (Flush +10 Mult) as the 'Manacle bridge', yet the plan note says 'Default main hand is Pair.' The extra 6% it was credited with depended on drawing Flushes with a 7-card hand and 2 discards.",
+   "cost": "$1 plus $3 rent, and its slot and price stood in for a joker that would have helped every hand. That was the main reason the boss failed."
+  },
+  {
+   "rule": "When opening a Buffoon pack with no jokers, rank the choices by how many chips they add to an ordinary Pair right now. Splash and other utility jokers are close to zero at ante 1. Locking one in as Eternal is only acceptable if the rest of the pack is worse and the next shop is still used to buy real Mult.",
+   "evidence": "#3 took an Eternal Splash, which adds only the chip values of the non-scoring cards, about +15-25 per hand. The plan treated it as 'scoring help', and that made the next two shops (#4, #7) feel safe enough to skip spending.",
+   "cost": "The $4 pack bought almost no scoring, and the strategist overrated how much the board could score."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#11#7010011",
+ "summary": "The run got a free Card Sharp (x3) at ante 1 and cleared ante 1 with it alone. It then reached ante 2 with nothing for Card Sharp to multiply: Pair at level 1, no planets, no flat chips, and one +Mult joker (Wrathful) that only works on spades. It died on the 1,000-chip ante 2 Small Blind, a blind the outlook had called a 100% clear. The loss came from trusting inflated clear estimates and holding money for interest ($18-19) when it should have bought base chips and mult. Bad luck was not the cause.",
+ "lessons": [
+  {
+   "rule": "Before trusting a clear chance, check it with quick hand arithmetic: (base chips + card chips) x (mult) x (xMult), counting only the hands where each joker actually fires. If one cheap conditional joker (suit-only, hand-only) moves the outlook by more than ~30 points, or the arithmetic for a typical hand comes in under blind/3 per hand, treat the blind as unsafe and keep buying scoring.",
+   "evidence": "At #10, buying Wrathful Joker (+3 Mult per scored spade only) was said to raise the Wheel boss from 21% to 88%, and #13 called the 1,000 Small Blind a 100% clear. The real numbers: a level-1 Pair of non-spades is about (10+20)x2 = 60, or 180 with Card Sharp. A spade pair is about (10+22)x8x3 = 770. Card Sharp does not fire on the first hand of a round. The board reached 1,000 in 4 hands only when it drew spade pairs, and it lost.",
+   "cost": "Lost the run at the first ante 2 blind. The false 'safe' reading caused every pass in the shop."
+  },
+  {
+   "rule": "An xMult joker with no base under it is not a build. Once you hold an early xMult, the next purchases must be an unconditional chips or +Mult joker and a planet for the main hand, before any interest target. By the ante 2 shop, have at least one unconditional base joker and Pair at level 2 or higher, even if that drops money to ~$10.",
+   "evidence": "#3 took Card Sharp. #4 ($13) and #7 ($19) left the shop. #11 left at $18 and passed on both Jumbo packs and Grabber (+1 hand, which is one more Card Sharp repeat) to protect interest. Pair was still level 1 at ante 2 (playbook target: level 2-3).",
+   "cost": "Saved maybe $1-2 of interest. Lost the run."
+  },
+  {
+   "rule": "Exception to 'no rentals at ante 1' on Yellow Deck: if you hold an xMult joker and have no base, take a big flat-chips rental (Stuntman +250) or an affordable Bootstraps. The playbook's own Yellow Deck note says one rental is easy to carry, and Stuntman's chips are exactly what the xMult needs (Stuntman -> High Card/Pair is a listed commit signal).",
+   "evidence": "At #2/#4, Stuntman was rejected as an ante 1 rental and Bootstraps as too expensive at $7. With Card Sharp, Stuntman makes a repeated Pair about (260+20)x2x3 = 1,680, enough to clear every ante 2 blind. The $3/round rent is far less than dying.",
+   "cost": "Passed up the cheapest fix for the build's one weakness."
+  },
+  {
+   "rule": "Survival overrides interest, and so does 'safe' reasoning based on a weak estimate. At antes 1-2, do not leave a shop holding $15+ while the board has fewer than 2 unconditional scoring sources. Spend to the next interest tier below and buy scoring.",
+   "evidence": "#7 left with $19 and #11 left with $18 for interest. The playbook's 'Money is useless if you die' and 'One scoring joker by ante 2, about 2-3 by ante 3' were both broken in substance, because Wrathful's spade-only mult does not count as reliable scoring.",
+   "cost": "The run ended in ante 2 with about $18 unspent."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#39#7010039",
+ "summary": "The run ended at the ante-2 Big Blind (1,500 chips) after only 4 blinds, even though the outlook gave that blind 93% and the strategist had 5 hands. By then the board was Walkie Talkie (an eternal that only scores on 10s and 4s) and Flower Pot (x3 only when the scoring cards cover all four suits). Every scoring joker on the board needed a condition to work, and Two Pair was still level 1. The strategist spent $10 on Grabber and kept about $18-21 for interest instead of buying a reliable +Mult/chips source. It was relying on Flower Pot firing, and Flower Pot rarely fires on Two Pair.",
+ "lessons": [
+  {
+   "rule": "Before ante 3, do not count a conditional joker (Flower Pot, Walkie Talkie, suit or rank jokers) as your scoring base. If you have no unconditional +Mult or chips joker and your main hand is level 1, buy one: a Buffoon pack, a reroll, or a planet for the hand you play. Do this before buying a voucher or holding money for interest, even when the outlook shows 90% or more.",
+   "evidence": "At #7, #9 and #14 the strategist left the shop holding $17-21, citing 93-96% outlooks. The board at #15 was Walkie Talkie plus Flower Pot, with Two Pair at level 1 and no flat +Mult. It lost the 1,500-chip Big Blind. The playbook's 'one scoring joker by ante 2' meant a joker that scores on ordinary hands. A narrow eternal plus a conditional xMult does not meet that.",
+   "cost": "The run: it died at ante 2 with $21 unspent."
+  },
+  {
+   "rule": "Do not buy Grabber (or any $10 voucher) at ante 1-2 while you have fewer than 2 jokers that score on every hand. An extra hand multiplies a weak hand score, but it does not fix it. Spend that $10 on two Buffoon packs, or on a reroll plus a joker.",
+   "evidence": "At #8 the strategist had $28 and paid $10 for Grabber with a 2-joker board, which dropped it to $18. That gave up the $25 interest tier and the money to find +Mult. Five hands of roughly 100-150 points (when Flower Pot doesn't fire) still fall short of 1,500.",
+   "cost": "$10 that could have bought 2 joker packs, plus $1-2 a round of interest. The extra hand did not save the Big Blind."
+  },
+  {
+   "rule": "Flower Pot checks only scoring cards. Pair and Two Pair can rarely meet the four-suit condition: a kicker does not count, and Two Pair needs four different suits among its two pairs. Pair Flower Pot with Full House, flush-free 5-card hands, or Wild cards, or treat it as a bonus and not your engine. When checking survival, plan as though it will not fire.",
+   "evidence": "At #6 the strategist bought Flower Pot and committed to Two Pair. The plan note says to play 'Two Pair plus a kicker of the missing suit' against the Psychic. That kicker would not score, so it cannot complete the four suits. Losing to a blind rated 93% points to an outlook that assumed the x3 would fire much more often than it does.",
+   "cost": "The plan rested on an x3 that fired rarely, so the real score was far below the outlook."
+  },
+  {
+   "rule": "Below $25 at antes 1-2, the interest rule ('don't open packs below $20-25') gives way when the board has no reliable scorer. One missed blind ends the run, while being $5 short of a tier costs only $1 a round. On Yellow Deck, use the head start to open Buffoon packs early.",
+   "evidence": "At #9, #13 and #14 the strategist turned down packs and purchases to stay at $18-21 'just before we could reach $25'. The playbook's own Yellow Deck note says the extra $10 makes early pack gambles affordable. Here the interest rule was applied too strictly.",
+   "cost": "It lost the chance to add a scoring joker before the Big Blind it died on."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#1#7010001",
+ "summary": "The run died to The House, the ante 2 boss (2,000 chips), after clearing 5 blinds with every hand still at level 1. The board was Blue Joker (perishable and a rental, the only chips source), a plain +4 Joker, Flower Pot (X3 only when the scoring cards cover all four suits) and To the Moon (economy). Without Flower Pot, the board scored about 600-700 per hand against a need of 500 per hand, which is a thin margin. The strategist trusted a 93-95% outlook that leaned on Flower Pot firing. It used its last two ante 2 shops to protect the $25 interest tier and buy economy, when it should have bought scoring or planets.",
+ "lessons": [
+  {
+   "rule": "In antes 1-2, do not buy an economy joker or turn down an affordable scoring joker just to keep $25, unless your board without conditional jokers scores at least 1.5x the boss's per-hand target. Ignore Flower Pot, suit or hand-type conditions and expiring perishables when checking. The playbook's line 'value generator only if the next boss is already safe' should be read with this conservative score, not the outlook's percentage.",
+   "evidence": "#10: at $27 it passed on Fibonacci ($8) to stay at $25, even though the boss had read 47% one purchase earlier. #15-16: it spent the Buffoon pack pick on To the Moon instead of a chips or Mult joker, even though its own note said the only chips source was expiring. #17: it left the shop at exactly $25 with Planet Merchant and other offers unbought. The board without conditions (Blue +~80 chips, +4 Mult, level 1 Pair/Two Pair) made about 600-700 per hand against the 500 per hand The House needed.",
+   "cost": "The run. A ~$5-8 interest gain was traded for the scoring margin that would have beaten the ante 2 boss."
+  },
+  {
+   "rule": "Buy at least one planet for the hand you actually play before the ante 2 boss (playbook target: main hand level 2-3 by ante 2). If the plan note says 'buy Uranus', buy the next planet or planet pack you can afford for that hand before any economy purchase.",
+   "evidence": "Ante 2 hand levels show everything at level 1, and plays were spread across Pair (2x), Two Pair (5x) and Full House (2x). #17 skipped Planet Merchant and #13 skipped the packs. The last plan note says 'Buy Uranus for Two Pair', but no planet was bought all run.",
+   "cost": "Level 1 Two Pair has base 20 chips x 2 Mult. One or two levels would have added roughly 30-60% per hand, about the gap between losing and winning The House."
+  },
+  {
+   "rule": "Count a conditional xMult like Flower Pot as working only when the hand you play triggers it reliably. With Two Pair the four scoring cards cover all four suits only about 1 time in 6, and a Full House about half the time. Don't pick the main hand around it, and don't accept an outlook whose clear chance depends on it.",
+   "evidence": "#12 bought Flower Pot and the final plan built 'Two Pair/Full House around Flower Pot'. After that the outlook read 95%, while the board without Flower Pot was only barely enough. The run lost the 95% blind.",
+   "cost": "It gave a false sense of safety that justified the economy buys in #15-17, and it pushed play toward Two Pair, which is harder to draw with 2 discards, instead of Pair."
+  },
+  {
+   "rule": "Treat a big outlook jump from a small purchase as a warning sign. If one +4 Mult joker moves the boss from under 50% to over 90%, re-check by hand (chips x Mult x 4 hands against the blind) before you stop buying scoring.",
+   "evidence": "#9: the boss was 47% before buying the plain Joker. #10: it was 93% right after, and the strategist left the shop immediately. One +4 Mult on a level 1 board cannot honestly double the clear chance.",
+   "cost": "It ended the strategist's search for scoring in the shop that had Fibonacci available."
+  },
+  {
+   "rule": "Do not make a perishable rental your only chips source, and don't sell your other scoring joker for $2 of interest while the board has two or fewer scorers. If you carry a rental, follow the playbook's 'hold $28' rule instead of treating $25 as the line.",
+   "evidence": "#6 bought Blue Joker (rental, 5 rounds) as the only chips source. #7 sold Crazy Joker to go from $18 to $20 for one interest dollar. The rental took about $3 a round, roughly the price of the Fibonacci passed in #10, and the plan then had to spend future picks replacing the expiring Blue Joker.",
+   "cost": "About $9-12 in rental fees through ante 2, a weaker board, and shop picks committed to replacing an expiring joker instead of building."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#17#7010017",
+ "summary": "The run died to The Fish, the ante 3 boss, with 8 blinds beaten. The board was a mix of flat jokers that each fired on a different hand: Zany (Three of a Kind), Clever (Two Pair), Jolly (Pair), Fibonacci (certain ranks), plus a fresh Square Joker. The only planet the run ever used was one Uranus, so the main hand reached ante 3 at level 2. The strategist spent its ante 3 surplus on narrow flat jokers, a slow scaler and rerolls instead of hand levels. It swapped Zany for a suit-dependent Ancient Joker and dropped to $21, then went into the boss trusting a 92% outlook that turned out to be 27% once the round started. The outlook's misjudgement explains part of the loss, but the build had no margin to absorb it.",
+ "lessons": [
+  {
+   "rule": "Commit to one main hand by the first joker that names a hand type, and default to Pair as the playbook says. After that, do not buy a joker that only fires on a different hand (Zany for Three of a Kind, Clever for Two Pair, Droll/Crazy and so on) unless the next blind fails without it. Never play Straights or Flushes as a filler hand with no enabler.",
+   "evidence": "7 bought Zany (Three of a Kind) for The Psychic. 9 bought Clever (Two Pair). 13 Judgement gave Jolly (Pair). By ante 3 the strategist had played Straight 5 times, Two Pair 6 and Flush 2, with every level still at 1. At any time one of the three hand jokers was dead, and at 27 Zany was sold for nothing because Two Pair never contains Three of a Kind. The playbook says to prefer Pair over Two Pair, and Jolly also fires on Two Pair.",
+   "cost": "About $8 and one joker slot went to jokers that cancelled each other out. Scoring was spread across five hands instead of stacking on one."
+  },
+  {
+   "rule": "From ante 2, if the main hand is below the playbook target (level 3 by ante 3), surplus money above $25 goes first to that hand's planet or to a Celestial pack. Flat jokers costing $6 or more, slow scalers and rerolls come after.",
+   "evidence": "At ante 3 there was $13 of surplus at 17 and $11 at 25. That money went to Fibonacci [eternal] for $8 at 20, which fires only on A/2/3/5/8, Square Joker for $4 at 25, and two $5 rerolls at 19 and 26. At 23 a Celestial Jumbo was passed on to stay at $25. Two Pair reached the ante 3 boss at level 2, against a target of 3-5.",
+   "cost": "Each missing level is roughly +20-30% per hand. The boss round had no scoring margin when the outlook proved wrong."
+  },
+  {
+   "rule": "Do not buy fresh slow scalers (Square, Wee, Runner and similar) at ante 3 or later unless they can be fed for free. In a round with clear chance below 70%, turn off grow_joker style constraints and play the highest-scoring hand.",
+   "evidence": "25 bought Square Joker at 0 chips (+4 chips a hand, worth nothing this ante). At 29, with clear chance 27%, the style still forced exactly-4-card Two Pair plays to grow it. The playbook says slow starters come too late, and that survival overrides everything.",
+   "cost": "$4 and a joker slot, plus play restrictions in the round that ended the run."
+  },
+  {
+   "rule": "When a swap replaces a known scorer with a variable one (Ancient Joker's suit, Castle, Idol), or the boss hides information (The Fish's face-down draws, The House), rate the boss on a bad case, not the average. Do not drop below the $25 floor on the strength of that outlook.",
+   "evidence": "26-27 rerolled and swapped Zany for Ancient [eternal]. That took money from $36 to $21, breaking the playbook's 'hold $25 from ante 3', because the outlook said 92-93%. At the first play of The Fish (29) the chance was 27%. Ancient's suit for the round and The Fish's face-down draws were not priced in.",
+   "cost": "$1 a round in lost interest, and a false sense of safety that ended the run at ante 3."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#23#7010023",
+ "summary": "The run died to The Needle (2,000 chips in a single hand) at the ante 2 boss, after beating only 5 blinds. It went through ante 1 with Ice Cream as its only joker, a chips joker that shrinks each hand. Twice it turned down cheap +Mult to protect interest. Its one real Mult source, Gros Michel, was gone before the boss shop. The boss was known from the start of ante 2, but money went to things that don't help in one hand (Loyalty Card, Mercury, a $5 reroll). That left a last-shop scramble: $33 went down to $1 on rising rerolls and two Straight jokers with nothing to help draw a Straight, and the run went into the boss at 11%.",
+ "lessons": [
+  {
+   "rule": "Once the ante's boss is shown, score the build against that boss's actual rule in every shop of the ante, not against the Small or Big Blind. For a one-hand boss (The Needle, or The Wall/Vessel later), only per-hand +Mult, xMult and planets for the main hand count. Do not buy delayed or counter-based jokers (Loyalty Card, Ride the Bus, Runner, Wee, Lucky Cat) or economy jokers until the one-hand score clears the boss.",
+   "evidence": "#9 already showed The Needle at 47%. #16 bought an eternal Loyalty Card (X4 every 6 hands) for $5, calling the next blind safe, but it can never fire in a one-hand round. #20 then gave The Needle 11%, with the agent noting 'Loyalty won't trigger with only one hand.'",
+   "cost": "$5, plus a permanent joker slot, spent on a card worth nothing against the boss that ended the run. That $5 could have been an early reroll or a pack while shop prices were still low."
+  },
+  {
+   "rule": "In antes 1-2 the $25 hold does not apply while the next boss is below about 80%. Buy a cheap +Mult joker, even a perishable one (Raised Fist, Gros Michel, Jolly), when it raises the boss chance, even if it drops an interest tier. Reroll in the early shops of the ante rather than saving it all for the boss shop, where rerolls cost $6-7.",
+   "evidence": "#4 and #7 left ante 1 shops with $15 and $24 and no +Mult. #7 turned down Raised Fist, a perishable that would have lasted through The Needle, to save $1 of interest a round. #12 left at $26 with The Needle at 64% and would not spend $6 on a reroll. The playbook says to reach $25 over antes 2-4 and hold it from ante 3, and that survival overrides interest.",
+   "cost": "The run entered the boss shop with one fading chips joker and no lasting Mult. It then spent $18 on rerolls at higher prices ($5/$6/$7) in a single shop, plus $14 on cards that don't fit the build, and finished at $1 anyway."
+  },
+  {
+   "rule": "When survival depends on one fragile joker (Gros Michel's 1-in-6 destruction, Ice Cream or Popcorn decay, perishable expiry), lower the clear chance by its failure odds. Keep buying Mult as backup until the boss clears even without that joker.",
+   "evidence": "#15 bought Gros Michel as the only +Mult, and #17 then judged The Needle '96% safe' and left with $22. By #20 the best hand was about 312, which means Gros Michel was already gone, and The Needle stood at 11%.",
+   "cost": "The 96% outlook relied on a single 5-in-6 joker. Once it broke, The Needle dropped to 11% with only one shop left to fix it."
+  },
+  {
+   "rule": "In a desperate last shop, do not switch to a hand you can't reliably draw unless you count the odds of drawing it. With 8 cards, 2 discards and no Four Fingers or Shortcut, a Straight in one hand is roughly a 25-30% event. Prefer cards that raise the score of whatever you are likely to hold (flat Mult or chips on Pair or High Card), and keep enough money to sell and rebuild if something better shows up.",
+   "evidence": "#24-25 spent the last $8 on Crazy Joker (perishable) and Devious Joker to make a Straight score 2,000+. The playbook says Straights need an enabler on Gold. #26 claimed 47%, but the round at #27 opened at 11% because the Straight never came.",
+   "cost": "The last $8, spent on a plan that needed a draw the deck was unlikely to give. The run ended at ante 2."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#34#7010034",
+ "summary": "The run cleared antes 1-3 with a weak board: a holo rental Even Steven, Walkie Talkie, Splash, and Ancient Joker as the only multiplier (x1.5, on one suit that changes every round). It then lost the ante 4 Small Blind (9,000), which the outlook had put at 93%. The planets went to Full House and Three of a Kind, both hard to draw, so Pair stayed at level 1. The strategist also left five shops in antes 2-4 holding $25-33 and never rerolled once. When the ante 3→4 jump (x2.8) came, there was no second multiplier and no levelled hand that showed up reliably.",
+ "lessons": [
+  {
+   "rule": "Choose the main hand by how often you can draw it with 2 discards, not by how often you have played it so far. On a Gold-stake Pair-type build, Pair (or Two Pair or Three of a Kind with an enabler) is the main hand. Take Mercury whenever it is offered and points at no other committed hand. Do not make Full House the main hand unless you have a real enabler (heavy deck changes, or a joker that pays for Full House). Before calling a hand the main hand, check that you could draw it in 3 of 4 hands.",
+   "evidence": "Decision 15 took Venus (Three of a Kind) as a 'free level'. Decision 21 passed on Mercury because 'Pair is not our main hand'. Decisions 24 and 27 put both Earths into Full House because it had been 'played 5 times'. At ante 4, Pair was still level 1, Three of a Kind level 2, Full House level 3, and every level spent was on a hand that only shows up some of the time. The playbook says 'Default: Pair' and 'plan one very good hand, not two'.",
+   "cost": "Three planets went into hands the deck rarely makes, and the hand the deck does make was never levelled. Scoring at ante 4 rested on drawing Full House, and the run died on the first ante 4 blind."
+  },
+  {
+   "rule": "From ante 2 on, if the board has fewer than 2 multiplier sources (counting x1.5 suit-dependent jokers like Ancient as half of one), spend the money above $25 in every shop. Use one or two $5 rerolls, or buy a +Mult or xMult joker, and do not walk out holding $27-33. Never pass a real xMult joker (The Idol, Gros Michel at +15) only to keep an interest tier when the build still has an open slot.",
+   "evidence": "The strategist left the shop with money to spare at decisions 9 ($22), 11 ($25, passed Gros Michel), 19 ($22, passed The Idol because it 'would drop two interest tiers'), 21 ($25), 25 ($27) and 28 ($29). It did not reroll once in the whole run, and the fifth joker slot stayed empty from ante 3 until death. The playbook says to 'use surplus money for rerolls and packs to find xMult' in antes 3-5, and that 'no rerolls for 2-3 antes means the run is in trouble'.",
+   "cost": "It died with about $29 banked, an empty joker slot, and only one weak multiplier. That unspent money could have paid for 4-5 rerolls or one xMult/+15 Mult joker going into ante 4."
+  },
+  {
+   "rule": "Do not buy a rental joker in ante 1, even at $1, unless the outlook says the current blind will fail without it. If you do carry one, sell it once a non-rental scorer can replace it, and stop letting the $28 target block buys that improve the build.",
+   "evidence": "Decision 2 quoted the rule 'no rentals at ante 1'. Decision 4 then bought Even Steven [rental] for $1. It cost $3 every round for about 11 rounds, and the bank target went up to $28 (decisions 22, 26, 28). Decision 28 then turned down shop items because they would 'take me under the $28 I need to hold with the rental'.",
+   "cost": "About $30+ in rent over the run, plus the higher target, which blocked buys at the ante 4 shop just before the loss. That is money that could have paid for the missing xMult."
+  },
+  {
+   "rule": "Do not trust a 90%+ outlook as permission to save money when it rests on situational pieces: Splash plus kickers, a suit-dependent multiplier (Ancient), or levels on hands that only show up some of the time. Before each ante step (especially ante 3→4, which is x2.8), check the score you can realistically repeat with an ordinary Pair or Two Pair hand against the next ante's Small Blind. If 4 such hands don't reach it, buy power now.",
+   "evidence": "The outlook for The Wall swung from 40% (decision 17) to 91% after one Splash pick (decision 19). It showed 96% for nearly every blind through ante 3, and 93% for the ante 4 Small Blind (decision 29), which the run then lost. The 69-70% figure for The Goad (decisions 26, 29) already showed the build was close to its limit, but the response was only one $4 Celestial pack.",
+   "cost": "Overconfident outlooks justified saving money in five shops. The run reached a 9,000-chip blind with a board that could not reliably score it, and lost at ante 4."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#18#7010018",
+ "summary": "The run died at the ante 3 boss, The Mark. At the start of ante 3 the board was weak: two conditional x2 jokers (Seeing Double needs a scoring Club, and The Duo is perishable), Lusty, a 0-to-8-chip Square Joker, and Cloud 9 taking a slot. Two Pair was only level 3. The boss outlook swung from 47% to 91% across a few shops, and at decision 32 the strategist trusted the 91% to skip the Big Blind for an Economy Tag. That gave up the last shop before the boss. The round player then put the boss at 80% and played it with a grow-the-joker style, and the run lost there holding $50 it could no longer spend on that fight.",
+ "lessons": [
+  {
+   "rule": "Do not skip the blind just before a boss (usually the Big Blind) for a money tag (Economy, Handy, Investment) unless the boss estimate has been at least 90% for two or more shops in a row and there is nothing you would want to buy in the shop you give up. Money from the tag cannot be spent before the boss, so it does nothing for survival.",
+   "evidence": "Decision 32 skipped the Big Blind for the Economy Tag ($25 to $50) because of one 91% boss reading. The earlier readings for the same boss were 48% (#20), 47% (#21), 63% (#23-25) and 72% (#27). When the boss came, the round player put it at 80% (#33), and the run died holding $50 with no shop left to turn it into scoring.",
+   "cost": "The run. The skip gave up one shop, Square Joker growth and the Big Blind payout, and the $25 gained could not help against the boss that ended the run."
+  },
+  {
+   "rule": "When the boss clear estimate for the same boss swings by more than 20 points between shops with only small board changes, treat the lowest recent number as the real one. Keep buying scoring (a permanent +Mult/xMult joker, or a planet for the main hand) until the estimate stays at 90% or higher.",
+   "evidence": "The Mark was rated 47-48% (#20-21), then 63%, 72% and 91% (#23, #27, #31) after only one Uranus and a Sun card. The strategist planned around the highest number (#31-32) instead of the earlier ones, and the round itself was rated 80% (#33).",
+   "cost": "The strategist believed the run was safe when it wasn't, and this led straight to the skip and the loss."
+  },
+  {
+   "rule": "On a boss blind rated below about 95%, the round style must maximize score this hand. Drop grow_joker and similar build-growth goals. Grow scaling jokers only on blinds that are about 100% safe.",
+   "evidence": "Decision 33 played the deciding ante 3 boss at 80% with style grow_joker 2 (4-card Two Pair to feed Square Joker, worth only a few chips) instead of playing for maximum score each hand. Under The Mark, face cards are drawn face down, which makes it harder to land the scoring Club that Seeing Double needs.",
+   "cost": "It gave up score on the hand that decided the run in exchange for future value the run never got to use."
+  },
+  {
+   "rule": "Through ante 3, when the next boss is under 75%, fill joker slots with scoring rather than economy. Pick a value generator only when the next boss is already safe and a slot is free. Prefer Pair as the main hand over Two Pair, as the playbook says, and avoid building around conditional xMult (suit-gated or perishable) as your only multiplier.",
+   "evidence": "At #17 the strategist took Cloud 9 over Walkie Talkie, and it then held a slot through an ante 3 where the boss sat at 47-72%. Decision 24 noted that Cloud 9 was a cost against adding scoring. The build committed to Two Pair (#12, #15), against the playbook's 'prefer Pair', and leaned on Seeing Double (needs a Club) plus a perishable Duo. Square Joker was still at +8 chips in ante 3.",
+   "cost": "The board stayed under-powered for ante 3 (6,400-chip boss with no permanent xMult), so the run depended on a single boss roll."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#35#7010035",
+ "summary": "The run died to The Mouth (6,400) in ante 3, with 8 blinds beaten. The outlook had rated that boss 94% safe all ante. The board was flat +Mult (Jolly, Smiley), a chips joker about to expire (Odd Todd), a perishable conditional x2 (Seeing Double) and an economy joker (Golden). Pair was only level 3, and the deck was cluttered with 6 Stone cards. The strategist's own number showed a thin margin: best hand about 1.6k against 1,280 needed per hand. Even so, it spent its ante-3 surplus on packs, rerolls and Golden Joker instead of scoring, and it passed on the one scoring joker offered by misreading a playbook rule.",
+ "lessons": [
+  {
+   "rule": "Before you trust a high clear chance for a boss, check it yourself. Compare your typical hand (not your best hand) with the boss target divided by hands. If your typical hand is below about 1.5x that number, or a joker's condition (a suit requirement, The Mouth's hand lock, a card you hold back) is needed to reach it, treat the boss as unsafe. Do not buy economy jokers or open speculative packs that shop.",
+   "evidence": "At #27 the strategist wrote that its best hand was about 1.6k. The Mouth needed 6,400 in 5 hands, about 1,280 per hand, and an ordinary pair of non-face even cards scores roughly 700. Yet #29-#35 kept quoting 94% and treated the boss as safe. The run then died on that boss.",
+   "cost": "Lost the run at ante 3, blind 9."
+  },
+  {
+   "rule": "In ante 3, when the board is only flat +Mult and has no xMult that lasts, spend the surplus above $25 on scoring first. That means a scoring joker, a main-hand planet, or a reroll that looks for one. Only after that consider Golden Joker or other money makers, or Arcana and Standard packs. A value generator needs the next boss to be clearly safe, not safe on paper.",
+   "evidence": "In ante 3 the strategist spent about $27 on things that added no score at The Mouth. It bought an Arcana pack and took The Devil, which was never used (#20-21). It opened two Standard packs (#24, #31), which gave a glass 5 and a Stone blue-seal 10. It bought Golden Joker for $6 (#34) as the board's Odd Todd was about to expire.",
+   "cost": "No extra scoring for the boss that killed the run. About $27 of a $39 peak bought nothing that helped survive."
+  },
+  {
+   "rule": "Rentals are only banned at ante 1. From ante 3, a rental scoring joker that fits the main hand is a fine buy if you keep $28 banked, especially when your scoring jokers are perishable or about to expire. Do not turn the playbook's ante-1 rental warning into a rule for the whole run.",
+   "evidence": "At #29 the strategist turned down Even Steven, which gives +4 Mult per even card, about +8 on even pairs, and the deck had 9 twos. Its reason was 'Even Steven is a rental at ante 3, which the playbook rules out.' The playbook only lists 'bought rentals at ante 1' as a failure and gives a $28 hold rule for carrying one rental. Two turns earlier it had bought a perishable x2 and kept a perishable chips joker.",
+   "cost": "Turned down the only scoring joker on offer. Its main chips source (Odd Todd) was in its last round."
+  },
+  {
+   "rule": "Do not take jokers that add non-pairing cards to a Pair deck (Marble Joker, which adds Stone cards). Do not plan to hold a Stone or blue-seal card in hand through a dangerous boss. Each dead card in hand cuts an 8-card hand to 7 live cards and makes pairs harder to draw.",
+   "evidence": "At #5 the strategist took Marble Joker even though it scores nothing on its own. By ante 3 the deck had 5-6 Stone cards (#28 sold it, too late). At #32 it added a blue-seal Stone 10 and planned to keep it in hand every round. That shrank the usable hand during The Mouth, where only Pair counted and there were 2 discards.",
+   "cost": "Lower odds of drawing pairs, especially pairs with a Club for Seeing Double, in the deciding boss fight. One Buffoon pick wasted at ante 1."
+  },
+  {
+   "rule": "Do not build a scoring plan on perishable jokers. Count a perishable as gone at its expiry date, and from 2 rounds before that, look for a permanent replacement.",
+   "evidence": "At #11 Odd Todd (perishable) was the run's only chips joker, and it expired at The Mouth. At #27 Seeing Double (perishable, and it needs a Club in the scoring hand) became the only xMult. At #35 the board leaned on both for the boss.",
+   "cost": "The board had no lasting scaling, and its damage depended on drawing the right cards against a 6,400 boss."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#30#7010030",
+ "summary": "The run died at the ante 3 boss, The Fish (6,400). The board was Ice Cream (chips run down every hand), Misprint (random Mult), Gros Michel (can be destroyed), Mail-In Rebate (money only) and Splash. It had no multiplier and nothing that grows. Pair was levelled well, to level 4. But every scoring source was temporary or random, so the high clear chances (88-96%) fell apart: 92% before the boss at decision 39, 3% inside it at decision 40. The strategist kept passing on lasting power (Hanging Chad, a growing joker, packs) to stay at $25. It was sitting at $24-38 the whole time, so the money was there to buy it.",
+ "lessons": [
+  {
+   "rule": "Count how much of the board's scoring is unreliable: jokers that shrink (Ice Cream, Popcorn, Seltzer), random ones (Misprint) and ones that can be destroyed (Gros Michel). If more than half of it is like that, do not leave a shop because the outlook says the boss is safe. Work out the bad case instead: Gros Michel gone, Misprint at about +5, the shrinking joker after 4 more hands. If that does not clear the boss in 4 hands, buy lasting scoring, even if it costs an interest tier.",
+   "evidence": "Decision 29 passed on everything at 94%. Decision 33 passed on the Celestial Mega at 92%. Decision 39 left with $26 at 92%. Each time the reason given was 'survival is fine'. At decision 32 the best hand was about 1.4k, so 4 hands made about 5.6k against a 6,400 boss. The boss chance had already slid from 94% (decision 29) to 80% (decision 32) to 65% (decision 36) as Ice Cream lost chips. Inside the boss, at decision 40, it was 3%.",
+   "cost": "This lost the run. The strategist had $23-38 through all of ante 3 and died at the boss holding $26."
+  },
+  {
+   "rule": "The playbook's 'no rentals at ante 1' rule is not a ban on rentals before ante 5. On Yellow Deck, from ante 2 on, with $28 or more and a free joker slot, buy one rental if it is Hanging Chad (the playbook says 'always take it') or a growing joker that fits the main hand. Then hold $28 as the playbook says for one rental.",
+   "evidence": "At decision 23 the strategist turned down Hanging Chad as a rental with $25 and 2 empty slots. It had just spent $5 on a reroll (decision 22) looking for exactly this kind of joker. Decisions 7 and 12 also turned down rentals with the reason 'rental before ante 5 is a named failure', which goes beyond what the playbook says. Ante 3 then started with 2 empty slots and only temporary scoring.",
+   "cost": "No lasting engine was started in ante 2. Hanging Chad retriggering Pair cards would have stayed strong through ante 3, while Ice Cream lost chips."
+  },
+  {
+   "rule": "If a shrinking joker such as Ice Cream is the only chips source, buy a lasting chips or Mult replacement before it falls below about half its value. Do not wait for the boss outlook to drop.",
+   "evidence": "Ice Cream started at 100 chips, was at 80 in ante 2 and at 45 at the start of ante 3. Lasting scoring did not arrive until Gros Michel (decision 28, which can itself be destroyed) and Splash (decision 36, after the boss had dropped to 65%). The chances kept falling round by round as Ice Cream shrank.",
+   "cost": "Scoring fell from shop to shop in ante 3, the opposite of what antes 3-5 need."
+  },
+  {
+   "rule": "At ante 2, pick an economy joker (Mail-In Rebate and similar) only after you have at least two lasting scoring jokers. The playbook says 'then one value generator if the next boss is already safe', and safe should mean safe without decaying jokers.",
+   "evidence": "At decision 11 the strategist bought Mail-In Rebate when Ice Cream was the only scorer and The Water was rated 47-68%. It then needed Misprint (decision 15) and Gros Michel (decision 28) to make up for it. Rebate paid nothing at The Water and needed exact discard ranks. That joker slot and the $4 could have gone to a scoring joker.",
+   "cost": "One of only three filled slots went to money, which helped leave the board without a durable engine."
+  }
+ ]
+}
+{
+ "game": "teacher_v2.jsonl#27#7010027",
+ "summary": "The run died at the ante 3 boss, The House (6,400), with $33 in the bank. It had no xMult, Two Pair only at level 2, and a board built from random or temporary scoring: Misprint, a rental Seltzer with limited hands, a perishable Supernova and Sly Joker. The cause was a slow build. In antes 1-2 the agent bought utility jokers (Drunkard, Chaos the Clown) and turned down scoring ones. In ante 3, after the Investment Tag left it with $58, it went back to guarding a rental-inflated $31 bank instead of turning the money into lasting scoring. The outlook rated the boss at 93% right up to the fight, and then the clear chance in the round was 0%.",
+ "lessons": [
+  {
+   "rule": "In antes 1-2, a joker slot or pack pick goes to scoring (+Mult or chips), never to utility (extra discards, free rerolls, economy), until you have 2 lasting scoring jokers. If the only scoring option is a perishable bridge like Ice Cream or Banner, take it over a non-scoring joker.",
+   "evidence": "#4 bought Drunkard (no score) as the first joker. #10 took Chaos the Clown over Ice Cream. #9 and #11 passed on Banner (about +90 chips) to protect interest. Going into ante 3 the only scoring joker was Misprint, and #16 showed a 17% boss clear. Drunkard was later sold at #30 to make room for Sly Joker.",
+   "cost": "The run reached ante 3 with one random scoring joker. That forced the patchwork of rental and perishable buys at #18-23 and left no lasting engine for the boss."
+  },
+  {
+   "rule": "Do not buy rentals in antes 1-3 to fix a single blind. Each one costs $3 a round and raises the bank floor by $3, so it blocks the spending that builds the engine. Never buy an eternal rental before ante 5. If a cheap rental is the only way to survive, prefer a non-eternal one you can sell next shop.",
+   "evidence": "#7 bought an eternal rental Misprint at ante 1, which breaks the playbook's 'no rentals at ante 1' rule (a named failure of the previous agent). #18 and #22 added two more rentals. The agent then used the $31 two-rental target at #26, #31 and #37 as its reason to leave shops without buying scoring.",
+   "cost": "About $3-9 a round in fees, a permanently locked slot, and a higher bank floor that stopped the ante 3 shops from buying planets, packs or rerolls toward the boss."
+  },
+  {
+   "rule": "If your scoring comes from random, perishable or limited-use jokers (Misprint, Seltzer, Supernova, Ice Cream, Banner), discount the outlook's clear chance. Treat a boss as safe only if your typical hand, without the temporary pieces, reaches about 1/3 of the boss target. Otherwise spend the surplus above $25 on lasting scoring before the boss.",
+   "evidence": "In ante 3 the outlook swung from 17% to 90% within one shop (#16 to #23), mostly from Seltzer and Supernova. The agent left the last shop at #37 trusting a 93% estimate, and the round outlook at #38 showed a 0% clear. Seltzer's 10 hands were mostly spent on the Small and Big Blinds.",
+   "cost": "The run ended at the ante 3 boss with $33 unspent, about the price of 1-2 rerolls plus a pack, or a scoring joker."
+  },
+  {
+   "rule": "When a windfall (Investment Tag, big interest) puts you $20+ over target in antes 2-4 and you have no xMult and your main hand is below level 3, spend down to $25 (not to a rental-inflated floor) on planets for the main hand, Buffoon packs and rerolls for xMult. Do this before the Small Blind, not spread thin across shops.",
+   "evidence": "#16 started ante 3 at $58. The agent spent only about $25 in total: one Celestial, one Standard pack (a stone Ace at #20) and two paid rerolls. It then left with $33 (#26). At #37 it skipped a $5 reroll while Two Pair was level 2, under the playbook's level 3-5 target.",
+   "cost": "The Investment Tag's $25 mostly sat in the bank instead of buying the multiplier or the levels the playbook ranks as the top two sources of value."
+  },
+  {
+   "rule": "Commit to Pair as the default hand (it is always drawable and Sly, Jolly and pair planets support it) unless an enabler signals otherwise. Do not drift into Two Pair because it came up most often in early rounds, and do not take off-plan planets just because they are free.",
+   "evidence": "From ante 1 the play counts were spread across Two Pair, Straight, Full House and Three of a Kind. The agent picked Two Pair, which the playbook says scores like two separate pairs, and then found only one Uranus. At #36 it took Pluto (High Card), which did nothing for the plan.",
+   "cost": "Planets and hand-specific jokers were split across hands, so the main hand stayed at level 2 by the ante 3 boss."
+  }
+ ]
+}
+LESSONS FROM OUR GAMES (version 3; each seen in at least 2 games, most supported first)
+- Never trust the outlook's clear chance without checking it by hand. Score a typical hand (an ordinary Pair or Two Pair, not your best hand) as (base + card chips) x Mult x xMult. Count each joker only on hands where it really fires. Ignore conditional pieces: suit or hand-type jokers, Flower Pot, Splash kickers, Card Sharp on the first hand, and the suit or rank of Ancient, Idol or Castle (take the bad case). Treat the boss as unsafe if the typical hand is below about 1.5x (blind ÷ hands), or if reaching that number depends on a joker's condition. Warning signs: one cheap or conditional purchase moves the chance by 30+ points, or the same boss swings by 20+ points between shops. In either case use the lowest recent reading. For bosses that hide information (The Fish, The House, The Mark), rate the bad case. Before each ante step (especially 3→4, which is x2.8), check that 4 typical hands reach the next Small Blind. If any check fails, keep buying lasting scoring, even if it costs an interest tier. [seen in 8 games]
+- In antes 1-2, survival beats interest until the board has 2 lasting, unconditional scoring jokers (+Mult or chips that fire on ordinary hands) and the main hand is level 2 or higher. Until then:
+- Do not leave a shop holding $15+. Spend down to about $8-10 if that is what it takes.
+- Buy cheap +Mult even if it is perishable (Jolly, Raised Fist, Gros Michel as a bridge).
+- Use the Yellow Deck head start on Buffoon packs.
+- Reroll in the early shops of the ante, not in the pricier boss shop.
+- Every joker slot and pack pick goes to scoring. Do not take utility or economy jokers (Drunkard, Chaos, Splash, Mail-In Rebate, To the Moon, Cloud 9) or a $10 voucher like Grabber.
+- An early xMult (e.g. Card Sharp) must be followed at once by an unconditional base joker and a main-hand planet.
+- Take a value generator only when the next boss is safe by the conservative check (2 lasting scorers in place).
+The $25 hold starts at ante 3. [seen in 8 games]
+- Main-hand levels are the second engine. Choose the main hand by how often you can draw it with 2 discards (check that you could draw it in 3 of 4 hands), not by how often you have played it so far. Pair is the default: it is always drawable, and Sly, Jolly and Mercury support it. Use Two Pair only for a clear reason, and Full House, Straight or Flush only with a real enabler. Commit by ante 2 and take every planet for that hand (Mercury whenever it is offered). Skip off-plan planets even when they are free. Targets: level 2-3 by the ante 2 boss (buy at least one main-hand planet before it), 3-5 by antes 3-4, 6-9 by antes 5-6. While below target, surplus above $25 goes first to main-hand planets or Celestial packs, before $6+ flat jokers, slow scalers or rerolls. Value Telescope and Planet Merchant highly. [seen in 8 games]
+- Rentals by ante.
+Ante 1: buy none, even at $1, unless the current blind fails without it. One exception: if you hold an xMult with no base, a big flat-chips rental (Stuntman +250) or an affordable Bootstraps is worth it.
+Antes 1-3: never buy a rental just to fix a single blind.
+From ante 2-3 on: one rental that is a lasting scorer and fits the main hand (Hanging Chad, a growing joker, Even Steven on an even-heavy deck) is a fine buy if you have a free slot and $28 banked.
+Always:
+- Never take an eternal or perishable rental, and never carry two at once.
+- Sell a survival rental before any other joker once a non-rental scorer can replace it, or once the next blind is 90%+ safe without it.
+- Do not let the $28/$31 floor block buys that improve the build.
+- Before a boss that costs money (e.g. The Tooth), enter with cash for the cards you expect to play + $3 per rental + $5. [seen in 7 games]
+- From ante 2 to ante 5, while the board has fewer than 2 multiplier sources (a suit-dependent x1.5 such as Ancient counts as half), spend all surplus above $25 in every shop. Use 1-2 $5 rerolls, Buffoon packs, and xMult or +Mult jokers. If the main hand is below its level target, buy its planet first. Never pass a real xMult (Idol, Gros Michel and similar) just to keep an interest tier while a slot is open, because empty slots never grow. Joker Stencil is a stopgap: take any xMult, scaling or growing joker even if it lowers Stencil, and judge it by the score needed 1-2 antes ahead. Do not spend this surplus on Arcana, Spectral or Standard packs that add one-card tweaks, or on Golden Joker or other economy, unless you are aiming at a specific card the build needs. Spend a windfall of $20+ over target (Investment Tag, big interest) this way before the Small Blind. [seen in 6 games]
+- Treat unreliable scoring as backup, not as the plan. That includes perishable jokers, decaying ones (Ice Cream, Popcorn, Seltzer), random ones (Misprint), limited-use ones (Supernova) and destroyable ones (Gros Michel, 1 in 6). Count a perishable as gone at its expiry, and start looking for a permanent replacement 2 rounds before. Replace a shrinking chips joker before it falls to about half its value. If more than half the board's scoring is unreliable, work out the bad case: Gros Michel gone, Misprint at about +5, decay after 4 more hands. Keep buying lasting scoring until the boss clears without those pieces. Never let a perishable or rental joker be your only chips source. [seen in 5 games]
+- Score the build against the actual boss. Once the boss is shown, rate every shop of the ante against its rule, not against the Small or Big Blind. For a one-hand boss like The Needle, only per-hand +Mult, xMult and main-hand planets count. Skip delayed or counter jokers (Loyalty Card, Ride the Bus, Runner, Wee, Lucky Cat) and economy until the one-hand score clears. A boss debuff (e.g. The Goad on Spades) applies only to the boss, so play normally in the Small and Big Blinds. In any round rated below about 95%, turn off grow_joker style goals and play the highest score each hand. Grow scalers only on blinds that are about 100% safe. Do not buy fresh slow scalers (Square, Wee, Runner) at ante 3+ unless they can be fed for free. [seen in 4 games]
+- Reroll limits:
+- At most 2-3 rerolls per shop.
+- In antes 1-2, never spend $15+ rerolling one shop, and stop before the next reroll would take you below $10.
+- Later, stop once one shop has used about $20 on rerolls.
+- Never pay $9-10 for a reroll unless you hold $60+.
+Going 2-3 antes without any reroll is also a failure. While the board has fewer than 2 multipliers, use 1-2 $5 rerolls in each shop, and do it in the early shops of the ante rather than the boss shop. If the boss itself is the problem, first look for a fix aimed at that boss (Director's Cut, glass from Justice, a skip that avoids it) before rerolling more. [seen in 4 games]
+- Buy only jokers that fire on the hand you actually play. Do not buy a joker for a different hand type (Droll/Crafty for Flush, Crazy for Straight, Zany for Three of a Kind, Clever for Two Pair) as a survival bridge or as filler. Buy unconditional +Mult or chips instead (Jolly, Half, Abstract, Banner, Blackboard, Popcorn), or reroll to find one. Do not play Straights or Flushes as filler without an enabler. In a desperate last shop, do not switch to a hand you can't reliably draw: with 8 cards, 2 discards and no Four Fingers or Shortcut, a Straight in one hand is only about a 25-30% event. [seen in 3 games]
+- Do not skip blinds in an ante where the boss is below about 40-50%, or where the boss estimate is likely optimistic (xMult that depends on drawing specific ranks, or a boss that drains levels like The Arm). Play the last blind before the boss if it is at least 60%, and use that shop to fix the board. Rare, Uncommon, Voucher and money tags (Economy, Handy, Investment) pay out only after the boss, so skipping sends you into the boss with the same board. Skip the pre-boss blind for a money tag only if the boss has read at least 90% for two or more shops in a row and the shop you give up has nothing you want. When a Rare Tag's free joker appears, take it, selling a perishable or flat joker to make room. [seen in 3 games]
+- From ante 3, do not drop below $25 ($28 with a rental) on packs or rerolls unless the next blind or the current boss is below 70% by the conservative hand check. A weak outlook for the next ante is not a reason to spend the bank now, and neither is a high outlook that rests on a variable joker (Ancient, Idol, Castle) or a boss that hides information. Spend only the surplus above the floor, on targeted buys (main-hand planets, xMult jokers), not on chains of rerolls. When the boss is below 50% and you do dip into survival money, judge each $ by how much it raises the boss estimate. Prefer joker rerolls, a main-hand planet already in the shop, or a tarot that edits trigger cards. Skip speculative Standard or Celestial packs. If two buys in a row miss, stop and keep the interest. [seen in 3 games]
+- Treat Flower Pot and similar conditional xMult as a bonus, not the engine. It checks only scoring cards, so a kicker never helps. Two Pair covers all four suits only about 1 time in 6, and Full House about half the time. Do not pick the main hand around it, and do not accept an outlook that depends on it firing. Once you own a permanent x3, though, do not sell it to fix a single boss. Change how you play instead (five-card hands that cover all four suits, Wild cards). Swap it only if the replacement improves the next ante, not just the current boss. One reliable x3 is worth about +2.5 blinds. [seen in 3 games]
+- Before the first scoring joker (ante 1, every hand at level 1), the long-term 'Default: Pair' does not decide which hand to play. The 300 Small Blind needs about 75 per hand over 4 hands, and a level-1 Pair makes only about 50-65. Before every hand, work out chips still needed ÷ hands left. If your best available hand falls short, use a discard to chase Flush (keep 4 of a suit, about 180-280), Straight (about 160-200), Three of a Kind (about 90-180) or Two Pair. Never discard toward a Pair. On the last hand, play only a hand that clears what is left, or else the highest-scoring option. Fill in the outlook (per-hand target vs. expected score) before every blind. An empty outlook ('safe through -') means the risk check was skipped. [seen in 2 games]
+- In antes 1-2, do not lock a slot with an Eternal joker that is utility or will be a weak flat effect by ante 4 (Eternal Splash, Sly, Arrowhead, Fibonacci). Take one only if the next blind is below 70% without it, or if the rest of the Buffoon pack is worse and the next shop still buys real Mult. When opening a Buffoon pack with no jokers, rank the choices by how many chips they add to an ordinary Pair right now. [seen in 2 games]
+
+
+15 lessons in the list (version 3), 16 games reviewed; candidates:
+  [2] Before the first scoring joker (ante 1, every hand at level 1), the long-term 'Default: Pair' does not decide which hand to play. The 300 Small Blind needs about 75 per hand over 4 hands, and a level-1 Pair makes only about 50-65. Before every hand, work out chips still needed ÷ hands left. If your best available hand falls short, use a discard to chase Flush (keep 4 of a suit, about 180-280), Straight (about 160-200), Three of a Kind (about 90-180) or Two Pair. Never discard toward a Pair. On the last hand, play only a hand that clears what is left, or else the highest-scoring option. Fill in the outlook (per-hand target vs. expected score) before every blind. An empty outlook ('safe through -') means the risk check was skipped.
+  [8] Never trust the outlook's clear chance without checking it by hand. Score a typical hand (an ordinary Pair or Two Pair, not your best hand) as (base + card chips) x Mult x xMult. Count each joker only on hands where it really fires. Ignore conditional pieces: suit or hand-type jokers, Flower Pot, Splash kickers, Card Sharp on the first hand, and the suit or rank of Ancient, Idol or Castle (take the bad case). Treat the boss as unsafe if the typical hand is below about 1.5x (blind ÷ hands), or if reaching that number depends on a joker's condition. Warning signs: one cheap or conditional purchase moves the chance by 30+ points, or the same boss swings by 20+ points between shops. In either case use the lowest recent reading. For bosses that hide information (The Fish, The House, The Mark), rate the bad case. Before each ante step (especially 3→4, which is x2.8), check that 4 typical hands reach the next Small Blind. If any check fails, keep buying lasting scoring, even if it costs an interest tier.
+  [5] Treat unreliable scoring as backup, not as the plan. That includes perishable jokers, decaying ones (Ice Cream, Popcorn, Seltzer), random ones (Misprint), limited-use ones (Supernova) and destroyable ones (Gros Michel, 1 in 6). Count a perishable as gone at its expiry, and start looking for a permanent replacement 2 rounds before. Replace a shrinking chips joker before it falls to about half its value. If more than half the board's scoring is unreliable, work out the bad case: Gros Michel gone, Misprint at about +5, decay after 4 more hands. Keep buying lasting scoring until the boss clears without those pieces. Never let a perishable or rental joker be your only chips source.
+  [8] In antes 1-2, survival beats interest until the board has 2 lasting, unconditional scoring jokers (+Mult or chips that fire on ordinary hands) and the main hand is level 2 or higher. Until then:
+- Do not leave a shop holding $15+. Spend down to about $8-10 if that is what it takes.
+- Buy cheap +Mult even if it is perishable (Jolly, Raised Fist, Gros Michel as a bridge).
+- Use the Yellow Deck head start on Buffoon packs.
+- Reroll in the early shops of the ante, not in the pricier boss shop.
+- Every joker slot and pack pick goes to scoring. Do not take utility or economy jokers (Drunkard, Chaos, Splash, Mail-In Rebate, To the Moon, Cloud 9) or a $10 voucher like Grabber.
+- An early xMult (e.g. Card Sharp) must be followed at once by an unconditional base joker and a main-hand planet.
+- Take a value generator only when the next boss is safe by the conservative check (2 lasting scorers in place).
+The $25 hold starts at ante 3.
+  [6] From ante 2 to ante 5, while the board has fewer than 2 multiplier sources (a suit-dependent x1.5 such as Ancient counts as half), spend all surplus above $25 in every shop. Use 1-2 $5 rerolls, Buffoon packs, and xMult or +Mult jokers. If the main hand is below its level target, buy its planet first. Never pass a real xMult (Idol, Gros Michel and similar) just to keep an interest tier while a slot is open, because empty slots never grow. Joker Stencil is a stopgap: take any xMult, scaling or growing joker even if it lowers Stencil, and judge it by the score needed 1-2 antes ahead. Do not spend this surplus on Arcana, Spectral or Standard packs that add one-card tweaks, or on Golden Joker or other economy, unless you are aiming at a specific card the build needs. Spend a windfall of $20+ over target (Investment Tag, big interest) this way before the Small Blind.
+  [8] Main-hand levels are the second engine. Choose the main hand by how often you can draw it with 2 discards (check that you could draw it in 3 of 4 hands), not by how often you have played it so far. Pair is the default: it is always drawable, and Sly, Jolly and Mercury support it. Use Two Pair only for a clear reason, and Full House, Straight or Flush only with a real enabler. Commit by ante 2 and take every planet for that hand (Mercury whenever it is offered). Skip off-plan planets even when they are free. Targets: level 2-3 by the ante 2 boss (buy at least one main-hand planet before it), 3-5 by antes 3-4, 6-9 by antes 5-6. While below target, surplus above $25 goes first to main-hand planets or Celestial packs, before $6+ flat jokers, slow scalers or rerolls. Value Telescope and Planet Merchant highly.
+  [3] Buy only jokers that fire on the hand you actually play. Do not buy a joker for a different hand type (Droll/Crafty for Flush, Crazy for Straight, Zany for Three of a Kind, Clever for Two Pair) as a survival bridge or as filler. Buy unconditional +Mult or chips instead (Jolly, Half, Abstract, Banner, Blackboard, Popcorn), or reroll to find one. Do not play Straights or Flushes as filler without an enabler. In a desperate last shop, do not switch to a hand you can't reliably draw: with 8 cards, 2 discards and no Four Fingers or Shortcut, a Straight in one hand is only about a 25-30% event.
+  [7] Rentals by ante.
+Ante 1: buy none, even at $1, unless the current blind fails without it. One exception: if you hold an xMult with no base, a big flat-chips rental (Stuntman +250) or an affordable Bootstraps is worth it.
+Antes 1-3: never buy a rental just to fix a single blind.
+From ante 2-3 on: one rental that is a lasting scorer and fits the main hand (Hanging Chad, a growing joker, Even Steven on an even-heavy deck) is a fine buy if you have a free slot and $28 banked.
+Always:
+- Never take an eternal or perishable rental, and never carry two at once.
+- Sell a survival rental before any other joker once a non-rental scorer can replace it, or once the next blind is 90%+ safe without it.
+- Do not let the $28/$31 floor block buys that improve the build.
+- Before a boss that costs money (e.g. The Tooth), enter with cash for the cards you expect to play + $3 per rental + $5.
+  [3] Do not skip blinds in an ante where the boss is below about 40-50%, or where the boss estimate is likely optimistic (xMult that depends on drawing specific ranks, or a boss that drains levels like The Arm). Play the last blind before the boss if it is at least 60%, and use that shop to fix the board. Rare, Uncommon, Voucher and money tags (Economy, Handy, Investment) pay out only after the boss, so skipping sends you into the boss with the same board. Skip the pre-boss blind for a money tag only if the boss has read at least 90% for two or more shops in a row and the shop you give up has nothing you want. When a Rare Tag's free joker appears, take it, selling a perishable or flat joker to make room.
+  [4] Score the build against the actual boss. Once the boss is shown, rate every shop of the ante against its rule, not against the Small or Big Blind. For a one-hand boss like The Needle, only per-hand +Mult, xMult and main-hand planets count. Skip delayed or counter jokers (Loyalty Card, Ride the Bus, Runner, Wee, Lucky Cat) and economy until the one-hand score clears. A boss debuff (e.g. The Goad on Spades) applies only to the boss, so play normally in the Small and Big Blinds. In any round rated below about 95%, turn off grow_joker style goals and play the highest score each hand. Grow scalers only on blinds that are about 100% safe. Do not buy fresh slow scalers (Square, Wee, Runner) at ante 3+ unless they can be fed for free.
+  [4] Reroll limits:
+- At most 2-3 rerolls per shop.
+- In antes 1-2, never spend $15+ rerolling one shop, and stop before the next reroll would take you below $10.
+- Later, stop once one shop has used about $20 on rerolls.
+- Never pay $9-10 for a reroll unless you hold $60+.
+Going 2-3 antes without any reroll is also a failure. While the board has fewer than 2 multipliers, use 1-2 $5 rerolls in each shop, and do it in the early shops of the ante rather than the boss shop. If the boss itself is the problem, first look for a fix aimed at that boss (Director's Cut, glass from Justice, a skip that avoids it) before rerolling more.
+  [3] From ante 3, do not drop below $25 ($28 with a rental) on packs or rerolls unless the next blind or the current boss is below 70% by the conservative hand check. A weak outlook for the next ante is not a reason to spend the bank now, and neither is a high outlook that rests on a variable joker (Ancient, Idol, Castle) or a boss that hides information. Spend only the surplus above the floor, on targeted buys (main-hand planets, xMult jokers), not on chains of rerolls. When the boss is below 50% and you do dip into survival money, judge each $ by how much it raises the boss estimate. Prefer joker rerolls, a main-hand planet already in the shop, or a tarot that edits trigger cards. Skip speculative Standard or Celestial packs. If two buys in a row miss, stop and keep the interest.
+  [3] Treat Flower Pot and similar conditional xMult as a bonus, not the engine. It checks only scoring cards, so a kicker never helps. Two Pair covers all four suits only about 1 time in 6, and Full House about half the time. Do not pick the main hand around it, and do not accept an outlook that depends on it firing. Once you own a permanent x3, though, do not sell it to fix a single boss. Change how you play instead (five-card hands that cover all four suits, Wild cards). Swap it only if the replacement improves the next ante, not just the current boss. One reliable x3 is worth about +2.5 blinds.
+  [2] In antes 1-2, do not lock a slot with an Eternal joker that is utility or will be a weak flat effect by ante 4 (Eternal Splash, Sly, Arrowhead, Fibonacci). Take one only if the next blind is below 70% without it, or if the rest of the Buffoon pack is worse and the next shop still buys real Mult. When opening a Buffoon pack with no jokers, rank the choices by how many chips they add to an ordinary Pair right now.
+  [1] Once a rank-conditional xMult joker lands (Triboulet, Photograph, face-card payoffs, Baron, etc.), every deck-editing consumable should raise the density of the trigger ranks. Use Strength (J→Q, Q→K), Death (copy a K/Q onto a low card) and Hanged Man (destroy 2s-7s). Pick these over Wheel of Fortune, suit changers, or enhancements on non-trigger ranks. Aim for at least 12 trigger cards, or remove 8+ low cards, before the next boss. Avoid jokers that add dead, non-pairing cards (Marble Joker's Stone cards).

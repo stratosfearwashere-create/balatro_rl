@@ -98,9 +98,10 @@ def _engine_extension():
     except ImportError:
         print("pybind11 is not installed: the C++ engine is not built (pip install pybind11)")
         return None
-    extra = ["-std=c++17", "-O2"] if sys.platform != "win32" else ["/std:c++17", "/O2", "/EHsc", "/bigobj"]
+    extra = ["-std=c++17", "-O2", "-pthread"] if sys.platform != "win32" else ["/std:c++17", "/O2", "/EHsc", "/bigobj"]
+    link = ["-pthread"] if sys.platform != "win32" else []          # (std::thread on Linux)
     return Extension("balatro_rl.sim._engine", [ENGINE], include_dirs=[pybind11.get_include(), "balatro_rl/sim/cpp"],
-                     language="c++", extra_compile_args=extra,
+                     language="c++", extra_compile_args=extra, extra_link_args=link,
                      depends=glob.glob("balatro_rl/sim/cpp/engine/*.hpp") + ["balatro_rl/sim/cpp/pyrandom.hpp"])
 
 

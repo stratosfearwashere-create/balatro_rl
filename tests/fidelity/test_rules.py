@@ -389,12 +389,12 @@ def test_end_of_round_gold_cards_and_blue_seals_are_retriggered():
         g.hand = [Card(5, S, enh="GOLD", seal="RED"), Card(6, S, seal="BLUE")]
         g.win_round()
         return g
-    g = end()
-    assert g.money == 3 + 3 * 2 and [c.name for c in g.consumables] == ["mercury"]
+    g = end()                       # (Gold cards pay before the cash-out, so their money earns interest: $6 -> $1)
+    assert g.money == 3 + 3 * 2 + 1 and [c.name for c in g.consumables] == ["mercury"]
     g = end("mime")
-    assert g.money == 3 + 3 * 3 and [c.name for c in g.consumables] == ["mercury", "mercury"]
+    assert g.money == 3 + 3 * 3 + 1 and [c.name for c in g.consumables] == ["mercury", "mercury"]
     g = end("blueprint", "mime")
-    assert g.money == 3 + 3 * 4 and len(g.consumables) == 2          # no room for a third planet
+    assert g.money == 3 + 3 * 4 + 2 and len(g.consumables) == 2          # no room for a third planet
 
 
 # ------------------------------------------------------------------ shop, packs and tags
@@ -879,3 +879,17 @@ def test_bridge_remembers_the_first_hand_and_the_ox_hand():
         g.hand = _eight(Card(13, S), Card(12, H))
         g.play([0])
     assert game_from_state(mock.state())[0].ox_hand == g.ox_hand == PAIR
+
+
+
+def test_rentals_are_charged_before_interest():
+    """The game charges rentals in end_round; evaluate_round then computes interest from what is left: $25 with one rental earns $4."""
+    g = game()
+    g.select_blind()
+    g.money, g.hands_left = 25, 0
+    g.hand = []
+    j = Joker("joker", base_cost=JOKERS["joker"].cost)
+    j.rental = True
+    g.add_joker(j)
+    g.win_round()
+    assert g.money == 25 - 3 + 3 + 4, g.money          # rental, small blind (White pays $3), interest on $22

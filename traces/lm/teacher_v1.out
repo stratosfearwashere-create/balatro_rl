@@ -1,0 +1,6 @@
+{"game": 1, "blinds": 0.0, "won": false, "ante": 1, "min": 0.1}
+{"game": 9, "blinds": 0.0, "won": false, "ante": 1, "min": 0.2}
+{"game": 33, "blinds": 0.0, "won": false, "ante": 1, "min": 0.5}
+{"game": 10, "blinds": 1.0, "won": false, "ante": 1, "min": 3.0}
+{"game": 19, "blinds": 1.0, "won": false, "ante": 1, "min": 3.2}
+{"game": 22, "blinds": 2.0, "won": false, "ante": 1, "min": 5.1}

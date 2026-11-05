@@ -136,3 +136,20 @@ def standard_deck(deck_type: str = "RED", rng=None) -> list[Card]:
                 suit = 0 if s in (0, 2) else 1
             cards.append(Card(r, suit))
     return cards
+
+
+def exact_deck(deck_type: str = "RED", rng=None) -> list[Card]:
+    """The deck as the game creates it: sorted by 'suit rank' strings (clubs, diamonds, hearts, spades; ranks 2-9, A, J, K, Q, T),
+    so that the card ids (the game's sort_id) run in the order the seeded shuffle starts from. Erratic: as standard_deck."""
+    if deck_type == "ERRATIC":
+        return standard_deck(deck_type, rng)
+    cards = []
+    for s in (2, 3, 1, 0):                             # C, D, H, S
+        for r in (2, 3, 4, 5, 6, 7, 8, 9, 14, 11, 13, 12, 10):
+            if deck_type == "ABANDONED" and r in (11, 12, 13):
+                continue
+            suit = s
+            if deck_type == "CHECKERED":                # clubs become spades and diamonds hearts, in place
+                suit = 0 if s in (0, 2) else 1
+            cards.append(Card(r, suit))
+    return cards

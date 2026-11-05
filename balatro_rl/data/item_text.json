@@ -1,0 +1,1512 @@
+{
+"bl_arm": {
+"section": "Blind",
+"name": "The Arm",
+"text": "Decrease level of played poker hand"
+},
+"bl_big": {
+"section": "Blind",
+"name": "Big Blind",
+"text": ""
+},
+"bl_club": {
+"section": "Blind",
+"name": "The Club",
+"text": "All Club cards are debuffed"
+},
+"bl_eye": {
+"section": "Blind",
+"name": "The Eye",
+"text": "No repeat hand types this round"
+},
+"bl_final_acorn": {
+"section": "Blind",
+"name": "Amber Acorn",
+"text": "Flips and shuffles all Joker cards"
+},
+"bl_final_bell": {
+"section": "Blind",
+"name": "Cerulean Bell",
+"text": "Forces 1 card to always be selected"
+},
+"bl_final_heart": {
+"section": "Blind",
+"name": "Crimson Heart",
+"text": "One random Joker disabled every hand"
+},
+"bl_final_leaf": {
+"section": "Blind",
+"name": "Verdant Leaf",
+"text": "All cards debuffed until 1 Joker sold"
+},
+"bl_final_vessel": {
+"section": "Blind",
+"name": "Violet Vessel",
+"text": "Very large blind"
+},
+"bl_fish": {
+"section": "Blind",
+"name": "The Fish",
+"text": "Cards drawn face down after each hand played"
+},
+"bl_flint": {
+"section": "Blind",
+"name": "The Flint",
+"text": "Base Chips and Mult are halved"
+},
+"bl_goad": {
+"section": "Blind",
+"name": "The Goad",
+"text": "All Spade cards are debuffed"
+},
+"bl_head": {
+"section": "Blind",
+"name": "The Head",
+"text": "All Heart cards are debuffed"
+},
+"bl_hook": {
+"section": "Blind",
+"name": "The Hook",
+"text": "Discards 2 random cards per hand played"
+},
+"bl_house": {
+"section": "Blind",
+"name": "The House",
+"text": "First hand is drawn face down"
+},
+"bl_manacle": {
+"section": "Blind",
+"name": "The Manacle",
+"text": "-1 Hand Size"
+},
+"bl_mark": {
+"section": "Blind",
+"name": "The Mark",
+"text": "All face cards are drawn face down"
+},
+"bl_mouth": {
+"section": "Blind",
+"name": "The Mouth",
+"text": "Play only 1 hand type this round"
+},
+"bl_needle": {
+"section": "Blind",
+"name": "The Needle",
+"text": "Play only 1 hand"
+},
+"bl_ox": {
+"section": "Blind",
+"name": "The Ox",
+"text": "Playing a ? sets money to $0"
+},
+"bl_pillar": {
+"section": "Blind",
+"name": "The Pillar",
+"text": "Cards played previously this Ante are debuffed"
+},
+"bl_plant": {
+"section": "Blind",
+"name": "The Plant",
+"text": "All face cards are debuffed"
+},
+"bl_psychic": {
+"section": "Blind",
+"name": "The Psychic",
+"text": "Must play 5 cards"
+},
+"bl_serpent": {
+"section": "Blind",
+"name": "The Serpent",
+"text": "After Play or Discard, always draw 3 cards"
+},
+"bl_small": {
+"section": "Blind",
+"name": "Small Blind",
+"text": ""
+},
+"bl_tooth": {
+"section": "Blind",
+"name": "The Tooth",
+"text": "Lose $1 per card played"
+},
+"bl_wall": {
+"section": "Blind",
+"name": "The Wall",
+"text": "Extra large blind"
+},
+"bl_water": {
+"section": "Blind",
+"name": "The Water",
+"text": "Start with 0 discards"
+},
+"bl_wheel": {
+"section": "Blind",
+"name": "The Wheel",
+"text": "in 7 cards get drawn face down"
+},
+"bl_window": {
+"section": "Blind",
+"name": "The Window",
+"text": "All Diamond cards are debuffed"
+},
+"j_8_ball": {
+"section": "Joker",
+"name": "8 Ball",
+"text": "? in ? chance for each played 8 to create a Tarot card when scored (Must have room)"
+},
+"j_abstract": {
+"section": "Joker",
+"name": "Abstract Joker",
+"text": "+? Mult for each Joker card (Currently +? Mult)"
+},
+"j_acrobat": {
+"section": "Joker",
+"name": "Acrobat",
+"text": "X? Mult on final hand of round"
+},
+"j_ancient": {
+"section": "Joker",
+"name": "Ancient Joker",
+"text": "Each played card with ? suit gives X? Mult when scored, suit changes at end of round"
+},
+"j_arrowhead": {
+"section": "Joker",
+"name": "Arrowhead",
+"text": "Played cards with Spade suit give +? Chips when scored"
+},
+"j_astronomer": {
+"section": "Joker",
+"name": "Astronomer",
+"text": "All Planet cards and Celestial Packs in the shop are free"
+},
+"j_banner": {
+"section": "Joker",
+"name": "Banner",
+"text": "+? Chips for each remaining discard"
+},
+"j_baron": {
+"section": "Joker",
+"name": "Baron",
+"text": "Each King held in hand gives X? Mult"
+},
+"j_baseball": {
+"section": "Joker",
+"name": "Baseball Card",
+"text": "Uncommon Jokers each give X? Mult"
+},
+"j_blackboard": {
+"section": "Joker",
+"name": "Blackboard",
+"text": "X? Mult if all cards held in hand are ? or ?"
+},
+"j_bloodstone": {
+"section": "Joker",
+"name": "Bloodstone",
+"text": "? in ? chance for played cards with Heart suit to give X? Mult when scored"
+},
+"j_blue_joker": {
+"section": "Joker",
+"name": "Blue Joker",
+"text": "+? Chips for each remaining card in deck (Currently +? Chips)"
+},
+"j_blueprint": {
+"section": "Joker",
+"name": "Blueprint",
+"text": "Copies ability of Joker to the right"
+},
+"j_bootstraps": {
+"section": "Joker",
+"name": "Bootstraps",
+"text": "+? Mult for every $? you have (Currently +? Mult)"
+},
+"j_brainstorm": {
+"section": "Joker",
+"name": "Brainstorm",
+"text": "Copies the ability of leftmost Joker"
+},
+"j_bull": {
+"section": "Joker",
+"name": "Bull",
+"text": "+? Chips for each $1 you have (Currently +? Chips)"
+},
+"j_burglar": {
+"section": "Joker",
+"name": "Burglar",
+"text": "When Blind is selected, gain +? Hands and lose all discards"
+},
+"j_burnt": {
+"section": "Joker",
+"name": "Burnt Joker",
+"text": "Upgrade the level of the first discarded poker hand each round"
+},
+"j_business": {
+"section": "Joker",
+"name": "Business Card",
+"text": "Played face cards have a ? in ? chance to give $2 when scored"
+},
+"j_caino": {
+"section": "Joker",
+"name": "Canio",
+"text": "This Joker gains X? Mult when a face card is destroyed (Currently X? Mult)"
+},
+"j_campfire": {
+"section": "Joker",
+"name": "Campfire",
+"text": "This Joker gains X? Mult for each card sold, resets when Boss Blind is defeated (Currently X? Mult)"
+},
+"j_card_sharp": {
+"section": "Joker",
+"name": "Card Sharp",
+"text": "X? Mult if played poker hand has already been played this round"
+},
+"j_cartomancer": {
+"section": "Joker",
+"name": "Cartomancer",
+"text": "Create a Tarot card when Blind is selected (Must have room)"
+},
+"j_castle": {
+"section": "Joker",
+"name": "Castle",
+"text": "This Joker gains +? Chips per discarded ? card, suit changes every round (Currently +? Chips)"
+},
+"j_cavendish": {
+"section": "Joker",
+"name": "Cavendish",
+"text": "X? Mult ? in ? chance this card is destroyed at end of round"
+},
+"j_ceremonial": {
+"section": "Joker",
+"name": "Ceremonial Dagger",
+"text": "When Blind is selected, destroy Joker to the right and permanently add double its sell value to this Mult (Currently +? Mult)"
+},
+"j_certificate": {
+"section": "Joker",
+"name": "Certificate",
+"text": "When round begins, add a random playing card with a random seal to your hand"
+},
+"j_chaos": {
+"section": "Joker",
+"name": "Chaos the Clown",
+"text": "? free Reroll per shop"
+},
+"j_chicot": {
+"section": "Joker",
+"name": "Chicot",
+"text": "Disables effect of every Boss Blind"
+},
+"j_clever": {
+"section": "Joker",
+"name": "Clever Joker",
+"text": "+? Chips if played hand contains a ?"
+},
+"j_cloud_9": {
+"section": "Joker",
+"name": "Cloud 9",
+"text": "Earn $? for each 9 in your full deck at end of round (Currently $?)"
+},
+"j_constellation": {
+"section": "Joker",
+"name": "Constellation",
+"text": "This Joker gains X? Mult every time a Planet card is used (Currently X? Mult)"
+},
+"j_crafty": {
+"section": "Joker",
+"name": "Crafty Joker",
+"text": "+? Chips if played hand contains a ?"
+},
+"j_crazy": {
+"section": "Joker",
+"name": "Crazy Joker",
+"text": "+? Mult if played hand contains a ?"
+},
+"j_credit_card": {
+"section": "Joker",
+"name": "Credit Card",
+"text": "Go up to -$? in debt"
+},
+"j_delayed_grat": {
+"section": "Joker",
+"name": "Delayed Gratification",
+"text": "Earn $? per discard if no discards are used by end of the round"
+},
+"j_devious": {
+"section": "Joker",
+"name": "Devious Joker",
+"text": "+? Chips if played hand contains a ?"
+},
+"j_diet_cola": {
+"section": "Joker",
+"name": "Diet Cola",
+"text": "Sell this card to create a free ?"
+},
+"j_dna": {
+"section": "Joker",
+"name": "DNA",
+"text": "If first hand of round has only 1 card, add a permanent copy to deck and draw it to hand"
+},
+"j_drivers_license": {
+"section": "Joker",
+"name": "Driver's License",
+"text": "X? Mult if you have at least 16 Enhanced cards in your full deck (Currently ?)"
+},
+"j_droll": {
+"section": "Joker",
+"name": "Droll Joker",
+"text": "+? Mult if played hand contains a ?"
+},
+"j_drunkard": {
+"section": "Joker",
+"name": "Drunkard",
+"text": "+? discard each round"
+},
+"j_duo": {
+"section": "Joker",
+"name": "The Duo",
+"text": "X? Mult if played hand contains a ?"
+},
+"j_dusk": {
+"section": "Joker",
+"name": "Dusk",
+"text": "Retrigger all played cards in final hand of round"
+},
+"j_egg": {
+"section": "Joker",
+"name": "Egg",
+"text": "Gains $? of sell value at end of round"
+},
+"j_erosion": {
+"section": "Joker",
+"name": "Erosion",
+"text": "+? Mult for each card below ? in your full deck (Currently +? Mult)"
+},
+"j_even_steven": {
+"section": "Joker",
+"name": "Even Steven",
+"text": "Played cards with even rank give +? Mult when scored (10, 8, 6, 4, 2)"
+},
+"j_faceless": {
+"section": "Joker",
+"name": "Faceless Joker",
+"text": "Earn $? if ? or more face cards are discarded at the same time"
+},
+"j_family": {
+"section": "Joker",
+"name": "The Family",
+"text": "X? Mult if played hand contains a ?"
+},
+"j_fibonacci": {
+"section": "Joker",
+"name": "Fibonacci",
+"text": "Each played Ace, 2, 3, 5, or 8 gives +? Mult when scored"
+},
+"j_flash": {
+"section": "Joker",
+"name": "Flash Card",
+"text": "This Joker gains +? Mult per reroll in the shop (Currently +? Mult)"
+},
+"j_flower_pot": {
+"section": "Joker",
+"name": "Flower Pot",
+"text": "X? Mult if poker hand contains a Diamond card, Club card, Heart card, and Spade card"
+},
+"j_fortune_teller": {
+"section": "Joker",
+"name": "Fortune Teller",
+"text": "+? Mult per Tarot card used this run (Currently +?)"
+},
+"j_four_fingers": {
+"section": "Joker",
+"name": "Four Fingers",
+"text": "All Flushes and Straights can be made with 4 cards"
+},
+"j_gift": {
+"section": "Joker",
+"name": "Gift Card",
+"text": "Add $? of sell value to every Joker and Consumable card at end of round"
+},
+"j_glass": {
+"section": "Joker",
+"name": "Glass Joker",
+"text": "This Joker gains X? Mult for every Glass Card that is destroyed (Currently X? Mult)"
+},
+"j_gluttenous_joker": {
+"section": "Joker",
+"name": "Gluttonous Joker",
+"text": "Played cards with ? suit give +? Mult when scored"
+},
+"j_golden": {
+"section": "Joker",
+"name": "Golden Joker",
+"text": "Earn $? at end of round"
+},
+"j_greedy_joker": {
+"section": "Joker",
+"name": "Greedy Joker",
+"text": "Played cards with ? suit give +? Mult when scored"
+},
+"j_green_joker": {
+"section": "Joker",
+"name": "Green Joker",
+"text": "+? Mult per hand played -? Mult per discard (Currently +? Mult)"
+},
+"j_gros_michel": {
+"section": "Joker",
+"name": "Gros Michel",
+"text": "+? Mult ? in ? chance this card is destroyed at end of round"
+},
+"j_hack": {
+"section": "Joker",
+"name": "Hack",
+"text": "Retrigger each played 2, 3, 4, or 5"
+},
+"j_half": {
+"section": "Joker",
+"name": "Half Joker",
+"text": "+? Mult if played hand contains ? or fewer cards"
+},
+"j_hallucination": {
+"section": "Joker",
+"name": "Hallucination",
+"text": "? in ? chance to create a Tarot card when any Booster Pack is opened (Must have room)"
+},
+"j_hanging_chad": {
+"section": "Joker",
+"name": "Hanging Chad",
+"text": "Retrigger first played card used in scoring ? additional times"
+},
+"j_hiker": {
+"section": "Joker",
+"name": "Hiker",
+"text": "Every played card permanently gains +? Chips when scored"
+},
+"j_hit_the_road": {
+"section": "Joker",
+"name": "Hit the Road",
+"text": "This Joker gains X? Mult for every Jack discarded this round (Currently X? Mult)"
+},
+"j_hologram": {
+"section": "Joker",
+"name": "Hologram",
+"text": "This Joker gains X? Mult every time a playing card is added to your deck (Currently X? Mult)"
+},
+"j_ice_cream": {
+"section": "Joker",
+"name": "Ice Cream",
+"text": "+? Chips -? Chips for every hand played"
+},
+"j_idol": {
+"section": "Joker",
+"name": "The Idol",
+"text": "Each played ? of ? gives X? Mult when scored Card changes every round"
+},
+"j_invisible": {
+"section": "Joker",
+"name": "Invisible Joker",
+"text": "After ? rounds, sell this card to Duplicate a random Joker (Currently ?/?)"
+},
+"j_joker": {
+"section": "Joker",
+"name": "Joker",
+"text": "+? Mult"
+},
+"j_jolly": {
+"section": "Joker",
+"name": "Jolly Joker",
+"text": "+? Mult if played hand contains a ?"
+},
+"j_juggler": {
+"section": "Joker",
+"name": "Juggler",
+"text": "+? hand size"
+},
+"j_loyalty_card": {
+"section": "Joker",
+"name": "Loyalty Card",
+"text": "X? Mult every ? hands played ?"
+},
+"j_luchador": {
+"section": "Joker",
+"name": "Luchador",
+"text": "Sell this card to disable the current Boss Blind"
+},
+"j_lucky_cat": {
+"section": "Joker",
+"name": "Lucky Cat",
+"text": "This Joker gains X? Mult every time a Lucky card successfully triggers (Currently X? Mult)"
+},
+"j_lusty_joker": {
+"section": "Joker",
+"name": "Lusty Joker",
+"text": "Played cards with ? suit give +? Mult when scored"
+},
+"j_mad": {
+"section": "Joker",
+"name": "Mad Joker",
+"text": "+? Mult if played hand contains a ?"
+},
+"j_madness": {
+"section": "Joker",
+"name": "Madness",
+"text": "When Small Blind or Big Blind is selected, gain X? Mult and destroy a random Joker (Currently X? Mult)"
+},
+"j_mail": {
+"section": "Joker",
+"name": "Mail-In Rebate",
+"text": "Earn $? for each discarded ?, rank changes every round"
+},
+"j_marble": {
+"section": "Joker",
+"name": "Marble Joker",
+"text": "Adds one Stone card to deck when Blind is selected"
+},
+"j_matador": {
+"section": "Joker",
+"name": "Matador",
+"text": "Earn $? if played hand triggers the Boss Blind ability"
+},
+"j_merry_andy": {
+"section": "Joker",
+"name": "Merry Andy",
+"text": "+? discards each round, ? hand size"
+},
+"j_midas_mask": {
+"section": "Joker",
+"name": "Midas Mask",
+"text": "All played face cards become Gold cards when scored"
+},
+"j_mime": {
+"section": "Joker",
+"name": "Mime",
+"text": "Retrigger all card held in hand abilities"
+},
+"j_misprint": {
+"section": "Joker",
+"name": "Misprint",
+"text": ""
+},
+"j_mr_bones": {
+"section": "Joker",
+"name": "Mr. Bones",
+"text": "Prevents Death if chips scored are at least 25% of required chips self destructs"
+},
+"j_mystic_summit": {
+"section": "Joker",
+"name": "Mystic Summit",
+"text": "+? Mult when ? discards remaining"
+},
+"j_obelisk": {
+"section": "Joker",
+"name": "Obelisk",
+"text": "This Joker gains X? Mult per consecutive hand played without playing your most played poker hand (Currently X? Mult)"
+},
+"j_odd_todd": {
+"section": "Joker",
+"name": "Odd Todd",
+"text": "Played cards with odd rank give +? Chips when scored (A, 9, 7, 5, 3)"
+},
+"j_onyx_agate": {
+"section": "Joker",
+"name": "Onyx Agate",
+"text": "Played cards with Club suit give +? Mult when scored"
+},
+"j_oops": {
+"section": "Joker",
+"name": "Oops! All 6s",
+"text": "Doubles all listed probabilities (ex: 1 in 3 -> 2 in 3)"
+},
+"j_order": {
+"section": "Joker",
+"name": "The Order",
+"text": "X? Mult if played hand contains a ?"
+},
+"j_pareidolia": {
+"section": "Joker",
+"name": "Pareidolia",
+"text": "All cards are considered face cards"
+},
+"j_perkeo": {
+"section": "Joker",
+"name": "Perkeo",
+"text": "Creates a Negative copy of 1 random consumable card in your possession at the end of the shop"
+},
+"j_photograph": {
+"section": "Joker",
+"name": "Photograph",
+"text": "First played face card gives X? Mult when scored"
+},
+"j_popcorn": {
+"section": "Joker",
+"name": "Popcorn",
+"text": "+? Mult -? Mult per round played"
+},
+"j_raised_fist": {
+"section": "Joker",
+"name": "Raised Fist",
+"text": "Adds double the rank of lowest ranked card held in hand to Mult"
+},
+"j_ramen": {
+"section": "Joker",
+"name": "Ramen",
+"text": "X? Mult, loses X? Mult per card discarded"
+},
+"j_red_card": {
+"section": "Joker",
+"name": "Red Card",
+"text": "This Joker gains +? Mult when any Booster Pack is skipped (Currently +? Mult)"
+},
+"j_reserved_parking": {
+"section": "Joker",
+"name": "Reserved Parking",
+"text": "Each face card held in hand has a ? in ? chance to give $?"
+},
+"j_ride_the_bus": {
+"section": "Joker",
+"name": "Ride the Bus",
+"text": "This Joker gains +? Mult per consecutive hand played without a scoring face card (Currently +? Mult)"
+},
+"j_riff_raff": {
+"section": "Joker",
+"name": "Riff-Raff",
+"text": "When Blind is selected, create ? Common Jokers (Must have room)"
+},
+"j_ring_master": {
+"section": "Joker",
+"name": "Showman",
+"text": "Joker, Tarot, Planet, and Spectral cards may appear multiple times"
+},
+"j_rocket": {
+"section": "Joker",
+"name": "Rocket",
+"text": "Earn $? at end of round Payout increases by $? when Boss Blind is defeated"
+},
+"j_rough_gem": {
+"section": "Joker",
+"name": "Rough Gem",
+"text": "Played cards with Diamond suit earn $? when scored"
+},
+"j_runner": {
+"section": "Joker",
+"name": "Runner",
+"text": "Gains +? Chips if played hand contains a Straight (Currently +? Chips)"
+},
+"j_satellite": {
+"section": "Joker",
+"name": "Satellite",
+"text": "Earn $? at end of round per unique Planet card used this run (Currently $?)"
+},
+"j_scary_face": {
+"section": "Joker",
+"name": "Scary Face",
+"text": "Played face cards give +? Chips when scored"
+},
+"j_scholar": {
+"section": "Joker",
+"name": "Scholar",
+"text": "Played Aces give +? Chips and +? Mult when scored"
+},
+"j_seance": {
+"section": "Joker",
+"name": "S\u00e9ance",
+"text": "If poker hand is a ?, create a random Spectral card (Must have room)"
+},
+"j_seeing_double": {
+"section": "Joker",
+"name": "Seeing Double",
+"text": "X? Mult if played hand has a scoring Club card and a scoring card of any other suit"
+},
+"j_selzer": {
+"section": "Joker",
+"name": "Seltzer",
+"text": "Retrigger all cards played for the next ? hands"
+},
+"j_shoot_the_moon": {
+"section": "Joker",
+"name": "Shoot the Moon",
+"text": "Each Queen held in hand gives +? Mult"
+},
+"j_shortcut": {
+"section": "Joker",
+"name": "Shortcut",
+"text": "Allows Straights to be made with gaps of 1 rank (ex: 10 8 6 5 3)"
+},
+"j_sixth_sense": {
+"section": "Joker",
+"name": "Sixth Sense",
+"text": "If first hand of round is a single 6, destroy it and create a Spectral card (Must have room)"
+},
+"j_sly": {
+"section": "Joker",
+"name": "Sly Joker",
+"text": "+? Chips if played hand contains a ?"
+},
+"j_smeared": {
+"section": "Joker",
+"name": "Smeared Joker",
+"text": "Hearts and Diamonds count as the same suit, Spades and Clubs count as the same suit"
+},
+"j_smiley": {
+"section": "Joker",
+"name": "Smiley Face",
+"text": "Played face cards give +? Mult when scored"
+},
+"j_sock_and_buskin": {
+"section": "Joker",
+"name": "Sock and Buskin",
+"text": "Retrigger all played face cards"
+},
+"j_space": {
+"section": "Joker",
+"name": "Space Joker",
+"text": "? in ? chance to upgrade level of played poker hand"
+},
+"j_splash": {
+"section": "Joker",
+"name": "Splash",
+"text": "Every played card counts in scoring"
+},
+"j_square": {
+"section": "Joker",
+"name": "Square Joker",
+"text": "This Joker gains +? Chips if played hand has exactly 4 cards (Currently ? Chips)"
+},
+"j_steel_joker": {
+"section": "Joker",
+"name": "Steel Joker",
+"text": "Gives X? Mult for each Steel Card in your full deck (Currently X? Mult)"
+},
+"j_stencil": {
+"section": "Joker",
+"name": "Joker Stencil",
+"text": "X1 Mult for each empty Joker slot Joker Stencil included (Currently X? )"
+},
+"j_stone": {
+"section": "Joker",
+"name": "Stone Joker",
+"text": "Gives +? Chips for each Stone Card in your full deck (Currently +? Chips)"
+},
+"j_stuntman": {
+"section": "Joker",
+"name": "Stuntman",
+"text": "+? Chips, -? hand size"
+},
+"j_supernova": {
+"section": "Joker",
+"name": "Supernova",
+"text": "Adds the number of times poker hand has been played this run to Mult"
+},
+"j_superposition": {
+"section": "Joker",
+"name": "Superposition",
+"text": "Create a Tarot card if poker hand contains an Ace and a Straight (Must have room)"
+},
+"j_swashbuckler": {
+"section": "Joker",
+"name": "Swashbuckler",
+"text": "Adds the sell value of all other owned Jokers to Mult (Currently +? Mult)"
+},
+"j_throwback": {
+"section": "Joker",
+"name": "Throwback",
+"text": "X? Mult for each Blind skipped this run (Currently X? Mult)"
+},
+"j_ticket": {
+"section": "Joker",
+"name": "Golden Ticket",
+"text": "Played Gold cards earn $? when scored"
+},
+"j_to_the_moon": {
+"section": "Joker",
+"name": "To the Moon",
+"text": "Earn an extra $? of interest for every $5 you have at end of round"
+},
+"j_todo_list": {
+"section": "Joker",
+"name": "To Do List",
+"text": "Earn $? if poker hand is a ?, poker hand changes at end of round"
+},
+"j_trading": {
+"section": "Joker",
+"name": "Trading Card",
+"text": "If first discard of round has only 1 card, destroy it and earn $?"
+},
+"j_tribe": {
+"section": "Joker",
+"name": "The Tribe",
+"text": "X? Mult if played hand contains a ?"
+},
+"j_triboulet": {
+"section": "Joker",
+"name": "Triboulet",
+"text": "Played Kings and Queens each give X? Mult when scored"
+},
+"j_trio": {
+"section": "Joker",
+"name": "The Trio",
+"text": "X? Mult if played hand contains a ?"
+},
+"j_troubadour": {
+"section": "Joker",
+"name": "Troubadour",
+"text": "+? hand size, -? hand each round"
+},
+"j_trousers": {
+"section": "Joker",
+"name": "Spare Trousers",
+"text": "This Joker gains +? Mult if played hand contains a ? (Currently +? Mult)"
+},
+"j_turtle_bean": {
+"section": "Joker",
+"name": "Turtle Bean",
+"text": "+? hand size, reduces by ? every round"
+},
+"j_vagabond": {
+"section": "Joker",
+"name": "Vagabond",
+"text": "Create a Tarot card if hand is played with $? or less"
+},
+"j_vampire": {
+"section": "Joker",
+"name": "Vampire",
+"text": "This Joker gains X? Mult per scoring Enhanced card played, removes card Enhancement (Currently X? Mult)"
+},
+"j_walkie_talkie": {
+"section": "Joker",
+"name": "Walkie Talkie",
+"text": "Each played 10 or 4 gives +? Chips and +? Mult when scored"
+},
+"j_wee": {
+"section": "Joker",
+"name": "Wee Joker",
+"text": "This Joker gains +? Chips when each played 2 is scored (Currently +? Chips)"
+},
+"j_wily": {
+"section": "Joker",
+"name": "Wily Joker",
+"text": "+? Chips if played hand contains a ?"
+},
+"j_wrathful_joker": {
+"section": "Joker",
+"name": "Wrathful Joker",
+"text": "Played cards with ? suit give +? Mult when scored"
+},
+"j_yorick": {
+"section": "Joker",
+"name": "Yorick",
+"text": "This Joker gains X? Mult every ? [?] cards discarded (Currently X? Mult)"
+},
+"j_zany": {
+"section": "Joker",
+"name": "Zany Joker",
+"text": "+? Mult if played hand contains a ?"
+},
+"c_ceres": {
+"section": "Planet",
+"name": "Ceres",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_earth": {
+"section": "Planet",
+"name": "Earth",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_eris": {
+"section": "Planet",
+"name": "Eris",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_jupiter": {
+"section": "Planet",
+"name": "Jupiter",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_mars": {
+"section": "Planet",
+"name": "Mars",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_mercury": {
+"section": "Planet",
+"name": "Mercury",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_neptune": {
+"section": "Planet",
+"name": "Neptune",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_planet_x": {
+"section": "Planet",
+"name": "Planet X",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_pluto": {
+"section": "Planet",
+"name": "Pluto",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_saturn": {
+"section": "Planet",
+"name": "Saturn",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_uranus": {
+"section": "Planet",
+"name": "Uranus",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_venus": {
+"section": "Planet",
+"name": "Venus",
+"text": "(lvl.?) Level up ? +? Mult and +? chips"
+},
+"c_ankh": {
+"section": "Spectral",
+"name": "Ankh",
+"text": "Create a copy of a random Joker, destroy all other Jokers"
+},
+"c_aura": {
+"section": "Spectral",
+"name": "Aura",
+"text": "Add Foil, Holographic, or Polychrome effect to 1 selected card in hand"
+},
+"c_black_hole": {
+"section": "Spectral",
+"name": "Black Hole",
+"text": "Upgrade every poker hand by 1 level"
+},
+"c_cryptid": {
+"section": "Spectral",
+"name": "Cryptid",
+"text": "Create ? copies of 1 selected card in your hand"
+},
+"c_deja_vu": {
+"section": "Spectral",
+"name": "Deja Vu",
+"text": "Add a Red Seal to 1 selected card in your hand"
+},
+"c_ectoplasm": {
+"section": "Spectral",
+"name": "Ectoplasm",
+"text": "Add Negative to a random Joker, -? hand size"
+},
+"c_familiar": {
+"section": "Spectral",
+"name": "Familiar",
+"text": "Destroy 1 random card in your hand, add ? random Enhanced face cards to your hand"
+},
+"c_grim": {
+"section": "Spectral",
+"name": "Grim",
+"text": "Destroy 1 random card in your hand, add ? random Enhanced Aces to your hand"
+},
+"c_hex": {
+"section": "Spectral",
+"name": "Hex",
+"text": "Add Polychrome to a random Joker, destroy all other Jokers"
+},
+"c_immolate": {
+"section": "Spectral",
+"name": "Immolate",
+"text": "Destroys ? random cards in hand, gain $?"
+},
+"c_incantation": {
+"section": "Spectral",
+"name": "Incantation",
+"text": "Destroy 1 random card in your hand, add ? random Enhanced numbered cards to your hand"
+},
+"c_medium": {
+"section": "Spectral",
+"name": "Medium",
+"text": "Add a Purple Seal to 1 selected card in your hand"
+},
+"c_ouija": {
+"section": "Spectral",
+"name": "Ouija",
+"text": "Converts all cards in hand to a single random rank -1 hand size"
+},
+"c_sigil": {
+"section": "Spectral",
+"name": "Sigil",
+"text": "Converts all cards in hand to a single random suit"
+},
+"c_soul": {
+"section": "Spectral",
+"name": "The Soul",
+"text": "Creates a Legendary Joker (Must have room)"
+},
+"c_talisman": {
+"section": "Spectral",
+"name": "Talisman",
+"text": "Add a Gold Seal to 1 selected card in your hand"
+},
+"c_trance": {
+"section": "Spectral",
+"name": "Trance",
+"text": "Add a Blue Seal to 1 selected card in your hand"
+},
+"c_wraith": {
+"section": "Spectral",
+"name": "Wraith",
+"text": "Creates a random Rare Joker, sets money to $0"
+},
+"tag_boss": {
+"section": "Tag",
+"name": "Boss Tag",
+"text": "Rerolls the Boss Blind"
+},
+"tag_buffoon": {
+"section": "Tag",
+"name": "Buffoon Tag",
+"text": "Gives a free Mega Buffoon Pack"
+},
+"tag_charm": {
+"section": "Tag",
+"name": "Charm Tag",
+"text": "Gives a free Mega Arcana Pack"
+},
+"tag_coupon": {
+"section": "Tag",
+"name": "Coupon Tag",
+"text": "Initial cards and booster packs in next shop are free"
+},
+"tag_d_six": {
+"section": "Tag",
+"name": "D6 Tag",
+"text": "Rerolls in next shop start at $0"
+},
+"tag_double": {
+"section": "Tag",
+"name": "Double Tag",
+"text": "Gives a copy of the next selected Tag Double Tag excluded"
+},
+"tag_economy": {
+"section": "Tag",
+"name": "Economy Tag",
+"text": "Doubles your money (Max of $?)"
+},
+"tag_ethereal": {
+"section": "Tag",
+"name": "Ethereal Tag",
+"text": "Gives a free Spectral Pack"
+},
+"tag_foil": {
+"section": "Tag",
+"name": "Foil Tag",
+"text": "Next base edition shop Joker is free and becomes Foil"
+},
+"tag_garbage": {
+"section": "Tag",
+"name": "Garbage Tag",
+"text": "Gives $? per unused discard this run (Will give $?)"
+},
+"tag_handy": {
+"section": "Tag",
+"name": "Handy Tag",
+"text": "Gives $? per played hand this run (Will give $?)"
+},
+"tag_holo": {
+"section": "Tag",
+"name": "Holographic Tag",
+"text": "Next base edition shop Joker is free and becomes Holographic"
+},
+"tag_investment": {
+"section": "Tag",
+"name": "Investment Tag",
+"text": "After defeating the Boss Blind, gain $?"
+},
+"tag_juggle": {
+"section": "Tag",
+"name": "Juggle Tag",
+"text": "+? hand size next round"
+},
+"tag_meteor": {
+"section": "Tag",
+"name": "Meteor Tag",
+"text": "Gives a free Mega Celestial Pack"
+},
+"tag_negative": {
+"section": "Tag",
+"name": "Negative Tag",
+"text": "Next base edition shop Joker is free and becomes Negative"
+},
+"tag_orbital": {
+"section": "Tag",
+"name": "Orbital Tag",
+"text": "Upgrade ? by ? levels"
+},
+"tag_polychrome": {
+"section": "Tag",
+"name": "Polychrome Tag",
+"text": "Next base edition shop Joker is free and becomes Polychrome"
+},
+"tag_rare": {
+"section": "Tag",
+"name": "Rare Tag",
+"text": "Shop has a free Rare Joker"
+},
+"tag_skip": {
+"section": "Tag",
+"name": "Speed Tag",
+"text": "Gives $? per skipped Blind this run (Will give $?)"
+},
+"tag_standard": {
+"section": "Tag",
+"name": "Standard Tag",
+"text": "Gives a free Mega Standard Pack"
+},
+"tag_top_up": {
+"section": "Tag",
+"name": "Top-up Tag",
+"text": "Create up to ? Common Jokers (Must have room)"
+},
+"tag_uncommon": {
+"section": "Tag",
+"name": "Uncommon Tag",
+"text": "Shop has a free Uncommon Joker"
+},
+"tag_voucher": {
+"section": "Tag",
+"name": "Voucher Tag",
+"text": "Adds one Voucher to the next shop"
+},
+"c_chariot": {
+"section": "Tarot",
+"name": "The Chariot",
+"text": "Enhances ? selected card into a ?"
+},
+"c_death": {
+"section": "Tarot",
+"name": "Death",
+"text": "Select ? cards, convert the left card into the right card (Drag to rearrange)"
+},
+"c_devil": {
+"section": "Tarot",
+"name": "The Devil",
+"text": "Enhances ? selected card into a ?"
+},
+"c_emperor": {
+"section": "Tarot",
+"name": "The Emperor",
+"text": "Creates up to ? random Tarot cards (Must have room)"
+},
+"c_empress": {
+"section": "Tarot",
+"name": "The Empress",
+"text": "Enhances ? selected cards to ?s"
+},
+"c_fool": {
+"section": "Tarot",
+"name": "The Fool",
+"text": "Creates the last Tarot or Planet card used during this run The Fool excluded"
+},
+"c_hanged_man": {
+"section": "Tarot",
+"name": "The Hanged Man",
+"text": "Destroys up to ? selected cards"
+},
+"c_heirophant": {
+"section": "Tarot",
+"name": "The Hierophant",
+"text": "Enhances ? selected cards to ?s"
+},
+"c_hermit": {
+"section": "Tarot",
+"name": "The Hermit",
+"text": "Doubles money (Max of $?)"
+},
+"c_high_priestess": {
+"section": "Tarot",
+"name": "The High Priestess",
+"text": "Creates up to ? random Planet cards (Must have room)"
+},
+"c_judgement": {
+"section": "Tarot",
+"name": "Judgement",
+"text": "Creates a random Joker card (Must have room)"
+},
+"c_justice": {
+"section": "Tarot",
+"name": "Justice",
+"text": "Enhances ? selected card into a ?"
+},
+"c_lovers": {
+"section": "Tarot",
+"name": "The Lovers",
+"text": "Enhances ? selected card into a ?"
+},
+"c_magician": {
+"section": "Tarot",
+"name": "The Magician",
+"text": "Enhances ? selected cards to ?s"
+},
+"c_moon": {
+"section": "Tarot",
+"name": "The Moon",
+"text": "Converts up to ? selected cards to ?"
+},
+"c_star": {
+"section": "Tarot",
+"name": "The Star",
+"text": "Converts up to ? selected cards to ?"
+},
+"c_strength": {
+"section": "Tarot",
+"name": "Strength",
+"text": "Increases rank of up to ? selected cards by 1"
+},
+"c_sun": {
+"section": "Tarot",
+"name": "The Sun",
+"text": "Converts up to ? selected cards to ?"
+},
+"c_temperance": {
+"section": "Tarot",
+"name": "Temperance",
+"text": "Gives the total sell value of all current Jokers (Max of $?) (Currently $?)"
+},
+"c_tower": {
+"section": "Tarot",
+"name": "The Tower",
+"text": "Enhances ? selected card into a ?"
+},
+"c_wheel_of_fortune": {
+"section": "Tarot",
+"name": "The Wheel of Fortune",
+"text": "? in ? chance to add Foil, Holographic, or Polychrome edition to a random Joker"
+},
+"c_world": {
+"section": "Tarot",
+"name": "The World",
+"text": "Converts up to ? selected cards to ?"
+},
+"v_antimatter": {
+"section": "Voucher",
+"name": "Antimatter",
+"text": "+1 Joker Slot"
+},
+"v_blank": {
+"section": "Voucher",
+"name": "Blank",
+"text": "Does nothing?"
+},
+"v_clearance_sale": {
+"section": "Voucher",
+"name": "Clearance Sale",
+"text": "All cards and packs in shop are ?% off"
+},
+"v_crystal_ball": {
+"section": "Voucher",
+"name": "Crystal Ball",
+"text": "+1 consumable slot"
+},
+"v_directors_cut": {
+"section": "Voucher",
+"name": "Director's Cut",
+"text": "Reroll Boss Blind 1 time per Ante, $? per roll"
+},
+"v_glow_up": {
+"section": "Voucher",
+"name": "Glow Up",
+"text": "Foil, Holographic, and Polychrome cards appear ?X more often"
+},
+"v_grabber": {
+"section": "Voucher",
+"name": "Grabber",
+"text": "Permanently gain +? hand per round"
+},
+"v_hieroglyph": {
+"section": "Voucher",
+"name": "Hieroglyph",
+"text": "-? Ante, -? hand each round"
+},
+"v_hone": {
+"section": "Voucher",
+"name": "Hone",
+"text": "Foil, Holographic, and Polychrome cards appear ?X more often"
+},
+"v_illusion": {
+"section": "Voucher",
+"name": "Illusion",
+"text": "Playing cards in shop may have an Enhancement, Edition, and/or a Seal"
+},
+"v_liquidation": {
+"section": "Voucher",
+"name": "Liquidation",
+"text": "All cards and packs in shop are ?% off"
+},
+"v_magic_trick": {
+"section": "Voucher",
+"name": "Magic Trick",
+"text": "Playing cards can be purchased from the shop"
+},
+"v_money_tree": {
+"section": "Voucher",
+"name": "Money Tree",
+"text": "Raise the cap on interest earned in each round to $?"
+},
+"v_nacho_tong": {
+"section": "Voucher",
+"name": "Nacho Tong",
+"text": "Permanently gain +? hand per round"
+},
+"v_observatory": {
+"section": "Voucher",
+"name": "Observatory",
+"text": "Planet cards in your consumable area give X? Mult for their specified poker hand"
+},
+"v_omen_globe": {
+"section": "Voucher",
+"name": "Omen Globe",
+"text": "Spectral cards may appear in any of the Arcana Packs"
+},
+"v_overstock_norm": {
+"section": "Voucher",
+"name": "Overstock",
+"text": "+1 card slot available in shop"
+},
+"v_overstock_plus": {
+"section": "Voucher",
+"name": "Overstock Plus",
+"text": "+1 card slot available in shop"
+},
+"v_paint_brush": {
+"section": "Voucher",
+"name": "Paint Brush",
+"text": "+? hand size"
+},
+"v_palette": {
+"section": "Voucher",
+"name": "Palette",
+"text": "+? hand size"
+},
+"v_petroglyph": {
+"section": "Voucher",
+"name": "Petroglyph",
+"text": "-? Ante, -? discard each round"
+},
+"v_planet_merchant": {
+"section": "Voucher",
+"name": "Planet Merchant",
+"text": "Planet cards appear ?X more frequently in the shop"
+},
+"v_planet_tycoon": {
+"section": "Voucher",
+"name": "Planet Tycoon",
+"text": "Planet cards appear ?X more frequently in the shop"
+},
+"v_recyclomancy": {
+"section": "Voucher",
+"name": "Recyclomancy",
+"text": "Permanently gain +? discard each round"
+},
+"v_reroll_glut": {
+"section": "Voucher",
+"name": "Reroll Glut",
+"text": "Rerolls cost $? less"
+},
+"v_reroll_surplus": {
+"section": "Voucher",
+"name": "Reroll Surplus",
+"text": "Rerolls cost $? less"
+},
+"v_retcon": {
+"section": "Voucher",
+"name": "Retcon",
+"text": "Reroll Boss Blind unlimited times, $? per roll"
+},
+"v_seed_money": {
+"section": "Voucher",
+"name": "Seed Money",
+"text": "Raise the cap on interest earned in each round to $?"
+},
+"v_tarot_merchant": {
+"section": "Voucher",
+"name": "Tarot Merchant",
+"text": "Tarot cards appear ?X more frequently in the shop"
+},
+"v_tarot_tycoon": {
+"section": "Voucher",
+"name": "Tarot Tycoon",
+"text": "Tarot cards appear ?X more frequently in the shop"
+},
+"v_telescope": {
+"section": "Voucher",
+"name": "Telescope",
+"text": "Celestial Packs always contain the Planet card for your most played poker hand"
+},
+"v_wasteful": {
+"section": "Voucher",
+"name": "Wasteful",
+"text": "Permanently gain +? discard each round"
+},
+"m_bonus": {
+"section": "Enhanced",
+"name": "Bonus Card",
+"text": ""
+},
+"m_glass": {
+"section": "Enhanced",
+"name": "Glass Card",
+"text": "X? Mult ? in ? chance to destroy card"
+},
+"m_gold": {
+"section": "Enhanced",
+"name": "Gold Card",
+"text": "$? if this card is held in hand at end of round"
+},
+"m_lucky": {
+"section": "Enhanced",
+"name": "Lucky Card",
+"text": "? in ? chance for +? Mult ? in ? chance to win $?"
+},
+"m_mult": {
+"section": "Enhanced",
+"name": "Mult Card",
+"text": "+? Mult"
+},
+"m_steel": {
+"section": "Enhanced",
+"name": "Steel Card",
+"text": "X? Mult while this card stays in hand"
+},
+"m_stone": {
+"section": "Enhanced",
+"name": "Stone Card",
+"text": "+? Chips no rank or suit"
+},
+"m_wild": {
+"section": "Enhanced",
+"name": "Wild Card",
+"text": "Can be used as any suit"
+},
+"e_base": {
+"section": "Edition",
+"name": "Base",
+"text": "No extra effects"
+},
+"e_foil": {
+"section": "Edition",
+"name": "Foil",
+"text": "+? chips"
+},
+"e_holo": {
+"section": "Edition",
+"name": "Holographic",
+"text": "+? Mult"
+},
+"e_negative": {
+"section": "Edition",
+"name": "Negative",
+"text": "+? Joker slot"
+},
+"e_negative_consumable": {
+"section": "Edition",
+"name": "Negative",
+"text": "+? consumable slot"
+},
+"e_polychrome": {
+"section": "Edition",
+"name": "Polychrome",
+"text": "X? Mult"
+}
+}

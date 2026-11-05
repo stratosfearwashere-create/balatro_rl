@@ -317,6 +317,12 @@ static const int VOCAB_PLAYING_CARD = 2;
 
 static const int16_t JOKERS_SORTED[J_COUNT] = {101, 21, 67, 94, 79, 143, 16, 93, 122, 69, 81, 27, 96, 64, 97, 63, 103, 144, 38, 145, 126, 61, 142, 125, 36, 99, 130, 46, 148, 12, 84, 59, 14, 8, 98, 37, 13, 123, 104, 141, 9, 45, 88, 57, 34, 117, 22, 39, 90, 54, 82, 71, 47, 55, 115, 132, 4, 33, 1, 28, 35, 56, 15, 118, 51, 60, 138, 111, 29, 87, 140, 0, 5, 119, 77, 114, 121, 2, 7, 107, 49, 100, 137, 135, 113, 70, 18, 128, 17, 95, 23, 80, 136, 91, 86, 149, 42, 30, 19, 74, 53, 50, 26, 109, 133, 62, 78, 43, 85, 20, 24, 108, 72, 75, 41, 66, 105, 10, 65, 32, 68, 58, 52, 44, 102, 76, 120, 139, 25, 106, 40, 131, 127, 83, 48, 124, 92, 146, 89, 129, 73, 116, 112, 110, 31, 134, 11, 3, 147, 6};
 static const int EDITION_COST[5] = {0, 2, 3, 5, 5};
+// how a joker's position matters (env.py swap_role): 3 acts on a neighbour, 2 multiplier, 1 additive mult
+static const int8_t JOKER_SWAP_ROLE[J_COUNT] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 2, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 1, 0, 0, 2, 0, 2, 0, 2, 2, 1, 2, 0, 2, 2, 0, 0, 1, 2, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 0, 3, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 2, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 0, 0, 2, 0, 0, 0, 2, 2, 2, 0, 0};
+// the growth of a growing joker's counter if its events happen, and the counter before it has one (marginal.py)
+static const bool JOKER_POT_ON[J_COUNT] = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, true, false, false, false, true, true, false, false, false, false, false, true, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false};
+static const double JOKER_POT_DELTA[J_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 9.0, 0.0, 12.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 45.0, 24.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 13.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.30000000000000004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.2000000000000002, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6000000000000001, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.75, 0.0, 0.0, 0.0, 27.0, 0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 1.125, 0.0, 24.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+static const double JOKER_POT_VAL0[J_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
 enum ConsId : int8_t {
     C_NONE = -1,
@@ -562,7 +568,8 @@ static const int8_t TAG_MIN_ANTE[T_COUNT] = {1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1,
 
 enum DeckId : int8_t { D_RED = 0, D_BLUE = 1, D_YELLOW = 2, D_GREEN = 3, D_BLACK = 4, D_MAGIC = 5, D_NEBULA = 6, D_GHOST = 7, D_ABANDONED = 8, D_CHECKERED = 9, D_ZODIAC = 10, D_PAINTED = 11, D_ANAGLYPH = 12, D_PLASMA = 13, D_ERRATIC = 14, D_COUNT = 15 };
 static const char* const DECK_KEYS[D_COUNT] = {"RED", "BLUE", "YELLOW", "GREEN", "BLACK", "MAGIC", "NEBULA", "GHOST", "ABANDONED", "CHECKERED", "ZODIAC", "PAINTED", "ANAGLYPH", "PLASMA", "ERRATIC"};
-static const char* const STAKE_KEYS[8] = {"WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD"};
+static const int N_STAKES = 9;
+static const char* const STAKE_KEYS[N_STAKES] = {"WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD", "DIAMOND"};
 
 enum BossId : int8_t {
     B_NONE = -1,
@@ -631,5 +638,36 @@ static const BossDef BOSS_DEFS[B_COUNT] = {
 
 static const int BLIND_BASE[3][8] = {{300, 800, 2000, 5000, 11000, 20000, 35000, 50000}, {300, 900, 2600, 8000, 20000, 36000, 60000, 100000}, {300, 1000, 3200, 9000, 25000, 60000, 110000, 200000}};
 static const int VOCAB_SIZE = 279;
+
+// ---- the real game's pools, in the game's order (exact-seed mode)
+static const int16_t POOL_J1[61] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 98, 16, 17, 101, 18, 19, 46, 20, 21, 37, 35, 22, 23, 24, 38, 25, 26, 34, 43, 29, 52, 27, 39, 28, 106, 48, 36, 53, 44, 109, 42, 50, 49, 118, 47, 119, 45, 33, 30, 31, 32, 127, 40, 51, 41};
+static const int16_t POOL_J2[64] = {76, 55, 70, 99, 100, 77, 57, 54, 102, 56, 86, 58, 103, 69, 105, 59, 60, 61, 107, 108, 110, 66, 111, 84, 62, 113, 114, 115, 116, 117, 83, 120, 121, 63, 123, 124, 82, 73, 74, 75, 125, 128, 67, 68, 129, 130, 65, 131, 78, 81, 79, 80, 132, 133, 71, 135, 136, 87, 72, 137, 85, 142, 143, 64};
+static const int16_t POOL_J3[20] = {104, 112, 93, 95, 122, 94, 126, 96, 134, 138, 88, 89, 90, 91, 92, 139, 140, 97, 141, 144};
+static const int16_t POOL_J4[5] = {145, 146, 147, 148, 149};
+static const int N_POOL_J[4] = {61, 64, 20, 5};
+static const int16_t* const POOL_J[4] = {POOL_J1, POOL_J2, POOL_J3, POOL_J4};
+static const int N_POOL_TAROT = 22;
+static const int8_t POOL_TAROT[22] = {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33};
+struct PlanetPool { int8_t cons; bool softlock; int8_t hand; };
+static const int N_POOL_PLANET = 12;
+static const PlanetPool POOL_PLANET[12] = {{1, false, 1}, {3, false, 3}, {6, false, 6}, {7, false, 7}, {5, false, 5}, {4, false, 4}, {2, false, 2}, {8, false, 8}, {0, false, 0}, {9, true, 9}, {10, true, 10}, {11, true, 11}};
+static const int N_POOL_SPECTRAL = 18;
+static const int8_t POOL_SPECTRAL[18] = {34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 50};
+static const int N_POOL_VOUCHER = 32;
+static const int8_t POOL_VOUCHER[32] = {0, 16, 1, 17, 2, 18, 3, 19, 4, 31, 5, 20, 6, 21, 7, 22, 8, 23, 9, 24, 10, 25, 11, 26, 13, 28, 12, 27, 14, 29, 15, 30};
+struct BoosterPool { int8_t pack; int8_t kind; double weight; };
+static const int N_POOL_BOOSTER = 32;
+static const BoosterPool POOL_BOOSTER[32] = {{0, 0, 1.0}, {0, 0, 1.0}, {0, 0, 1.0}, {0, 0, 1.0}, {1, 0, 1.0}, {1, 0, 1.0}, {2, 0, 0.25}, {2, 0, 0.25}, {3, 1, 1.0}, {3, 1, 1.0}, {3, 1, 1.0}, {3, 1, 1.0}, {4, 1, 1.0}, {4, 1, 1.0}, {5, 1, 0.25}, {5, 1, 0.25}, {6, 2, 1.0}, {6, 2, 1.0}, {6, 2, 1.0}, {6, 2, 1.0}, {7, 2, 1.0}, {7, 2, 1.0}, {8, 2, 0.25}, {8, 2, 0.25}, {9, 3, 0.6}, {9, 3, 0.6}, {10, 3, 0.6}, {11, 3, 0.15}, {12, 4, 0.3}, {12, 4, 0.3}, {13, 4, 0.3}, {14, 4, 0.07}};
+struct TagPool { int8_t tag; int8_t min_ante; };
+static const int N_POOL_TAG = 24;
+static const TagPool POOL_TAG[24] = {{2, 0}, {3, 0}, {7, 2}, {4, 0}, {5, 0}, {6, 0}, {1, 0}, {19, 0}, {22, 0}, {20, 2}, {10, 0}, {9, 2}, {8, 2}, {15, 2}, {16, 2}, {21, 2}, {11, 0}, {18, 0}, {23, 0}, {12, 0}, {13, 2}, {14, 0}, {17, 2}, {0, 0}};
+struct BossPool { int8_t boss; int8_t min_ante; bool showdown; };
+static const int N_POOL_BOSS = 28;
+static const BossPool POOL_BOSS[28] = {{3, 2, false}, {4, 1, false}, {11, 3, false}, {26, 10, true}, {27, 10, true}, {25, 10, true}, {24, 10, true}, {23, 10, true}, {21, 2, false}, {17, 2, false}, {5, 1, false}, {7, 1, false}, {0, 1, false}, {19, 2, false}, {10, 1, false}, {22, 2, false}, {12, 2, false}, {16, 2, false}, {1, 6, false}, {15, 1, false}, {13, 4, false}, {8, 1, false}, {14, 5, false}, {18, 3, false}, {2, 2, false}, {9, 2, false}, {20, 2, false}, {6, 1, false}};
+// jokers that only enter the pool when the deck has a card with this enhancement (Enh enum), else 0
+static const int8_t JOKER_GATE[J_COUNT] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 8, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const int8_t POOL_ENH[8] = {0, 1, 2, 3, 4, 5, 6, 7};      // BONUS MULT WILD GLASS STEEL STONE GOLD LUCKY
+static const int8_t P_CARD_SUIT[52] = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const int8_t P_CARD_RANK[52] = {2, 3, 4, 5, 6, 7, 8, 9, 14, 11, 13, 12, 10, 2, 3, 4, 5, 6, 7, 8, 9, 14, 11, 13, 12, 10, 2, 3, 4, 5, 6, 7, 8, 9, 14, 11, 13, 12, 10, 2, 3, 4, 5, 6, 7, 8, 9, 14, 11, 13, 12, 10};
 
 }  // namespace bal

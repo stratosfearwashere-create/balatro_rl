@@ -104,7 +104,7 @@ def global_feats(w: World) -> np.ndarray:
     unseen = len(g.deck) + sum(1 for c in g.hand if c.hidden) if in_round else len(g.full_deck)
     f += [unseen / 52, len(g.full_deck) / 52, g.tarots_used / 20, len(g.planets_used) / 12,
           g.furthest_blind / 24, g.total_hands_played / 100]
-    f += [float(g.deck_type == d) for d in DECKS] + [float(g.stake == i) for i in range(len(STAKES))]
+    f += [float(g.deck_type == d) for d in DECKS] + [float(g.stake == i) for i in range(8)]       # (the game's eight: the feature layout predates Diamond)
     f += [float(g.targeting is not None)]
     return np.asarray(f, dtype=np.float32)
 

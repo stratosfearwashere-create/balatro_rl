@@ -1,0 +1,3 @@
+{"game": 0, "blinds": 1.0, "won": false, "ante": 1, "min": 0.8}
+{"game": 1, "blinds": 6.0, "won": false, "ante": 3, "min": 3.8}
+{"games": 2, "blinds": 3.5, "wins": 0, "minutes": 3.8, "model": "claude-opus-5-5", "effort": "high", "usage": {"calls": 28, "input": 56, "cache_read": 146978, "cache_write": 64134, "output": 20859, "cost_equiv": 0.9598715999999999}}

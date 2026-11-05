@@ -27,7 +27,19 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from eval_policy import play                                 # noqa: E402
+from eval_policy import play as _play                        # noqa: E402
+
+
+def play(ckpt, games, seed0, deck, stake, greedy, device, chunk=250):
+    """eval_policy.play in chunks of games (the same seeds), and the GPU's cache released after: a thousand
+    games at once left several GB cached beside the trainer, which then spilled to shared memory and crawled."""
+    bl, wn = [], []
+    for s0 in range(seed0, seed0 + games, chunk):
+        b, w = _play(ckpt, min(chunk, seed0 + games - s0), s0, deck, stake, greedy, device)
+        bl.append(b); wn.append(w)
+    if device.startswith("cuda"):
+        torch.cuda.empty_cache()
+    return np.concatenate(bl), np.concatenate(wn)
 
 
 def trained(logs: list[str]) -> dict:
@@ -74,6 +86,39 @@ def evaluate(ckpt: str, a) -> dict:
     return row
 
 
+STAKES = ("WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD", "DIAMOND")   # DIAMOND: simulator only
+
+
+def evaluate_stakes(ckpt: str, a) -> dict:
+    """Greedy win rate and blinds on every stake (the same seeds on each), for a run that trains on a mix."""
+    snap = ckpt + ".stakecopy"
+    shutil.copy(ckpt, snap)
+    row = {"time": time.strftime("%Y-%m-%d %H:%M"), "games_eval": a.games, "seed0": a.seed0, "stakes": {}}
+    row.update({f"trained_{k}": v for k, v in trained(a.logs).items()})
+    for st in STAKES:
+        b, w = play(snap, a.games, a.seed0, a.deck, st, True, a.device)
+        ante = 1 + np.minimum(b, 23) // 3
+        row["stakes"][st] = {"win%": round(100 * float(w.mean()), 2), "wins": int(w.sum()),
+                             "blinds": round(float(b.mean()), 3), "ante6+%": round(100 * float((ante >= 6).mean()), 1)}
+    os.remove(snap)
+    return row
+
+
+def show_stakes(path: str):
+    rows = [json.loads(l) for l in open(path) if l.strip()] if os.path.exists(path) else []
+    if not rows:
+        print("no per-stake evaluations yet")
+        return
+    print(f"greedy win% by stake ({rows[-1]['games_eval']} games each on seeds {rows[-1]['seed0']}.., real game)")
+    print(f"{'when':>16} {'trained games':>14} | " + " ".join(f"{s[:6]:>7}" for s in STAKES))
+    for r in rows:
+        print(f"{r['time']:>16} {r.get('trained_games', 0):>14,} | "
+              + " ".join(f"{r['stakes'][s]['win%']:7.1f}" if s in r["stakes"] else f"{'-':>7}" for s in STAKES))
+    last = rows[-1]["stakes"]
+    print(f"{'latest blinds':>31} | " + " ".join(f"{last[s]['blinds']:7.2f}" if s in last else f"{'-':>7}" for s in STAKES))
+    print(f"{'latest ante 6+ %':>31} | " + " ".join(f"{last[s]['ante6+%']:7.1f}" if s in last else f"{'-':>7}" for s in STAKES))
+
+
 def show(path: str, baseline: dict | None = None):
     rows = [json.loads(l) for l in open(path) if l.strip()] if os.path.exists(path) else []
     if not rows:
@@ -108,6 +153,9 @@ def main():
     p.add_argument("--stake", default="WHITE")
     p.add_argument("--every", type=float, default=0.0, help="minutes between evaluations (0: once)")
     p.add_argument("--show", action="store_true", help="print the history without evaluating")
+    p.add_argument("--stakes-every", type=int, default=0,
+                   help="also score every stake on each N-th evaluation (0: never), into <checkpoint>_stakes.jsonl")
+    p.add_argument("--stakes", action="store_true", help="score every stake now (or with --show: print that history)")
     p.add_argument("--baseline", default="", help="another checkpoint, scored once on the same seeds")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = p.parse_args()
@@ -122,8 +170,16 @@ def main():
         json.dump(base, open(bpath, "w"))
     elif os.path.exists(bpath):
         base = json.load(open(bpath))
+    sout = a.checkpoint.replace(".pt", "_stakes.jsonl")
     if a.show:
+        if a.stakes:
+            return show_stakes(sout)
         return show(out, base)
+    if a.stakes and a.every <= 0:
+        with open(sout, "a") as f:
+            f.write(json.dumps(evaluate_stakes(a.checkpoint, a)) + "\n")
+        return show_stakes(sout)
+    cycle = 0
     last_mtime = -1.0
     while True:
         while not os.path.exists(a.checkpoint):         # a run that has not saved yet
@@ -135,6 +191,10 @@ def main():
             with open(out, "a") as f:
                 f.write(json.dumps(row) + "\n")
             show(out, base)
+            cycle += 1
+            if a.stakes_every > 0 and cycle % a.stakes_every == 0:
+                with open(sout, "a") as f:
+                    f.write(json.dumps(evaluate_stakes(a.checkpoint, a)) + "\n")
         if a.every <= 0:
             break
         time.sleep(a.every * 60)

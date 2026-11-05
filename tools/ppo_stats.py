@@ -5,6 +5,9 @@
 
 Columns: wall time, games played so far, blinds / ante / win rate over the last games (the log's window),
 how far the games of that stretch got (share lost in antes 1-2, 3-5, 6-8, and won), policy entropy, speed.
+With the money curriculum (train.py --money-target) three more: the extra dollars rich games start with now,
+their win rate on the target stake (smoothed), and the win rate from the normal start over the stretch. The
+blinds / ante / win% columns then mix both kinds of game.
 """
 from __future__ import annotations
 
@@ -31,8 +34,11 @@ def main():
     if not rows:
         raise SystemExit("empty log")
     edges = np.unique(np.linspace(0, len(rows), min(a.rows, len(rows)) + 1).astype(int))
+    money = any(r.get("rich_win", 0) > 0 for r in rows)      # only a run on the money curriculum
     print(f"{'time':>7} {'games':>10} {'steps':>12} {'blinds':>7} {'ante':>5} {'win%':>6} | "
-          f"{'a1-2':>5} {'a3-5':>5} {'a6-8':>5} {'won':>5} | {'entropy':>7} {'kl':>7} {'steps/s':>8}")
+          f"{'a1-2':>5} {'a3-5':>5} {'a6-8':>5} {'won':>5} | {'entropy':>7} {'kl':>7} {'steps/s':>8}"
+          + (f" | {'extra $':>8} {'rich win%':>9} {'$4 win%':>8} {'$4 games':>9}" if money else ""))
+    prev = {}
     for lo, hi in zip(edges[:-1], edges[1:]):
         part = rows[lo:hi]
         r = part[-1]
@@ -43,11 +49,19 @@ def main():
               f"{r.get('blinds', 0):7.2f} {r.get('ante', 0):5.2f} {r.get('win%', 0):6.2f} | "
               f"{100 * h[0:2].sum() / tot:5.1f} {100 * h[2:5].sum() / tot:5.1f} {100 * h[5:8].sum() / tot:5.1f} "
               f"{100 * h[8] / tot:5.1f} | {np.mean([x['ent'] for x in part]):7.3f} "
-              f"{np.mean([x['kl'] for x in part]):7.4f} {r.get('sps', 0):>8,}")
+              f"{np.mean([x['kl'] for x in part]):7.4f} {r.get('sps', 0):>8,}"
+              + (f" | {r.get('money_extra', 0):8.0f} {100 * r.get('rich_win', 0):9.1f} "
+                 f"{100 * (r.get('normal_wins', 0) - prev.get('normal_wins', 0)) / max(1, r.get('normal_games', 0) - prev.get('normal_games', 0)):8.2f} "
+                 f"{r.get('normal_games', 0) - prev.get('normal_games', 0):>9,}" if money else ""))
+        prev = r
     last = rows[-1]
     best = max(rows, key=lambda x: x.get("blinds", 0))
     print(f"\nnow: {last.get('games', 0):,} games, {last.get('wins', 0):,} wins in total; "
           f"best window {best.get('blinds', 0):.2f} blinds at {best.get('games', 0):,} games")
+    if money:
+        print(f"money curriculum: rich games start with ${last['money_extra']:.0f} extra and win {100 * last['rich_win']:.1f}% on the "
+              f"target stake; from the normal start: {last.get('normal_wins', 0):,} wins in {last.get('normal_games', 0):,} games "
+              f"({100 * last.get('normal_wins', 0) / max(1, last.get('normal_games', 0)):.2f}%)")
 
 
 if __name__ == "__main__":

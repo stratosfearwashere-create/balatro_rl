@@ -1,0 +1,16 @@
+{
+  "A": 1.83,
+  "B": 2.53,
+  "c": [
+    1.190115,
+    0.0,
+    0.0,
+    -0.07209
+  ],
+  "win_bonus": 10.0,
+  "samples": 8,
+  "g_shrink": 0.8999999999999999,
+  "note": "growth per ante only (no money / open-slot terms: the search read them as \"do not buy\")",
+  "crn": 1,
+  "crn_seed": 12345
+}

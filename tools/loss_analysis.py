@@ -30,10 +30,79 @@ ECON = {"golden", "rocket", "business", "mail", "reserved_parking", "trading", "
 BLIND = ("small", "big", "boss")
 
 
-def play(path: str, games: int, seed0: int, deck: str, stake: str, device: str) -> list[dict]:
+def action_kind(ai: int) -> str:
+    """The kind of an action index, from the environment's own layout (it moves when a slot count changes)."""
+    from balatro_rl import env as E
+    if ai < E.A_SELECT:
+        return "play" if ai < E.A_DISC else "discard"
+    for lo, hi, name in ((E.A_SELECT, E.A_SELECT + 1, "select"), (E.A_SKIP, E.A_SKIP + 1, "skip"), (E.A_REROLL_BOSS, E.A_REROLL_BOSS + 1, "reroll_boss"), (E.A_BUY, E.A_BUY_PACK, "buy"),
+                         (E.A_BUY_PACK, E.A_VOUCHER, "buy_pack"), (E.A_VOUCHER, E.A_REROLL, "voucher"), (E.A_REROLL, E.A_REROLL + 1, "reroll"), (E.A_LEAVE, E.A_LEAVE + 1, "leave"),
+                         (E.A_SELL_J, E.A_SELL_C, "sell_joker"), (E.A_SELL_C, E.A_USE_C, "sell_cons"), (E.A_USE_C, E.A_PICK, "use"), (E.A_PICK, E.A_PSKIP, "pick"), (E.A_PSKIP, E.A_PSKIP + 1, "pack_skip"),
+                         (E.A_SWAP, E.A_REPLACE, "swap")):
+        if lo <= ai < hi:
+            return name
+    return "replace"
+
+
+def play_exact(path: str, games: int, seed0: int, deck: str, stake: str, device: str) -> list[dict]:
+    """Exact-seed games with the privileged observation on (a network that reads the future list): the games are played together in a
+    vector environment, greedily, and each one's actions are then replayed in a single environment for its end state."""
+    from balatro_rl.engine_env import CppVecEnv
     model = load_model(path, device)
+    v = CppVecEnv(games, deck, stake, seed0=seed0, threads=0)
+    if getattr(model, "marg", 0):
+        v.set_marginal(int(model.marg))
+    v.set_exact(True)
+    v.v.restart()
+    v.set_priv(True)
+    lines = [[] for _ in range(games)]
+    live = np.ones(games, dtype=bool)
+    while live.any():
+        idx = np.nonzero(live)[0]
+        batch = {k: torch.from_numpy(np.array(v.obs[k])[idx]).to(device) for k in OBS_KEYS}
+        with torch.no_grad():
+            logits, _ = model(batch)
+        act = np.full(games, -1, dtype=np.int64)               # (a finished game has been reset: leave it alone)
+        act[idx] = logits.argmax(1).cpu().numpy()
+        for i in idx:
+            lines[i].append(int(act[i]))
+        _, done, _ = v.step(act)
+        live &= ~np.asarray(done, dtype=bool)
+    out = []
+    for i in range(games):
+        e = CppEnv(deck, stake)
+        e.e.exact = True
+        e.reset(seed0 + i)
+        acts, mx = Counter(), 0
+        for ai in lines[i]:
+            acts[action_kind(ai)] += 1
+            _, _, done, _ = e.step(ai)
+            mx = max(mx, int(e.game.money))
+            if done:
+                break
+        d = e.game.dump()
+        d["won"] = d["state"] == "WON"
+        d["acts"] = dict(acts)
+        d["steps"] = len(lines[i])
+        d["max_money"] = mx
+        out.append(d)
+    return out
+
+
+def play(path: str, games: int, seed0: int, deck: str, stake: str, device: str, money=None) -> list[dict]:
+    model = load_model(path, device)
+    if getattr(model, "priv", 0):
+        del model
+        return play_exact(path, games, seed0, deck, stake, device)
     envs = [CppEnv(deck, stake) for _ in range(games)]
+    if getattr(model, "marg", 0):                              # a network made with the marginal-value inputs
+        for e in envs:
+            e.e.marginal = int(model.marg)
     obs = [e.reset(seed0 + i) for i, e in enumerate(envs)]
+    if money is not None:                          # every game starts with this much (a rich start)
+        for i, e in enumerate(envs):
+            e.game.money = money
+            obs[i] = e.e.observe()
     live = list(range(games))
     out = [None] * games
     acts = [Counter() for _ in range(games)]
@@ -47,12 +116,7 @@ def play(path: str, games: int, seed0: int, deck: str, stake: str, device: str) 
         nxt = []
         for i, ai in zip(live, a):
             ai = int(ai)
-            kind = ("play" if ai < 218 else "discard" if ai < 436 else
-                    {436: "select", 437: "skip", 438: "reroll_boss"}.get(ai) or
-                    ("buy" if ai < 443 else "buy_pack" if ai < 445 else "voucher" if ai < 447 else "reroll" if ai == 447
-                     else "leave" if ai == 448 else "sell_joker" if ai < 457 else "sell_cons" if ai < 460
-                     else "use" if ai < 463 else "pick" if ai < 468 else "pack_skip" if ai == 468
-                     else "swap" if ai < 476 else "replace"))
+            kind = action_kind(ai)
             acts[i][kind] += 1
             steps[i] += 1
             o, r, done, info = envs[i].step(ai)
@@ -139,8 +203,9 @@ def main():
     p.add_argument("--stake", default="WHITE")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--save", default="", help="write the end states to this JSON file")
+    p.add_argument("--money", type=int, default=None, help="every game starts with this much money")
     a = p.parse_args()
-    gs = play(a.checkpoint, a.games, a.seed0, a.deck, a.stake, a.device)
+    gs = play(a.checkpoint, a.games, a.seed0, a.deck, a.stake, a.device, a.money)
     if a.save:
         json.dump(gs, open(a.save, "w"))
     wins = [g for g in gs if g["won"]]
@@ -179,7 +244,7 @@ def main():
     early = [g for g in losses if g["ante"] <= 3]
     cols = [("wins", build_stats(wins)), ("lost ante 6-8", build_stats(late)), ("lost ante 4-5", build_stats([g for g in losses if 4 <= g["ante"] <= 5])),
             ("lost ante 1-3", build_stats(early))]
-    keys = list(cols[0][1]) if cols[0][1] else list(cols[1][1])
+    keys = next((list(st) for _, st in cols if st), [])               # the row names: from whichever column has games
     print(f"  {'':46s}" + "".join(f"{name:>15s}" for name, _ in cols))
     for k in keys:
         print(f"  {k:46s}" + "".join(f"{(st.get(k, float('nan'))):15.2f}" for _, st in cols))

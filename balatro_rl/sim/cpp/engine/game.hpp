@@ -20,6 +20,7 @@
 
 #include "../pyrandom.hpp"
 #include "tables_gen.hpp"
+#include "exact.hpp"
 
 namespace bal {
 
@@ -32,7 +33,7 @@ enum State : uint8_t { ST_BLIND_SELECT = 0, ST_SELECTING_HAND, ST_SHOP, ST_PACK,
 enum Hand { HC = 0, PAIR, TWO_PAIR, TRIPS, STRAIGHT, FLUSH, FULL_HOUSE, QUADS, STRAIGHT_FLUSH, FIVE_KIND,
             FLUSH_HOUSE, FLUSH_FIVE, N_HANDS };
 
-static const int MAX_HAND = 16, MAX_JOKERS = 8, MAX_CONSUMABLES = 3, MAX_SHOP = 4, MAX_PACK = 5, MAX_VOUCHERS = 2;
+static const int MAX_HAND = 16, MAX_JOKERS = 8, MAX_CONSUMABLES = 3, MAX_SHOP = 24, MAX_PACK = 5, MAX_VOUCHERS = 2;
 static const int WIN_ANTE = 8;
 static const int MAXJ = 64;                 // jokers a plan can hold (Negative jokers grow the slots)
 
@@ -272,7 +273,10 @@ struct Plan {
 };
 
 enum EvKind : uint8_t { EV_CREATE = 0, EV_DNA, EV_DESTROY };
-struct ScoreEvent { uint8_t type; int arg; };          // create: consumable kind; dna / destroy: card id
+struct ScoreEvent { uint8_t type; int arg; };          // create: consumable kind | (stream name << 4); dna / destroy: card id
+// the game's names for the random streams of the consumables and jokers that effects create (exact-seed mode)
+enum Src { SRC_SHO = 0, SRC_8BA, SRC_SIXTH, SRC_SUP, SRC_SEA, SRC_VAG, SRC_CAR, SRC_PRI, SRC_EMP, SRC_HAL, N_SRC };
+static const char* const SRC_KEYS[N_SRC] = {"sho", "8ba", "sixth", "sup", "sea", "vag", "car", "pri", "emp", "hal"};
 
 struct Game;
 
@@ -322,14 +326,19 @@ struct ScoreCtx {
     void add_chips(double x) { chips += x; }
     void add_mult(double x) { mult += x; }
     void x_mult(double x) { mult *= x; }
-    void x_chance(double x, double p) {
+    // a roll on the game's named stream `key` in exact-seed mode (defined after Game), else the plain generator
+    inline double roll(const char* key);
+    inline int roll_int(const char* key, int lo, int hi);
+    // the game rolls for a created consumable only while there is room (the cards plus those pending from this hand)
+    inline bool cons_room_for_more() const;
+    void x_chance(double x, double p, const char* key = nullptr) {
         if (!rng) mult *= 1 + (x - 1) * p;
-        else if (rng->random() < p) mult *= x;
+        else if (roll(key) < p) mult *= x;
     }
     void money_now(double x) { money += x; }
-    void money_chance(double x, double p) {
+    void money_chance(double x, double p, const char* key = nullptr) {
         if (!rng) money += x * p;
-        else if (rng->random() < p) money += x;
+        else if (roll(key) < p) money += x;
     }
     void event(uint8_t type, int arg) {
         if (!rng) return;
@@ -348,6 +357,31 @@ struct ScoreResult {
 };
 
 // ------------------------------------------------------------------ the game
+// the counter of a joker that has been owned for k rounds: init + per_round * k, kept inside [lo, hi] (init is what hook_init gives it)
+struct ScnGrow { int16_t key; double init, per_round, lo, hi; };
+static const ScnGrow SCN_GROW[] = {
+    {J_RIDE_THE_BUS, 0, 2.5, 0, 40}, {J_GREEN_JOKER, 0, 2, 0, 60}, {J_RUNNER, 0, 10, 0, 400}, {J_SQUARE, 0, 8, 0, 300},
+    {J_RED_CARD, 0, 3, 0, 60}, {J_TROUSERS, 0, 2, 0, 60}, {J_FLASH, 0, 6, 0, 120}, {J_WEE, 0, 8, 0, 300},
+    {J_CASTLE, 0, 5, 0, 200}, {J_CONSTELLATION, 1, 0.12, 1, 6}, {J_OBELISK, 1, 0.25, 1, 8}, {J_VAMPIRE, 1, 0.15, 1, 6},
+    {J_HOLOGRAM, 1, 0.2, 1, 8}, {J_LUCKY_CAT, 1, 0.15, 1, 6}, {J_CAMPFIRE, 1, 0.3, 1, 5}, {J_GLASS, 1, 0.2, 1, 6},
+    {J_HIT_THE_ROAD, 1, 0.3, 1, 5}, {J_CAINO, 1, 0.3, 1, 8}, {J_ICE_CREAM, 100, -12, 5, 100}, {J_POPCORN, 20, -4, 4, 20},
+    {J_RAMEN, 2.0, -0.1, 1.05, 2.0}, {J_SELZER, 10, -2, 1, 10}, {J_TURTLE_BEAN, 5, -1, 1, 5}};
+// scaled jokers (the late-game sandbox, Env::scaled_start / scaled_shop): a growing joker's counter after `rounds` rounds of growth, with no ceiling
+inline bool scaled_counter(int key, int rounds, double& val) {
+    for (const ScnGrow& sg : SCN_GROW)
+        if (sg.key == key && sg.per_round > 0) { val = sg.init + sg.per_round * rounds; return true; }
+    return false;
+}
+
+inline const ScnGrow* grow_entry(int key) {
+    for (const ScnGrow& sg : SCN_GROW) if (sg.key == key && sg.per_round > 0) return &sg;
+    return nullptr;
+}
+
+// the jokers' order: 0 = as before (swaps when a joker acts on a neighbour: Blueprint, Brainstorm, Ceremonial Dagger; else +mult before xMult);
+// 1 = swaps only with Blueprint, Brainstorm or Ceremonial Dagger, every other build kept in chips / neutral, +mult, xMult order
+static int ORDER_MODE = 0;
+
 struct Game {
     // configuration
     int win_ante = WIN_ANTE;
@@ -376,11 +410,103 @@ struct Game {
     int f_ecto = 0;
     int f_trading_destroy = -1;             // card id
     uint32_t planets_used = 0;
+    int planet_uses = 0;                 // planet cards used so far (every use, unlike the bitmask above)
+    int planet_level_cap = -1;           // the late-game sandbox: planet level-ups allowed in all (-1: no limit); after it a planet is still used (Constellation grows) but raises no hand level
+    int planet_level_gains = 0;
+    int flash_cap = 0;                   // > 0: Flash Card grows from only the first flash_cap rerolls of the game
+    int rerolls_total = 0;
+    int hand_level_cap = 0;              // > 0: a planet (or Black Hole) raises no hand past this level
+
+    int pack_restock = 0;                // the sandbox: buying a pack puts a new one in its place, this many times per shop visit
+    int pack_restocks_used = 0;
+    double pack_w_mult[5] = {1, 1, 1, 1, 1};   // the sandbox: weights of the pack kinds (arcana, celestial, standard, buffoon, spectral) are multiplied by these
     int tarots_used = 0;
     int last_consumable = C_NONE;
     int blinds_skipped = 0, blinds_beaten = 0, furthest_blind = 0, total_hands_played = 0, last_hand = 0,
         total_unused_discards = 0;
     uint32_t used_bosses = 0;
+    // exact-seed mode: the shop, packs, bosses, tags and deck shuffles come from the game's named streams
+    bool exact = false, first_shop_buffoon = false;
+    Streams sg;
+    int boss_counts[B_COUNT] = {};
+    // a probability roll on the game's named stream `key` in exact-seed mode, else the plain generator
+    double roll(const char* key) { return exact ? sg.pseudorandom(std::string(key)) : rng.random(); }
+    // pseudorandom_element: the index into the list of the element drawn on stream `key`; sortkey[i] orders the elements (the creation
+    // id for cards and jokers, the position for anything else)
+    int xpick(const char* key, const std::vector<int>& sortkey) {
+        int n = (int)sortkey.size();
+        std::vector<int> ord(n);
+        for (int i = 0; i < n; i++) ord[i] = i;
+        std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return sortkey[a] < sortkey[b]; });
+        return ord[sg.pseudorandom(std::string(key), 1, n) - 1];
+    }
+    // a card id out of `ids` (hand, pack hand ...)
+    int pick_card(const char* key, const std::vector<int>& ids) { return exact ? ids[xpick(key, ids)] : ids[rng.choice_index(ids.size())]; }
+    // an index into `jokers` out of the candidate indices `cand`
+    int pick_joker(const char* key, const std::vector<int>& cand) {
+        if (!exact) return cand[rng.choice_index(cand.size())];
+        std::vector<int> keys;
+        for (int i : cand) keys.push_back(jokers[i].uid);
+        return cand[xpick(key, keys)];
+    }
+    uint8_t edition_poll(const char* key) {            // the guaranteed edition of Aura / Wheel of Fortune (no Negative)
+        static const uint8_t trio3[3] = {ED_FOIL, ED_HOLO, ED_POLY};
+        static const std::vector<double> w3 = {50, 35, 15};
+        if (exact) return exact_poll_edition(key, 1.0, true, true);
+        return trio3[rng.choices_indices(w3, 1)[0]];
+    }
+    // the game's pairs() order of G.GAME.hands (the order lists of "visible hands" come in)
+    std::vector<int> visible_hands(int exclude = -1) const {
+        static const int ORDER[12] = {FLUSH_HOUSE, FULL_HOUSE, FLUSH, PAIR, HC, STRAIGHT_FLUSH, STRAIGHT, TWO_PAIR, FLUSH_FIVE,
+                                      FIVE_KIND, TRIPS, QUADS};
+        std::vector<int> out;
+        for (int h : ORDER) if ((!is_secret_hand(h) || hand_played[h] > 0) && h != exclude) out.push_back(h);
+        return out;
+    }
+    int todo_pick(int exclude) {
+        std::vector<int> v = visible_hands(exclude);
+        return v[sg.pseudorandom("to_do", 1, (int)v.size()) - 1];
+    }
+    // the round targets of The Idol, Mail-In Rebate, Ancient Joker and Castle: one value for the run, redrawn every round
+    int tgt_idol_rank = 14, tgt_idol_suit = 0, tgt_mail = 14, tgt_ancient = -1, tgt_castle = 0;
+    int orbital_choice[3] = {0, 0, 0};
+    void sync_target_state(Joker& j) {
+        if (j.key == J_IDOL) { j.st.rank = tgt_idol_rank; j.st.suit = tgt_idol_suit; }
+        else if (j.key == J_MAIL) j.st.rank = tgt_mail;
+        else if (j.key == J_ANCIENT) j.st.suit = tgt_ancient;
+        else if (j.key == J_CASTLE) j.st.suit = tgt_castle;
+    }
+    void reset_round_targets() {
+        std::string a = std::to_string(ante);
+        std::vector<int> valid;
+        for (int id : full_deck) if (!cards[id].is_stone()) valid.push_back(id);
+        std::stable_sort(valid.begin(), valid.end());
+        tgt_idol_rank = 14; tgt_idol_suit = 0; tgt_mail = 14;
+        if (!valid.empty()) {
+            const Card& c = cards[valid[xpick(("idol" + a).c_str(), valid)]];
+            tgt_idol_rank = c.rank; tgt_idol_suit = c.suit;
+            tgt_mail = cards[valid[xpick(("mail" + a).c_str(), valid)]].rank;
+        }
+        std::vector<int> suits;
+        for (int su = 0; su < 4; su++) if (su != tgt_ancient) suits.push_back(su);
+        tgt_ancient = suits[xpick(("anc" + a).c_str(), suits)];
+        tgt_castle = valid.empty() ? 0 : cards[valid[xpick(("cas" + a).c_str(), valid)]].suit;
+        for (Joker& j : jokers) sync_target_state(j);
+    }
+    void draw_orbital_choices() {
+        for (int t = 0; t < 3; t++) {
+            std::vector<int> v = visible_hands();
+            orbital_choice[t] = v[sg.pseudorandom("orbital", 1, (int)v.size()) - 1];
+        }
+    }
+    int crimson_pick() {
+        if (!exact) return jokers[rng.choice_index(jokers.size())].uid;
+        std::vector<int> cand;
+        for (size_t i = 0; i < jokers.size(); i++)
+            if ((!jokers[i].debuffed && jokers[i].uid != crimson_disabled) || jokers.size() < 2) cand.push_back((int)i);
+        if (cand.empty()) return -1;
+        return jokers[pick_joker("crimson_heart", cand)].uid;
+    }
     // round state
     double chips = 0.0, target = 0.0;
     int hands_left = 0, discards_left = 0, discards_used_round = 0;
@@ -410,10 +536,24 @@ struct Game {
     int boss = B_NONE;
     int tags_offered[2] = {0, 0};
     int next_joker_uid = 1;
+    bool scaled_shop = false;                            // a growing joker made for the shop or a pack arrives with its counter grown (scaled_rounds rounds)
+    int scaled_rounds = 30;
+    bool immortal_pay = false;                           // with immortal: a failed blind still pays its cash-out (reward money, interest, joker income ...), it just does not count as beaten
+    bool no_stickers = false;                            // the stake's joker stickers (eternal, perishable, rental) are never applied (the draws are still made: the other streams are unchanged)
+    bool small_blind_pay = false;                        // the small blind pays its $3 at every stake (the Red stake rule that removes it is off)
+    bool catalogue = false;                              // the catalogue shop (training): every shop holds every eligible non-legendary joker, MAX_SHOP to a page; a reroll turns the page for free
+    std::vector<int16_t> cat_order;                      // (this shop's catalogue, shuffled)
+    int cat_page = 0;
+    std::vector<long long> blind_bases;                  // (training curricula) each ante's base chips, replacing the stake's table: a longer game with slower scaling; empty: the stake's
+    int menu_slots = 0;                                  // > 2: the shop shows this many jokers (and only jokers) instead of its usual two cards (a training curriculum: far more to choose from); 0: the usual shop
+    bool immortal = false;                               // a blind that is not beaten does not end the run: no pay, the next blind and its shop (only the ante-8 boss ends it)
+    uint64_t cleared_bits = 0;                           // the blinds (0..47) that were actually beaten
+    double last_play_score = 0.0;                        // the chips the last play scored (the aux head's target)
 
     Game(uint64_t seed = 0, int deck = D_RED, int stake_ = 7, int win_ante_ = WIN_ANTE,
-         const std::vector<int>* joker_pool = nullptr)
+         const std::vector<int>* joker_pool = nullptr, const char* exact_seed = nullptr)
         : rng(seed) {
+        if (exact_seed && *exact_seed) { exact = true; sg.init(exact_seed); }
         win_ante = win_ante_;
         deck_type = deck;
         stake = stake_;
@@ -423,7 +563,8 @@ struct Game {
             for (int k : *joker_pool) pool[k] = true;
         }
         money = 4 + (deck == D_YELLOW ? 10 : 0);
-        standard_deck();
+        if (exact) exact_deck(); else standard_deck();
+        if (exact) { this->deck = full_deck; sg.shuffle(this->deck, "shuffle"); }     // the game's first shuffle, before any blind
         starting_deck_size = (int)full_deck.size();
         joker_slots = 5 + (deck == D_BLACK ? 1 : 0) - (deck == D_PAINTED ? 1 : 0);
         consumable_slots = 2;
@@ -432,6 +573,7 @@ struct Game {
         base_discards = 3 + (deck == D_RED ? 1 : 0) - (stake >= 4 ? 1 : 0);
         for (int i = 0; i < N_HANDS; i++) { hand_levels[i] = 1; hand_played[i] = 0; hand_played_round[i] = 0; }
         new_ante();
+        if (exact) reset_round_targets();
         if (deck == D_MAGIC) {
             vouchers |= 1u << V_CRYSTAL_BALL;
             consumable_slots += 1;
@@ -479,6 +621,19 @@ struct Game {
                 if (deck_type == D_ABANDONED && (r == 11 || r == 12 || r == 13)) continue;
                 int suit = s;
                 if (deck_type == D_CHECKERED) suit = (s == 0 || s == 2) ? 0 : 1;
+                full_deck.push_back(new_card(r, suit));
+            }
+    }
+    void exact_deck() {                                  // creation order of the game: C D H S, ranks 2-9 A J K Q T
+        static const int R[13] = {2, 3, 4, 5, 6, 7, 8, 9, 14, 11, 13, 12, 10};
+        static const int S[4] = {2, 3, 1, 0};
+        if (deck_type == D_ERRATIC) { standard_deck(); return; }
+        for (int si = 0; si < 4; si++)
+            for (int ri = 0; ri < 13; ri++) {
+                int r = R[ri], s0 = S[si];
+                if (deck_type == D_ABANDONED && (r == 11 || r == 12 || r == 13)) continue;
+                int suit = s0;
+                if (deck_type == D_CHECKERED) suit = (s0 == 0 || s0 == 2) ? 0 : 1;
                 full_deck.push_back(new_card(r, suit));
             }
     }
@@ -567,9 +722,9 @@ struct Game {
         return n;
     }
     bool cons_room() const { return cons_used() < consumable_slots; }
-    void create_consumable(int kind, bool negative = false, int name = C_NONE) {
+    void create_consumable(int kind, bool negative = false, int name = C_NONE, int src = 0) {
         if (negative || cons_room()) {
-            Cons c = name == C_NONE ? random_consumable(kind, 0ull) : make_cons(name);
+            Cons c = name == C_NONE ? random_consumable(kind, 0ull, src) : make_cons(name);
             c.negative = negative;
             consumables.push_back(c);
         }
@@ -578,9 +733,11 @@ struct Game {
     int scaling() const { return stake >= 5 ? 3 : (stake >= 2 ? 2 : 1); }
     long long blind_target(int idx) const {
         int a = ante < 1 ? 1 : (ante > 8 ? 8 : ante);
-        int base = BLIND_BASE[scaling() - 1][a - 1];
+        long long base = BLIND_BASE[scaling() - 1][a - 1];
+        if (!blind_bases.empty()) base = blind_bases[(size_t)std::min<int>(std::max(1, ante), (int)blind_bases.size()) - 1];
         double mult = idx == 0 ? 1.0 : (idx == 1 ? 1.5 : (boss != B_NONE ? (double)BOSS_DEFS[boss].mult : 2.0));
         if (deck_type == D_PLASMA) mult *= 2;
+        if (stake >= 8) mult *= 1.25;                    // Diamond (not in the game): 25% more chips per blind
         return (long long)(base * mult);
     }
     int boss_active() const {
@@ -630,7 +787,42 @@ struct Game {
     }
 
     // ---------------------------------------------------------------- antes / blinds
+    int exact_boss() {                                   // get_new_boss(): least-used bosses, key order
+        int a = ante < 1 ? 1 : ante;
+        int cand[N_POOL_BOSS], n = 0, low = 1 << 30;
+        for (int i = 0; i < N_POOL_BOSS; i++) {
+            const BossPool& b = POOL_BOSS[i];
+            bool ok = (!b.showdown && b.min_ante <= a && ((a % 8 != 0) || ante < 2)) || (b.showdown && ante % 8 == 0 && ante >= 2);
+            if (!ok) continue;
+            cand[n++] = i;
+            low = std::min(low, boss_counts[b.boss]);
+        }
+        int m = 0;
+        for (int i = 0; i < n; i++) if (boss_counts[POOL_BOSS[cand[i]].boss] <= low) cand[m++] = cand[i];
+        int boss_id = POOL_BOSS[cand[sg.pseudorandom("boss", 1, m) - 1]].boss;
+        boss_counts[boss_id] += 1;
+        return boss_id;
+    }
+    int exact_tag() {                                    // get_next_tag_key()
+        int pool[N_POOL_TAG], n = N_POOL_TAG;
+        for (int i = 0; i < n; i++) pool[i] = POOL_TAG[i].min_ante <= ante ? POOL_TAG[i].tag : -1;
+        std::string key = "Tag" + std::to_string(ante);
+        int v = pool[sg.pseudorandom(key, 1, n) - 1];
+        for (int it = 2; v < 0; it++) v = pool[sg.pseudorandom(key + "_resample" + std::to_string(it), 1, n) - 1];
+        return v;
+    }
     void new_ante() {
+        if (exact) {
+            boss = exact_boss();
+            used_bosses |= 1u << boss;
+            tags_offered[0] = random_tag();
+            tags_offered[1] = random_tag();
+            draw_orbital_choices();
+            has_ante_voucher = false;
+            shop_vouchers.clear();
+            std::fill(ante_played.begin(), ante_played.end(), 0);
+            return;
+        }
         std::vector<int> pl;
         if (ante >= WIN_ANTE) {
             for (int b = N_NORMAL_BOSSES; b < B_COUNT; b++) pl.push_back(b);
@@ -651,6 +843,7 @@ struct Game {
         std::fill(ante_played.begin(), ante_played.end(), 0);
     }
     int random_tag() {
+        if (exact) return exact_tag();
         int pl[T_COUNT], n = 0;
         for (int t = 0; t < T_COUNT; t++) if (TAG_MIN_ANTE[t] <= ante) pl[n++] = t;
         return pl[rng.choice_index(n)];
@@ -663,6 +856,7 @@ struct Game {
         if (!can_reroll_boss()) throw std::runtime_error("reroll_boss: not allowed");
         money -= 10;
         boss_rerolled_ante = ante;
+        if (exact) { boss = exact_boss(); return; }
         std::vector<int> pl;
         if (ante >= WIN_ANTE) { for (int b = N_NORMAL_BOSSES; b < B_COUNT; b++) pl.push_back(b); }
         else { for (int b = 0; b < N_NORMAL_BOSSES; b++) if (BOSS_DEFS[b].min_ante <= ante) pl.push_back(b); }
@@ -706,11 +900,22 @@ struct Game {
         mouth_hand = -1;
         first_draw_done = false;
         if (b == B_AMBER_ACORN) {
-            rng.shuffle(jokers);
+            if (exact) {
+                if (jokers.size() > 1) {                    // three shuffles, each starting from the creation order
+                    std::vector<Joker> base = jokers, shuffled;
+                    std::stable_sort(base.begin(), base.end(), [](const Joker& a, const Joker& c) { return a.uid < c.uid; });
+                    for (int r = 0; r < 3; r++) { shuffled = base; sg.shuffle(shuffled, "aajk"); }
+                    jokers = shuffled;
+                }
+            } else {
+                rng.shuffle(jokers);
+            }
             for (Joker& j : jokers) j.hidden = true;
         }
-        if (b == B_CRIMSON_HEART && !jokers.empty())
-            crimson_disabled = jokers[rng.choice_index(jokers.size())].uid;
+        if (b == B_CRIMSON_HEART && !jokers.empty()) {
+            crimson_disabled = -1;
+            crimson_disabled = crimson_pick();
+        }
         if (b == B_VERDANT_LEAF) f_verdant = true;
         {
             std::vector<int> snap;
@@ -733,13 +938,25 @@ struct Game {
         for (int id : full_deck) { cards[id].deb = false; cards[id].hidden = false; }
         apply_debuffs();
         deck = full_deck;
-        rng.shuffle(deck);
+        if (exact) {                                     // the cards in creation order, shuffled with the 'nr' + ante stream
+            std::stable_sort(deck.begin(), deck.end());
+            sg.shuffle(deck, "nr" + std::to_string(ante));
+        } else {
+            rng.shuffle(deck);
+        }
         hand.clear();
         discard_pile.clear();
         draw();
         first_draw_done = true;
         int certs = count_with_copies(J_CERTIFICATE);
         for (int k = 0; k < certs; k++) {
+            if (exact) {
+                int fk = sg.pseudorandom("cert_fr", 1, 52) - 1;
+                double t = sg.pseudorandom("certsl");
+                uint8_t seal = t > 0.75 ? S_RED : t > 0.5 ? S_BLUE : t > 0.25 ? S_GOLD : S_PURPLE;
+                add_card(new_card(P_CARD_RANK[fk], P_CARD_SUIT[fk], E_NONE, ED_NONE, seal), true);
+                continue;
+            }
             int r = (int)rng.randrange(2, 15);
             int s = (int)rng.randrange(4);
             static const uint8_t seals[4] = {S_RED, S_BLUE, S_GOLD, S_PURPLE};
@@ -789,13 +1006,14 @@ struct Game {
             for (int k = 0; k < 2; k++)
                 if ((int)jokers.size() < joker_slots) {
                     Joker j;
-                    random_joker(j, 1, false, nullptr, false);
+                    random_joker(j, 1, false, nullptr, false, "top");
                     add_joker(j);
                 }
         } else if (tag == T_ORBITAL) {
             int opts[N_HANDS], n = 0;
             for (int i = 0; i < N_HANDS; i++) if (!is_secret_hand(i) || hand_played[i]) opts[n++] = i;
-            hand_levels[opts[rng.choice_index(n)]] += 3;
+            if (exact) hand_levels[orbital_choice[std::max(0, std::min(2, blind_idx - 1))]] += 3;
+            else hand_levels[opts[rng.choice_index(n)]] += 3;
         } else if (tag == T_JUGGLE) {
             pending_tags.push_back(T_JUGGLE);
         } else if (tag == T_BOSS) {
@@ -805,7 +1023,7 @@ struct Game {
             } else {
                 for (int b = N_NORMAL_BOSSES; b < B_COUNT; b++) if (b != boss) pl.push_back(b);
             }
-            boss = pl[rng.choice_index(pl.size())];
+            boss = exact ? exact_boss() : pl[rng.choice_index(pl.size())];
         } else if (tag == T_BUFFOON || tag == T_CHARM || tag == T_METEOR || tag == T_STANDARD || tag == T_ETHEREAL) {
             int kind = tag == T_BUFFOON ? PK_BUFFOON : tag == T_CHARM ? PK_ARCANA : tag == T_METEOR ? PK_CELESTIAL
                        : tag == T_STANDARD ? PK_STANDARD : PK_SPECTRAL;
@@ -829,7 +1047,7 @@ struct Game {
             deck.pop_back();
             Card& c = cards[id];
             if (b == B_HOUSE && !first_draw_done) c.hidden = true;
-            else if (b == B_WHEEL && rng.random() < prob(1, 7)) c.hidden = true;
+            else if (b == B_WHEEL && roll("wheel") < prob(1, 7)) c.hidden = true;
             else if (b == B_FISH && after_play) c.hidden = true;
             else if (b == B_MARK && c.is_face(par, true)) c.hidden = true;
             hand.push_back(id);
@@ -838,7 +1056,7 @@ struct Game {
         if (boss_active() == B_CERULEAN_BELL && !hand.empty()) {
             bool found = false;
             for (int id : hand) if (cards[id].uid == forced_uid) found = true;
-            if (!found) forced_uid = cards[hand[rng.choice_index(hand.size())]].uid;
+            if (!found) forced_uid = cards[pick_card("cerulean_bell", hand)].uid;
         }
     }
 
@@ -923,7 +1141,7 @@ struct Game {
             case J_RUNNER: if (c.contains & (1 << STRAIGHT)) st.set(jget(st, 0) + 15); break;
             case J_SQUARE: if (c.np == 4) st.set(jget(st, 0) + 4); break;
             case J_TODO_LIST: if (c.hand == (st.hand >= 0 ? st.hand : 1)) c.money_now(4); break;
-            case J_SPACE: if (c.rng && c.rng->random() < prob(1, 4)) c.level_up += 1; break;
+            case J_SPACE: if (c.rng && c.roll("space") < prob(1, 4)) c.level_up += 1; break;
             case J_TROUSERS: if (c.contains & (1 << TWO_PAIR)) st.set(jget(st, 0) + 2); break;
             case J_LOYALTY_CARD: { double v = jget(st, 6); st.set(v > 0 ? v - 1 : 5); break; }
             case J_OBELISK: {
@@ -958,7 +1176,7 @@ struct Game {
                 Card* p0 = c.played[0];
                 if (c.first_hand && c.np == 1 && !p0->is_stone() && p0->rank == 6) {
                     c.event(EV_DESTROY, p0->uid);
-                    c.event(EV_CREATE, CK_SPECTRAL);
+                    c.event(EV_CREATE, CK_SPECTRAL | (SRC_SIXTH << 4));
                 }
                 break;
             }
@@ -969,11 +1187,11 @@ struct Game {
                         const Card* x = c.played[c.scoring[k]];
                         if (!x->is_stone() && x->rank == 14) ace = true;
                     }
-                    if (ace) c.event(EV_CREATE, CK_TAROT);
+                    if (ace) c.event(EV_CREATE, CK_TAROT | (SRC_SUP << 4));
                 }
                 break;
             }
-            case J_SEANCE: if (c.contains & (1 << STRAIGHT_FLUSH)) c.event(EV_CREATE, CK_SPECTRAL); break;
+            case J_SEANCE: if (c.contains & (1 << STRAIGHT_FLUSH)) c.event(EV_CREATE, CK_SPECTRAL | (SRC_SEA << 4)); break;
             case J_VAMPIRE: {
                 int n = 0;
                 for (int k = 0; k < c.ns; k++) {
@@ -984,7 +1202,7 @@ struct Game {
                 st.set(jget(st, 1.0) + 0.1 * n);
                 break;
             }
-            case J_VAGABOND: if (money <= 4) c.event(EV_CREATE, CK_TAROT); break;
+            case J_VAGABOND: if (money <= 4) c.event(EV_CREATE, CK_TAROT | (SRC_VAG << 4)); break;
             case J_MIDAS_MASK: {
                 for (int k = 0; k < c.ns; k++) {
                     int idx = c.scoring[k];
@@ -1023,7 +1241,7 @@ struct Game {
                 if (!x->is_stone() && (x->rank == 10 || x->rank == 4)) { c.add_chips(10); c.add_mult(4); }
                 break;
             case J_SMILEY: if (x->is_face(par)) c.add_mult(5); break;
-            case J_BUSINESS: if (x->is_face(par)) c.money_chance(2, prob(1, 2)); break;
+            case J_BUSINESS: if (x->is_face(par)) c.money_chance(2, prob(1, 2), "business"); break;
             case J_PHOTOGRAPH: {
                 Card* first = nullptr;
                 for (int k = 0; k < c.ns; k++)
@@ -1043,7 +1261,7 @@ struct Game {
             case J_ROUGH_GEM: if (x->has_suit(3, sm)) c.money_now(1); break;
             case J_ARROWHEAD: if (x->has_suit(0, sm)) c.add_chips(50); break;
             case J_ONYX_AGATE: if (x->has_suit(2, sm)) c.add_mult(7); break;
-            case J_BLOODSTONE: if (x->has_suit(1, sm)) c.x_chance(1.5, prob(1, 2)); break;
+            case J_BLOODSTONE: if (x->has_suit(1, sm)) c.x_chance(1.5, prob(1, 2), "bloodstone"); break;
             case J_IDOL:
                 if (!x->is_stone() && x->rank == (st.rank >= 0 ? st.rank : 14)
                     && x->has_suit(st.suit >= 0 ? st.suit : 0, sm))
@@ -1051,7 +1269,7 @@ struct Game {
                 break;
             case J_ANCIENT: if (x->has_suit(st.suit >= 0 ? st.suit : 0, sm)) c.x_mult(1.5); break;
             case J_8_BALL:
-                if (!x->is_stone() && x->rank == 8 && c.rng && c.rng->random() < prob(1, 4)) c.event(EV_CREATE, CK_TAROT);
+                if (!x->is_stone() && x->rank == 8 && c.rng && c.cons_room_for_more() && c.roll("8ball") < prob(1, 4)) c.event(EV_CREATE, CK_TAROT | (SRC_8BA << 4));
                 break;
             case J_LUCKY_CAT: if (!c.copy && c.lucky_now != 0.0) st.set(jget(st, 1.0) + 0.25 * c.lucky_now); break;
             case J_TICKET: if (c.enh(x) == E_GOLD) c.money_now(4); break;
@@ -1101,7 +1319,7 @@ struct Game {
                 break;
             }
             case J_SHOOT_THE_MOON: if (!x->is_stone() && x->rank == 12) c.add_mult(13); break;
-            case J_RESERVED_PARKING: if (x->is_face(c.plan->pareidolia)) c.money_chance(1, prob(1, 2)); break;
+            case J_RESERVED_PARKING: if (x->is_face(c.plan->pareidolia)) c.money_chance(1, prob(1, 2), "parking"); break;
             case J_BARON: if (!x->is_stone() && x->rank == 13) c.x_mult(1.5); break;
             case J_BLUEPRINT:
             case J_BRAINSTORM: {
@@ -1136,7 +1354,7 @@ struct Game {
             case J_HALF: if (c.np <= 3) c.add_mult(20); break;
             case J_BANNER: c.add_chips(30 * discards_left); break;
             case J_MYSTIC_SUMMIT: if (discards_left == 0) c.add_mult(15); break;
-            case J_MISPRINT: c.add_mult(c.rng ? (double)c.rng->randint(0, 23) : 11.5); break;
+            case J_MISPRINT: c.add_mult(c.rng ? (double)c.roll_int("misprint", 0, 23) : 11.5); break;
             case J_ABSTRACT: c.add_mult(3 * (int)jokers.size()); break;
             case J_SUPERNOVA: c.add_mult(hand_played[c.hand] + 1); break;
             case J_RIDE_THE_BUS: case J_GREEN_JOKER: case J_POPCORN: case J_RED_CARD: case J_TROUSERS:
@@ -1313,13 +1531,13 @@ struct Game {
                 else if (e == E_LUCKY) {
                     double p = prob(1, 5);
                     if (!r) { ctx.add_mult(20 * p); ctx.lucky_now += p; }
-                    else if (r->random() < p) { ctx.add_mult(20); ctx.lucky_now += 1; }
+                    else if (ctx.roll("lucky_mult") < p) { ctx.add_mult(20); ctx.lucky_now += 1; }
                 }
                 if (c->seal == S_GOLD) ctx.money_now(3);
                 if (e == E_LUCKY) {
                     double p2 = prob(1, 15);
                     if (!r) { ctx.money += 20 * p2; ctx.lucky_now += p2; }
-                    else if (r->random() < p2) { ctx.money += 20; ctx.lucky_now += 1; }
+                    else if (ctx.roll("lucky_money") < p2) { ctx.money += 20; ctx.lucky_now += 1; }
                 }
                 if (e == E_GLASS) ctx.x_mult(2);
                 if (c->ed == ED_FOIL) ctx.add_chips(50);
@@ -1327,7 +1545,7 @@ struct Game {
                 else if (c->ed == ED_POLY) ctx.x_mult(1.5);
                 for (int k = 0; k < plan.ncard; k++) hook_card(ctx, plan.card[k], c);
             }
-            if (e == E_GLASS && r && r->random() < prob(1, 4)) glass_broken[nglass++] = c->uid;
+            if (e == E_GLASS && r && ctx.roll("glass") < prob(1, 4)) glass_broken[nglass++] = c->uid;
         }
 
         bool any_steel = false;
@@ -1485,9 +1703,15 @@ struct Game {
         bool arm_lowered = b == B_ARM && hand_levels[h] > 1;
         if (arm_lowered) hand_levels[h] -= 1;
         if (b == B_HOOK && !held_id.empty()) {
-            std::vector<size_t> pick = rng.sample_indices(held_id.size(), std::min<size_t>(2, held_id.size()));
             std::vector<int> hooked;
-            for (size_t k : pick) hooked.push_back(held_id[k]);
+            if (exact) {
+                std::vector<int> pl = held_id;
+                int take = std::min<int>(2, (int)held_id.size());
+                for (int q = 0; q < take; q++) { int k = xpick("hook", pl); hooked.push_back(pl[k]); pl.erase(pl.begin() + k); }
+            } else {
+                std::vector<size_t> pick = rng.sample_indices(held_id.size(), std::min<size_t>(2, held_id.size()));
+                for (size_t k : pick) hooked.push_back(held_id[k]);
+            }
             std::vector<int> nh2;
             for (int id : held_id) if (!in_pile(hooked, id)) nh2.push_back(id);
             held_id = nh2;
@@ -1515,6 +1739,7 @@ struct Game {
             sc = score_hand(played, np, held, nh, &rng, true, plan, true, true, &sr);
             h = sr.hand; mny = sr.money; scoring = sr.scoring;
         }
+        last_play_score = sc;
         if (b != B_NONE && has(J_MATADOR)) {
             bool deb = false;
             for (int i = 0; i < np; i++) if ((scoring & (1 << i)) && played[i]->deb) deb = true;
@@ -1545,7 +1770,7 @@ struct Game {
         }
         std::vector<int> destroyed;
         for (int i = 0; i < sr.nev; i++) {
-            if (sr.ev[i].type == EV_CREATE) create_consumable(sr.ev[i].arg);
+            if (sr.ev[i].type == EV_CREATE) create_consumable(sr.ev[i].arg & 15, false, C_NONE, sr.ev[i].arg >> 4);
             else if (sr.ev[i].type == EV_DNA) add_card(sr.ev[i].arg, true, false);
             else destroyed.push_back(sr.ev[i].arg);
         }
@@ -1561,7 +1786,7 @@ struct Game {
         }
         for (int i = 0; i < np; i++) if (in_pile(full_deck, played_id[i])) discard_pile.push_back(played_id[i]);
         if (b == B_CRIMSON_HEART && !jokers.empty())
-            crimson_disabled = jokers[rng.choice_index(jokers.size())].uid;
+            crimson_disabled = crimson_pick();
         if (chips >= target) {
             win_round(false);
         } else if (hands_left <= 0) {
@@ -1571,12 +1796,14 @@ struct Game {
             if (bones >= 0 && chips >= 0.25 * target) {
                 destroy_joker(jokers[bones].uid);
                 win_round(true);
+            } else if (immortal) {
+                fail_round();
             } else {
                 state = ST_GAME_OVER;
             }
         } else {
             if (b == B_SERPENT) draw(3, true); else draw(-1000000, true);
-            if (hand.empty()) state = ST_GAME_OVER;
+            if (hand.empty()) { if (immortal) fail_round(); else state = ST_GAME_OVER; }
         }
     }
 
@@ -1593,7 +1820,7 @@ struct Game {
             }
         }
         for (int id : ids)
-            if (cards[id].seal == S_PURPLE && !cards[id].deb) create_consumable(CK_TAROT);
+            if (cards[id].seal == S_PURPLE && !cards[id].deb) create_consumable(CK_TAROT, false, C_NONE, SRC_8BA);
     }
 
     void discard(const std::vector<int>& positions) {
@@ -1709,12 +1936,12 @@ struct Game {
             case J_GOLDEN: return 4;
             case J_EGG: j.sell_bonus += 3; return 0;
             case J_GROS_MICHEL:
-                if (rng.random() < prob(1, 6)) { destroy_joker(uid); f_gros_extinct = true; }
+                if (roll("gros_michel") < prob(1, 6)) { destroy_joker(uid); f_gros_extinct = true; }
                 return 0;
-            case J_CAVENDISH: if (rng.random() < prob(1, 1000)) destroy_joker(uid); return 0;
+            case J_CAVENDISH: if (roll("cavendish") < prob(1, 1000)) destroy_joker(uid); return 0;
             case J_DELAYED_GRAT: return discards_used_round == 0 ? 2 * discards_left : 0;
-            case J_TODO_LIST: j.st.hand = (int)rng.randrange(0, 9); return 0;
-            case J_MAIL: j.st.rank = random_deck_rank(); return 0;
+            case J_TODO_LIST: j.st.hand = exact ? todo_pick(j.st.hand) : (int)rng.randrange(0, 9); return 0;
+            case J_MAIL: if (exact) return 0; j.st.rank = random_deck_rank(); return 0;
             case J_ROCKET: return (long long)j.st.get(1);
             case J_CLOUD_9: {
                 int n = 0;
@@ -1726,8 +1953,9 @@ struct Game {
                 for (int p = 0; p < N_PLANETS; p++) if ((planets_used >> p) & 1u) n++;
                 return n;
             }
-            case J_IDOL: { int r, s; random_deck_card(r, s); j.st.rank = r; j.st.suit = s; return 0; }
+            case J_IDOL: { if (exact) return 0; int r, s; random_deck_card(r, s); j.st.rank = r; j.st.suit = s; return 0; }
             case J_ANCIENT: {
+                if (exact) return 0;
                 int opts[4], n = 0;
                 for (int s = 0; s < 4; s++) if (s != j.st.suit) opts[n++] = s;
                 j.st.suit = opts[rng.choice_index(n)];
@@ -1743,7 +1971,7 @@ struct Game {
                 if (j.st.val <= 0) destroy_joker(uid);
                 return 0;
             }
-            case J_CASTLE: { int r, s; random_deck_card(r, s); j.st.suit = s; return 0; }
+            case J_CASTLE: { if (exact) return 0; int r, s; random_deck_card(r, s); j.st.suit = s; return 0; }
             case J_HIT_THE_ROAD: j.st.set(1.0); return 0;
             case J_INVISIBLE: j.st.set(j.st.get(0) + 1); return 0;
             default: return 0;
@@ -1764,13 +1992,15 @@ struct Game {
             case J_SELZER: if (!j.st.has_val) j.st.set(10); break;
             case J_LOYALTY_CARD: if (!j.st.has_val) j.st.set(6); break;
             case J_TURTLE_BEAN: if (!j.st.has_val) j.st.set(5); break;
-            case J_TODO_LIST: { int h = (int)rng.randrange(0, 9); if (j.st.hand < 0) j.st.hand = h; break; }
-            case J_MAIL: { int r = random_deck_rank(); if (j.st.rank < 0) j.st.rank = r; break; }
+            case J_TODO_LIST: { int h = exact ? todo_pick(-1) : (int)rng.randrange(0, 9); if (j.st.hand < 0) j.st.hand = h; break; }
+            case J_MAIL: { if (exact) { j.st.rank = tgt_mail; break; } int r = random_deck_rank(); if (j.st.rank < 0) j.st.rank = r; break; }
             case J_IDOL:
+                if (exact) { j.st.rank = tgt_idol_rank; j.st.suit = tgt_idol_suit; break; }
                 if (j.st.rank < 0) { int r, s; random_deck_card(r, s); j.st.rank = r; j.st.suit = s; }
                 break;
-            case J_ANCIENT: { int s = (int)rng.randrange(4); if (j.st.suit < 0) j.st.suit = s; break; }
+            case J_ANCIENT: { if (exact) { j.st.suit = tgt_ancient; break; } int s = (int)rng.randrange(4); if (j.st.suit < 0) j.st.suit = s; break; }
             case J_CASTLE: {
+                if (exact) { j.st.set(j.st.get(0)); j.st.suit = tgt_castle; break; }
                 int r, s;
                 random_deck_card(r, s);
                 j.st.set(j.st.get(0));
@@ -1798,6 +2028,11 @@ struct Game {
                 break;
             }
             case J_MARBLE: {
+                if (exact) {
+                    int fk = sg.pseudorandom("marb_fr", 1, 52) - 1;
+                    add_card(new_card(P_CARD_RANK[fk], P_CARD_SUIT[fk], E_STONE));
+                    break;
+                }
                 int s = (int)rng.randrange(4);
                 add_card(new_card(2, s, E_STONE));
                 break;
@@ -1808,7 +2043,7 @@ struct Game {
                     jokers[i].st.set(jokers[i].st.get(1.0) + 0.5);
                     std::vector<int> cand;
                     for (const Joker& o : jokers) if (o.uid != as_uid && !o.eternal) cand.push_back(o.uid);
-                    if (!cand.empty()) destroy_joker(cand[rng.choice_index(cand.size())]);
+                    if (!cand.empty()) destroy_joker(exact ? cand[xpick("madness", cand)] : cand[rng.choice_index(cand.size())]);
                 }
                 break;
             }
@@ -1816,12 +2051,12 @@ struct Game {
                 for (int k = 0; k < 2; k++)
                     if ((int)jokers.size() < joker_slots) {
                         Joker j;
-                        random_joker(j, 1, false, nullptr, false);
+                        random_joker(j, 1, false, nullptr, false, "rif");
                         add_joker(j);
                     }
                 break;
             }
-            case J_CARTOMANCER: create_consumable(CK_TAROT); break;
+            case J_CARTOMANCER: create_consumable(CK_TAROT, false, C_NONE, SRC_CAR); break;
             case J_BLUEPRINT:
             case J_BRAINSTORM: {
                 int t = copy_target(i);
@@ -1841,7 +2076,9 @@ struct Game {
             add_tag(T_DOUBLE);
         } else if (j.key == J_INVISIBLE) {
             if (j.st.get(0) >= 2 && !jokers.empty()) {
-                const Joker src = jokers[rng.choice_index(jokers.size())];
+                std::vector<int> all;
+                for (size_t q = 0; q < jokers.size(); q++) all.push_back((int)q);
+                const Joker src = jokers[pick_joker("invisible", all)];
                 Joker cp;
                 cp.key = src.key;
                 cp.edition = src.edition == ED_NEG ? ED_NONE : src.edition;
@@ -1855,28 +2092,75 @@ struct Game {
     }
 
     // ---------------------------------------------------------------- end of round
-    void win_round(bool saved_by_bones) {
+    // --immortal: the round was not won. It ends like a won one (the jokers' round-end effects, a rental's fee and a perishable's clock still run, the
+    // blinds move on, a shop opens) but nothing is paid: no reward, no interest, no hands left, no joker's income. Failing the ante-8 boss ends the game.
+    void fail_round() {
+        if (immortal_pay) { win_round(false, false); return; }
         bool was_boss = blind_idx == 2;
-        blinds_beaten += 1;
-        furthest_blind = std::max(furthest_blind, 3 * (ante - 1) + blind_idx + 1);
+        {
+            std::vector<int> snap;
+            for (const Joker& j : jokers) snap.push_back(j.uid);
+            for (int uid : snap) {
+                int i = find_joker(uid);
+                if (i < 0 || jokers[i].debuffed) continue;
+                if (was_boss && jokers[i].key == J_CAMPFIRE) jokers[i].st.set(1.0);
+                if (jokers[i].d().hooks & H_END_ROUND) (void)hook_end_round(uid);
+            }
+        }
+        for (Joker& j : jokers) {
+            if (j.has_perish) {
+                j.perishable -= 1;
+                if (j.perishable <= 0) j.debuffed = true;
+            }
+        }
+        total_unused_discards += discards_left;
+        f_verdant = false;
+        for (int id : full_deck) { cards[id].deb = false; cards[id].hidden = false; }
+        for (Joker& j : jokers) j.hidden = false;
+        juggle = 0;
+        if (was_boss) {
+            if (ante >= win_ante) { state = ST_GAME_OVER; return; }
+            ante += 1;
+            blind_idx = 0;
+            new_ante();
+        } else {
+            blind_idx += 1;
+        }
+        if (exact) reset_round_targets();
+        open_shop();
+    }
+    void win_round(bool saved_by_bones, bool counted = true) {            // counted false: a failed blind that is paid anyway (immortal_pay)
+        bool was_boss = blind_idx == 2;
+        if (counted) {
+            cleared_bits |= 1ull << std::min(47, 3 * (ante - 1) + blind_idx);
+            blinds_beaten += 1;
+            furthest_blind = std::max(furthest_blind, 3 * (ante - 1) + blind_idx + 1);
+        }
         long long earned = 0;
+        // at the round's end, before the cash-out: held Gold cards pay and rentals are charged, so interest counts the money after both
+        // (the game's end_round eases these dollars; evaluate_round then computes interest from G.GAME.dollars)
+        {
+            long long pre = 0;
+            int mime = count_with_copies(J_MIME);
+            for (int id : hand) {
+                const Card c = cards[id];
+                if (c.deb) continue;
+                int triggers = 1 + mime + (c.seal == S_RED ? 1 : 0);
+                if (c.enh == E_GOLD) pre += 3 * triggers;
+                if (c.seal == S_BLUE)
+                    for (int k = 0; k < triggers; k++) create_consumable(CK_PLANET, false, HAND_TO_PLANET[last_hand]);
+            }
+            for (const Joker& j : jokers) if (j.rental) pre -= 3;
+            money += pre;
+        }
         if (saved_by_bones) {}
-        else if (blind_idx == 0) earned += stake >= 1 ? 0 : 3;
+        else if (blind_idx == 0) earned += (stake >= 1 && !small_blind_pay) ? 0 : 3;
         else earned += blind_idx == 1 ? 4 : 5;
         if (deck_type == D_GREEN) {
             earned += 2 * hands_left + discards_left;
         } else {
             earned += hands_left;
             earned += (1 + count(J_TO_THE_MOON)) * std::min<long long>(std::max<long long>(0, money) / 5, interest_cap());
-        }
-        int mime = count_with_copies(J_MIME);
-        for (int id : hand) {
-            const Card c = cards[id];
-            if (c.deb) continue;
-            int triggers = 1 + mime + (c.seal == S_RED ? 1 : 0);
-            if (c.enh == E_GOLD) earned += 3 * triggers;
-            if (c.seal == S_BLUE)
-                for (int k = 0; k < triggers; k++) create_consumable(CK_PLANET, false, HAND_TO_PLANET[last_hand]);
         }
         {
             std::vector<int> snap;
@@ -1891,7 +2175,6 @@ struct Game {
             }
         }
         for (Joker& j : jokers) {
-            if (j.rental) earned -= 3;
             if (j.has_perish) {
                 j.perishable -= 1;
                 if (j.perishable <= 0) j.debuffed = true;
@@ -1907,20 +2190,284 @@ struct Game {
             if (deck_type == D_ANAGLYPH) add_tag(T_DOUBLE);
             auto it = std::find(pending_tags.begin(), pending_tags.end(), (int8_t)T_INVESTMENT);
             if (it != pending_tags.end()) { pending_tags.erase(it); money += 25; }
-            if (ante >= win_ante) { state = ST_WON; return; }
+            if (ante >= win_ante) { state = counted ? ST_WON : ST_GAME_OVER; return; }
             ante += 1;
             blind_idx = 0;
             new_ante();
         } else {
             blind_idx += 1;
         }
+        if (exact) reset_round_targets();
         open_shop();
+    }
+
+    // ---------------------------------------------------------------- shop (exact-seed mode)
+    // the cards that exist, for the pools (the game marks every created card as used and the pools skip used keys)
+    struct UsedSet { bool j[J_COUNT]; bool c[C_COUNT]; };
+    void exact_used(UsedSet& u, const bool* exj, uint64_t exc) const {
+        for (int k = 0; k < J_COUNT; k++) u.j[k] = exj ? exj[k] : false;
+        for (int c = 0; c < C_COUNT; c++) u.c[c] = (exc >> c) & 1ull;
+        for (const Joker& o : jokers) u.j[o.key] = true;
+        for (const Cons& c : consumables) u.c[c.id] = true;
+        for (const ShopItem& it : shop) {
+            if (it.kind == SK_JOKER) u.j[it.key] = true;
+            else if (it.kind == SK_TAROT || it.kind == SK_PLANET || it.kind == SK_SPECTRAL) u.c[it.key] = true;
+        }
+        for (const PackItem& p : pack_cards) {
+            if (p.kind == PI_JOKER) u.j[p.joker.key] = true;
+            else if (p.kind == PI_CONS) u.c[p.cons.id] = true;
+        }
+    }
+    int exact_pick(const std::vector<int>& pool, const std::string& key) {
+        int n = (int)pool.size();
+        int v = pool[sg.pseudorandom(key, 1, n) - 1];
+        for (int it = 2; v < 0; it++) v = pool[sg.pseudorandom(key + "_resample" + std::to_string(it), 1, n) - 1];
+        return v;
+    }
+    uint8_t exact_poll_edition(const std::string& key, double mod, bool no_neg, bool guaranteed = false) {
+        double rate = has_voucher(V_GLOW_UP) ? 4 : (has_voucher(V_HONE) ? 2 : 1);
+        double p = sg.pseudorandom(key);
+        if (guaranteed) {
+            if (p > 1 - 0.003 * 25 && !no_neg) return ED_NEG;
+            if (p > 1 - 0.006 * 25) return ED_POLY;
+            if (p > 1 - 0.02 * 25) return ED_HOLO;
+            if (p > 1 - 0.04 * 25) return ED_FOIL;
+            return ED_NONE;
+        }
+        if (p > 1 - 0.003 * mod && !no_neg) return ED_NEG;
+        if (p > 1 - 0.006 * rate * mod) return ED_POLY;
+        if (p > 1 - 0.02 * rate * mod) return ED_HOLO;
+        if (p > 1 - 0.04 * rate * mod) return ED_FOIL;
+        return ED_NONE;
+    }
+    // create_card('Joker', ...): rarity 0 rolled, 1/2/3 the tags' thresholds (0, 0.9, 1), 4 legendary; sticker: in a shop or pack
+    // (stickers by stake); src: the stream name appended ('sho', 'buf', 'uta' ...); pack: a pack's stickers use their own streams
+    bool exact_joker(Joker& j, int rarity, bool sticker, const bool* exj, const char* src, bool pack = false) {
+        UsedSet u;
+        exact_used(u, exj, 0ull);
+        std::string a = std::to_string(ante), ap = src;
+        double thr = rarity == 1 ? 0.0 : rarity == 2 ? 0.9 : rarity == 3 ? 1.0 : -1.0;
+        double r = thr >= 0 ? thr : sg.pseudorandom("rarity" + a + ap);
+        int rr = rarity == 4 ? 4 : (r > 0.95 ? 3 : (r > 0.7 ? 2 : 1));
+        bool legendary = rarity == 4;
+        const int16_t* P = POOL_J[rr - 1];
+        int n = N_POOL_J[rr - 1], size = 0;
+        std::vector<int> pool;
+        for (int i = 0; i < n; i++) {
+            int k = P[i];
+            bool add = !(u.j[k] && !showman());
+            if (add && JOKER_GATE[k] > 0) {                      // Golden Ticket, Glass, Steel, Stone, Lucky Cat: the deck needs the enhancement
+                add = false;
+                for (int id : full_deck) if (cards[id].enh == JOKER_GATE[k]) { add = true; break; }
+            }
+            if (k == J_GROS_MICHEL && f_gros_extinct) add = false;
+            if (k == J_CAVENDISH && !f_gros_extinct) add = false;
+            if (has_pool && !pool_ok(k)) add = false;
+            pool.push_back(add ? k : -1);
+            size += add ? 1 : 0;
+        }
+        if (size == 0) { pool.clear(); pool.push_back(J_JOKER); }
+        int key = exact_pick(pool, "Joker" + std::to_string(rr) + (legendary ? "" : ap) + (legendary ? "" : a));
+        const JokerDef& d = JOKER_DEFS[key];
+        bool eternal = false, perish = false, rental = false;
+        if (sticker) {
+            double poll = sg.pseudorandom((pack ? "packetper" : "etperpoll") + a);
+            if (stake >= 3 && poll > 0.7) eternal = true;
+            else if (stake >= 6 && 0.4 < poll && poll <= 0.7) perish = true;
+            if (stake >= 7 && sg.pseudorandom((pack ? "packssjr" : "ssjr") + a) > 0.7) rental = true;
+            if (no_stickers) eternal = perish = rental = false;
+        }
+        uint8_t edition = exact_poll_edition("edi" + ap + a, 1.0, false);
+        j = Joker();
+        j.key = (int16_t)key;
+        j.edition = edition;
+        j.base_cost = d.cost + EDITION_COST[edition];
+        j.uid = next_joker_uid++;
+        if (sticker) {
+            if (eternal && d.eternal_ok) j.eternal = true;
+            else if (perish && d.perish_ok && !j.eternal) { j.has_perish = true; j.perishable = 5; }
+            if (rental) j.rental = true;
+        }
+        if (d.hooks & H_INIT) hook_init(j);
+        if (scaled_shop) { double v; if (scaled_counter(j.key, scaled_rounds, v)) j.st.set(v); }
+        j.has_cost = true;
+        j.cost = j.rental ? 1 : price(j.base_cost);
+        return true;
+    }
+    bool pool_ok(int k) const { return pool[k]; }
+    // create_card('Tarot' / 'Planet' / 'Spectral', ...): src the stream name; soulable (packs): the Soul / Black Hole chance;
+    // forced: a given consumable id (the Telescope's planet)
+    Cons exact_consumable(int kind, uint64_t exclude, const char* src, bool soulable = false, int forced = C_NONE) {
+        UsedSet u;
+        exact_used(u, nullptr, exclude);
+        std::string a = std::to_string(ante);
+        const char* tn = kind == CK_TAROT ? "Tarot" : kind == CK_PLANET ? "Planet" : "Spectral";
+        if (forced == C_NONE && soulable) {
+            if ((kind == CK_TAROT || kind == CK_SPECTRAL) && !(u.c[C_SOUL] && !showman()))
+                if (sg.pseudorandom(std::string("soul_") + tn + a) > 0.997) forced = C_SOUL;
+            if ((kind == CK_PLANET || kind == CK_SPECTRAL) && !(u.c[C_BLACK_HOLE] && !showman()))
+                if (sg.pseudorandom(std::string("soul_") + tn + a) > 0.997) forced = C_BLACK_HOLE;
+        }
+        if (forced != C_NONE) return make_cons(forced);
+        std::vector<int> pool;
+        int size = 0;
+        if (kind == CK_TAROT) {
+            for (int i = 0; i < N_POOL_TAROT; i++) {
+                int id = POOL_TAROT[i];
+                bool add = !(u.c[id] && !showman());
+                pool.push_back(add ? id : -1);
+                size += add ? 1 : 0;
+            }
+            if (size == 0) { pool.clear(); pool.push_back(C_STRENGTH); }
+        } else if (kind == CK_PLANET) {
+            for (int i = 0; i < N_POOL_PLANET; i++) {
+                const PlanetPool& p = POOL_PLANET[i];
+                bool add = !(u.c[p.cons] && !showman()) && (!p.softlock || hand_played[p.hand] > 0);
+                pool.push_back(add ? p.cons : -1);
+                size += add ? 1 : 0;
+            }
+            if (size == 0) { pool.clear(); pool.push_back(C_PLUTO); }
+        } else {
+            for (int i = 0; i < N_POOL_SPECTRAL; i++) {
+                int id = POOL_SPECTRAL[i];
+                bool add = !(u.c[id] && !showman()) && !CONS_DEFS[id].hidden;
+                pool.push_back(add ? id : -1);
+                size += add ? 1 : 0;
+            }
+            if (size == 0) { pool.clear(); pool.push_back(C_INCANTATION); }
+        }
+        return make_cons(exact_pick(pool, std::string(tn) + src + a));
+    }
+    ShopItem exact_shop_card(const bool* exj, uint64_t exc) {
+        double tw = has_voucher(V_TAROT_TYCOON) ? 32 : (has_voucher(V_TAROT_MERCHANT) ? 9.6 : 4);
+        double pw = has_voucher(V_PLANET_TYCOON) ? 32 : (has_voucher(V_PLANET_MERCHANT) ? 9.6 : 4);
+        double sw = deck_type == D_GHOST ? 2 : 0;
+        double cw = has_voucher(V_MAGIC_TRICK) ? 4 : 0;
+        double total = 20.0;
+        total += tw; total += pw; total += cw; total += sw;
+        bool ill = has_voucher(V_ILLUSION);                // with Illusion every shop card draws the 'illusion' stream
+        double ill_roll = ill ? sg.pseudorandom("illusion") : 0.0;
+        double polled = sg.pseudorandom("cdt" + std::to_string(ante)) * total;
+        double rates[5] = {20.0, tw, pw, cw, sw};          // Joker, Tarot, Planet, Base, Spectral
+        double check = 0;
+        int typ = -1;
+        for (int t = 0; t < 5; t++) {
+            if (polled > check && polled <= check + rates[t]) { typ = t; break; }
+            check += rates[t];
+        }
+        ShopItem it;
+        if (typ == 0) {
+            exact_joker(it.joker, 0, true, exj, "sho");
+            it.kind = SK_JOKER; it.key = it.joker.key; it.cost = it.joker.cost;
+        } else if (typ == 1) {
+            Cons c = exact_consumable(CK_TAROT, exc, "sho");
+            it.kind = SK_TAROT; it.key = c.id; it.cost = price(3);
+        } else if (typ == 2) {
+            Cons c = exact_consumable(CK_PLANET, exc, "sho");
+            it.kind = SK_PLANET; it.key = c.id; it.cost = has(J_ASTRONOMER) ? 0 : price(3);
+        } else if (typ == 4) {
+            Cons c = exact_consumable(CK_SPECTRAL, exc, "sho");
+            it.kind = SK_SPECTRAL; it.key = c.id; it.cost = price(4);
+        } else {
+            std::string a = std::to_string(ante);
+            uint8_t enh = E_NONE;
+            if (ill && ill_roll > 0.6) enh = enh8((size_t)(sg.pseudorandom("Enhancedsho" + a, 1, 8) - 1));
+            int fk = sg.pseudorandom("frontsho" + a, 1, 52) - 1;
+            int id = new_card(P_CARD_RANK[fk], P_CARD_SUIT[fk], enh);
+            if (ill && sg.pseudorandom("illusion") > 0.8) {
+                double ep = sg.pseudorandom("illusion");
+                cards[id].ed = ep > 1 - 0.15 ? ED_POLY : ep > 0.5 ? ED_HOLO : ED_FOIL;
+            }
+            it.kind = SK_CARD; it.key = 0; it.card = id; it.cost = price(1 + EDITION_COST[cards[id].ed]);
+        }
+        return it;
+    }
+    ShopItem exact_pack() {                                // get_pack('shop_pack')
+        int idx;
+        if (!first_shop_buffoon) {
+            first_shop_buffoon = true;
+            sg.rng.randint(1, 2);                          // the game's unseeded math.random(1, 2) (it moves the global state)
+            idx = PK_BUFFOON * 3 + PS_NORMAL;
+        } else {
+            double cume = 0;
+            for (int i = 0; i < N_POOL_BOOSTER; i++) cume += POOL_BOOSTER[i].weight;
+            double poll = sg.pseudorandom("shop_pack" + std::to_string(ante)) * cume;
+            double it = 0;
+            idx = POOL_BOOSTER[N_POOL_BOOSTER - 1].pack;
+            for (int i = 0; i < N_POOL_BOOSTER; i++) {
+                double w = POOL_BOOSTER[i].weight;
+                it += w;
+                if (it >= poll && it - w <= poll) { idx = POOL_BOOSTER[i].pack; break; }
+            }
+        }
+        ShopItem s;
+        s.kind = SK_PACK; s.key = idx;
+        s.cost = (PACK_DEFS[idx].kind == PK_CELESTIAL && has(J_ASTRONOMER)) ? 0 : price(PACK_DEFS[idx].cost);
+        return s;
+    }
+    int exact_voucher(bool from_tag) {                     // get_next_voucher_key()
+        std::vector<int> pool;
+        int size = 0;
+        for (int i = 0; i < N_POOL_VOUCHER; i++) {
+            int v = POOL_VOUCHER[i];
+            bool add = !has_voucher(v) && (VOUCHER_DEFS[v].prereq < 0 || has_voucher(VOUCHER_DEFS[v].prereq));
+            for (const ShopItem& s : shop_vouchers) if (s.key == v) add = false;
+            pool.push_back(add ? v : -1);
+            size += add ? 1 : 0;
+        }
+        if (size == 0) { pool.clear(); pool.push_back(V_BLANK); }
+        return exact_pick(pool, from_tag ? std::string("Voucher_fromtag") : "Voucher" + std::to_string(ante));
+    }
+    PackItem exact_standard_card() {
+        std::string a = std::to_string(ante);
+        bool enhanced = sg.pseudorandom("stdset" + a) > 0.6;
+        uint8_t enh = E_NONE;
+        if (enhanced) enh = enh8((size_t)(sg.pseudorandom("Enhanced" + std::string("sta") + a, 1, 8) - 1));
+        int fk = sg.pseudorandom("front" + std::string("sta") + a, 1, 52) - 1;
+        int id = new_card(P_CARD_RANK[fk], P_CARD_SUIT[fk], enh);
+        cards[id].ed = exact_poll_edition("standard_edition" + a, 2.0, true);
+        if (sg.pseudorandom("stdseal" + a) > 1 - 0.02 * 10) {
+            double t = sg.pseudorandom("stdsealtype" + a);
+            cards[id].seal = t > 0.75 ? S_RED : t > 0.5 ? S_BLUE : t > 0.25 ? S_GOLD : S_PURPLE;
+        }
+        PackItem it;
+        it.kind = PI_CARD; it.card = id;
+        return it;
+    }
+    void exact_open_pack(int kind, int shown) {
+        for (int i = 0; i < shown; i++) {
+            PackItem it;
+            if (kind == PK_BUFFOON) {
+                it.kind = PI_JOKER;
+                exact_joker(it.joker, 0, true, nullptr, "buf", true);
+            } else if (kind == PK_ARCANA) {
+                it.kind = PI_CONS;
+                if (has_voucher(V_OMEN_GLOBE) && sg.pseudorandom("omen_globe") > 0.8) it.cons = exact_consumable(CK_SPECTRAL, 0ull, "ar2", true);
+                else it.cons = exact_consumable(CK_TAROT, 0ull, "ar1", true);
+            } else if (kind == PK_CELESTIAL) {
+                int forced = C_NONE;
+                if (has_voucher(V_TELESCOPE) && i == 0) {
+                    int most = 0;
+                    for (int h = 1; h < N_HANDS; h++) if (hand_played[h] > hand_played[most]) most = h;
+                    if (hand_played[most] > 0) forced = HAND_TO_PLANET[most];
+                }
+                it.kind = PI_CONS;
+                it.cons = exact_consumable(CK_PLANET, 0ull, "pl1", true, forced);
+            } else if (kind == PK_SPECTRAL) {
+                it.kind = PI_CONS;
+                it.cons = exact_consumable(CK_SPECTRAL, 0ull, "spe", true);
+            } else {
+                it = exact_standard_card();
+            }
+            pack_cards.push_back(it);
+        }
     }
 
     // ---------------------------------------------------------------- shop
     // A random joker (Game.random_joker). rarity 0: rolled. exclude: joker keys (bitmap over J_COUNT) or null.
-    // Returns false when allow_empty and no joker of the rarity is left.
-    bool random_joker(Joker& j, int rarity, bool sticker, const bool* exclude, bool allow_empty) {
+    // Returns false when allow_empty and no joker of the rarity is left. src: the stream name in exact-seed mode.
+    bool random_joker(Joker& j, int rarity, bool sticker, const bool* exclude, bool allow_empty, const char* src = "sho") {
+        if (exact) return exact_joker(j, rarity, sticker, exclude, src);
         if (rarity == 0) {
             double r = rng.random();
             rarity = r > 0.95 ? 3 : (r > 0.7 ? 2 : 1);
@@ -1974,14 +2521,17 @@ struct Game {
             if (stake >= 3 && r1 > 0.7 && d.eternal_ok) j.eternal = true;
             else if (stake >= 6 && 0.4 < r1 && r1 <= 0.7 && d.perish_ok) { j.has_perish = true; j.perishable = 5; }
             if (stake >= 7 && rng.random() > 0.7) j.rental = true;
+            if (no_stickers) { j.eternal = false; j.has_perish = false; j.perishable = 0; j.rental = false; }
         }
         if (d.hooks & H_INIT) hook_init(j);
+        if (scaled_shop) { double v; if (scaled_counter(j.key, scaled_rounds, v)) j.st.set(v); }
         j.has_cost = true;
         j.cost = j.rental ? 1 : price(j.base_cost);
         return true;
     }
     // exclude: bitmask over consumable ids
-    Cons random_consumable(int kind, uint64_t exclude) {
+    Cons random_consumable(int kind, uint64_t exclude, int src = 0) {
+        if (exact) return exact_consumable(kind, exclude, SRC_KEYS[src]);
         int opts[C_COUNT], n = 0;
         if (kind == CK_PLANET) {
             for (int p = 0; p < N_PLANETS; p++) {
@@ -2005,6 +2555,13 @@ struct Game {
     }
     // one shop card; exj / exc: joker keys and consumable ids already in this shop
     ShopItem shop_card(const bool* exj, uint64_t exc) {
+        if (menu_slots > 2) {                                                 // the big menu: jokers only
+            ShopItem it;
+            random_joker(it.joker, 0, true, exj, false);
+            it.kind = SK_JOKER; it.key = it.joker.key; it.cost = it.joker.cost;
+            return it;
+        }
+        if (exact) return exact_shop_card(exj, exc);
         double tw = has_voucher(V_TAROT_TYCOON) ? 32 : (has_voucher(V_TAROT_MERCHANT) ? 9.6 : 4);
         double pw = has_voucher(V_PLANET_TYCOON) ? 32 : (has_voucher(V_PLANET_MERCHANT) ? 9.6 : 4);
         double sw = deck_type == D_GHOST ? 2 : 0;
@@ -2079,15 +2636,73 @@ struct Game {
         return id;
     }
     ShopItem random_pack() {
+        if (exact) return exact_pack();
         std::vector<double> w(N_PACKS);
-        for (int i = 0; i < N_PACKS; i++) w[i] = PACK_DEFS[i].weight;
+        for (int i = 0; i < N_PACKS; i++) w[i] = PACK_DEFS[i].weight * pack_w_mult[(int)PACK_DEFS[i].kind];
         int k = (int)rng.choices_indices(w, 1)[0];
         ShopItem it;
         it.kind = SK_PACK; it.key = k;
         it.cost = (PACK_DEFS[k].kind == PK_CELESTIAL && has(J_ASTRONOMER)) ? 0 : price(PACK_DEFS[k].cost);
         return it;
     }
-    int shop_slots() const { return 2 + (has_voucher(V_OVERSTOCK_NORM) ? 1 : 0) + (has_voucher(V_OVERSTOCK_PLUS) ? 1 : 0); }
+    // a shop joker of the given key, with the shop's edition, sticker and price rolls (random_joker's second half)
+    ShopItem catalogue_item(int key) {
+        const JokerDef& d = JOKER_DEFS[key];
+        int ed_mult = has_voucher(V_GLOW_UP) ? 4 : (has_voucher(V_HONE) ? 2 : 1);
+        double r = rng.random();
+        uint8_t edition = ED_NONE;
+        if (r > 1 - 0.003) edition = ED_NEG;
+        else if (r > 1 - 0.006 * ed_mult) edition = ED_POLY;
+        else if (r > 1 - 0.02 * ed_mult) edition = ED_HOLO;
+        else if (r > 1 - 0.04 * ed_mult) edition = ED_FOIL;
+        Joker j;
+        j.key = (int16_t)key;
+        j.edition = edition;
+        j.base_cost = d.cost + EDITION_COST[edition];
+        j.uid = next_joker_uid++;
+        double r1 = rng.random();
+        if (stake >= 3 && r1 > 0.7 && d.eternal_ok) j.eternal = true;
+        else if (stake >= 6 && 0.4 < r1 && r1 <= 0.7 && d.perish_ok) { j.has_perish = true; j.perishable = 5; }
+        if (stake >= 7 && rng.random() > 0.7) j.rental = true;
+        if (no_stickers) { j.eternal = false; j.has_perish = false; j.perishable = 0; j.rental = false; }
+        if (d.hooks & H_INIT) hook_init(j);
+        j.has_cost = true;
+        j.cost = j.rental ? 1 : price(j.base_cost);
+        ShopItem it;
+        it.joker = j; it.kind = SK_JOKER; it.key = j.key; it.cost = j.cost;
+        return it;
+    }
+    // the catalogue's page cat_page after the items `first` (tag jokers): new_order shuffles a fresh catalogue (every eligible non-legendary joker not held)
+    std::vector<ShopItem> catalogue_page(const std::vector<ShopItem>& first, bool new_order) {
+        if (new_order || cat_order.empty()) {
+            cat_order.clear();
+            bool owned[J_COUNT] = {false};
+            if (!showman()) for (const Joker& o : jokers) owned[o.key] = true;
+            for (int k = 0; k < J_COUNT; k++) {
+                const JokerDef& d = JOKER_DEFS[k];
+                if (d.rarity < 1 || d.rarity > 3 || owned[k]) continue;
+                if (d.not_in_pool && !f_gros_extinct) continue;
+                if (f_gros_extinct && k == J_GROS_MICHEL) continue;
+                if (has_pool && !pool[k]) continue;
+                cat_order.push_back((int16_t)k);
+            }
+            for (int i = (int)cat_order.size() - 1; i > 0; i--) std::swap(cat_order[i], cat_order[rng.choice_index((size_t)(i + 1))]);
+            cat_page = 0;
+        }
+        std::vector<ShopItem> out = first;
+        const int per = MAX_SHOP - (int)first.size();
+        const int n = (int)cat_order.size();
+        if (n == 0 || per <= 0) return out;
+        const int pages = (n + per - 1) / per;
+        const int pg = ((cat_page % pages) + pages) % pages;
+        for (int i = pg * per; i < std::min(n, (pg + 1) * per); i++) out.push_back(catalogue_item(cat_order[i]));
+        return out;
+    }
+    int shop_slots() const {
+        if (catalogue) return MAX_SHOP;
+        if (menu_slots > 2) return std::min(menu_slots, MAX_SHOP);
+        return 2 + (has_voucher(V_OVERSTOCK_NORM) ? 1 : 0) + (has_voucher(V_OVERSTOCK_PLUS) ? 1 : 0);
+    }
     static void exclusions(const std::vector<ShopItem>& items, bool* exj, uint64_t& exc) {
         for (int k = 0; k < J_COUNT; k++) exj[k] = false;
         exc = 0;
@@ -2099,12 +2714,15 @@ struct Game {
     std::vector<ShopItem> shop_cards(int n, const std::vector<ShopItem>* first = nullptr) {
         std::vector<ShopItem> out;
         if (first) out = *first;
+        std::vector<ShopItem> saved;
+        if (exact) saved.swap(shop);                     // a reroll removes the old cards first: they no longer count as used
         while ((int)out.size() < n) {
             bool exj[J_COUNT];
             uint64_t exc;
             exclusions(out, exj, exc);
             out.push_back(shop_card(exj, exc));
         }
+        if (exact) shop.swap(saved);
         return out;
     }
     void apply_edition_tags() {
@@ -2137,6 +2755,12 @@ struct Game {
     void open_shop() {
         state = ST_SHOP;
         shops_seen += 1;
+        pack_restocks_used = 0;
+        if (exact) {                                     // cashing out shuffles the deck ('cashout' + ante): packs draw from it
+            deck = full_deck;
+            std::stable_sort(deck.begin(), deck.end());
+            sg.shuffle(deck, "cashout" + std::to_string(ante));
+        }
         reroll_cost = std::max(0, 5 - 2 * (has_voucher(V_REROLL_SURPLUS) ? 1 : 0) - 2 * (has_voucher(V_REROLL_GLUT) ? 1 : 0));
         free_rerolls = count(J_CHAOS);
         std::vector<ShopItem> tagged;
@@ -2147,7 +2771,7 @@ struct Game {
                 uint64_t exc;
                 exclusions(tagged, exj, exc);
                 ShopItem it;
-                if (random_joker(it.joker, t == T_UNCOMMON ? 2 : 3, true, exj, true)) {
+                if (random_joker(it.joker, t == T_UNCOMMON ? 2 : 3, true, exj, true, t == T_UNCOMMON ? "uta" : "rta")) {
                     it.joker.has_cost = true;
                     it.joker.cost = 0;
                     it.kind = SK_JOKER; it.key = it.joker.key; it.cost = 0;
@@ -2158,9 +2782,9 @@ struct Game {
             }
         }
         pending_tags = rest;
-        shop = shop_cards(shop_slots(), &tagged);
+        shop = (catalogue && !exact) ? catalogue_page(tagged, true) : shop_cards(shop_slots(), &tagged);
         shop_packs.clear();
-        if (shops_seen == 1) {
+        if (shops_seen == 1 && !exact) {
             ShopItem b;
             b.kind = SK_PACK;
             b.key = 9;                                      // p_buffoon_normal
@@ -2177,7 +2801,7 @@ struct Game {
             shop_vouchers.clear();
             std::vector<int> opts = voucher_options();
             if (!opts.empty()) {
-                int v = opts[rng.choice_index(opts.size())];
+                int v = exact ? exact_voucher(false) : opts[rng.choice_index(opts.size())];
                 ante_voucher = ShopItem();
                 ante_voucher.kind = SK_VOUCHER; ante_voucher.key = v; ante_voucher.cost = price(VOUCHER_COST);
                 ante_voucher.is_ante = true;
@@ -2200,7 +2824,7 @@ struct Game {
             } else if (t == T_VOUCHER) {
                 std::vector<int> opts = voucher_options();
                 if (!opts.empty() && (int)shop_vouchers.size() < MAX_VOUCHERS) {
-                    int v = opts[rng.choice_index(opts.size())];
+                    int v = exact ? exact_voucher(true) : opts[rng.choice_index(opts.size())];
                     ShopItem it;
                     it.kind = SK_VOUCHER; it.key = v; it.cost = price(VOUCHER_COST);
                     shop_vouchers.push_back(it);
@@ -2238,6 +2862,10 @@ struct Game {
         ShopItem it = shop_packs[i];
         money -= it.cost;
         shop_packs.erase(shop_packs.begin() + i);
+        if (pack_restock > 0 && pack_restocks_used < pack_restock) {         // the sandbox: another pack takes its place
+            shop_packs.push_back(random_pack());
+            pack_restocks_used += 1;
+        }
         open_pack(PACK_DEFS[it.key].kind, PACK_DEFS[it.key].size, ST_SHOP);
     }
     void buy_voucher(int i = 0) {
@@ -2263,6 +2891,12 @@ struct Game {
         }
     }
     void reroll() {
+        if (catalogue && !exact) {                       // the catalogue: the next page, free; not a reroll for Flash Card or anything that counts them
+            cat_page += 1;
+            shop = catalogue_page({}, false);
+            apply_edition_tags();
+            return;
+        }
         if (free_rerolls > 0) {
             free_rerolls -= 1;
         } else {
@@ -2270,7 +2904,9 @@ struct Game {
             money -= reroll_cost;
             reroll_cost += 1;
         }
-        for (Joker& j : jokers) if (j.key == J_FLASH) j.st.set(j.st.get(0) + 2);
+        rerolls_total += 1;
+        if (flash_cap <= 0 || rerolls_total <= flash_cap)
+            for (Joker& j : jokers) if (j.key == J_FLASH) j.st.set(j.st.get(0) + 2);
         shop = shop_cards(shop_slots());
         apply_edition_tags();
     }
@@ -2278,7 +2914,9 @@ struct Game {
         int pk = count(J_PERKEO);
         for (int k = 0; k < pk; k++)
             if (!consumables.empty()) {
-                Cons src = consumables[rng.choice_index(consumables.size())];
+                std::vector<int> order;
+                for (size_t q = 0; q < consumables.size(); q++) order.push_back((int)q);
+                Cons src = consumables[exact ? xpick("perkeo", order) : rng.choice_index(consumables.size())];
                 consumables.push_back(make_cons(src.id, true));
             }
         auto it = std::find(pending_tags.begin(), pending_tags.end(), (int8_t)T_JUGGLE);
@@ -2322,6 +2960,34 @@ struct Game {
         consumables.erase(consumables.begin() + i);
         money += c.sell_value();
         on_sold();
+    }
+    // is the order of the jokers the player's to choose? (env.py swaps_matter)
+    bool swaps_matter() const {
+        if (ORDER_MODE == 1) {
+            for (const Joker& j : jokers) if (j.key == J_BLUEPRINT || j.key == J_BRAINSTORM || j.key == J_CEREMONIAL) return true;
+            return false;
+        }
+        for (const Joker& j : jokers) if (JOKER_SWAP_ROLE[j.key] == 3) return true;
+        return false;
+    }
+    // the jokers in scoring order: additive mult first, multipliers last, the rest as they are (env.py order_jokers)
+    void order_jokers() {
+        if (jokers.size() < 2 || swaps_matter()) return;
+        for (const Joker& j : jokers) if (j.hidden) return;
+        std::stable_sort(jokers.begin(), jokers.end(), [](const Joker& a, const Joker& b) {
+            return order_rank(a) < order_rank(b);
+        });
+    }
+    static int order_rank(const Joker& j) {
+        if (ORDER_MODE == 1) {                               // chips and the rest first, +mult next, xMult last
+            int r = JOKER_SWAP_ROLE[j.key] == 3 ? 1 : JOKER_SWAP_ROLE[j.key];
+            bool add = r == 1 || j.edition == ED_HOLO;
+            bool mul = r == 2 || j.edition == ED_POLY;
+            return mul && !add ? 2 : add ? 1 : 0;
+        }
+        bool add = JOKER_SWAP_ROLE[j.key] == 1 || j.edition == ED_HOLO;
+        bool mul = JOKER_SWAP_ROLE[j.key] == 2 || j.edition == ED_POLY;
+        return add && !mul ? 0 : mul && !add ? 2 : 1;
     }
     void swap_jokers(int i) {
         if (i < 0 || i + 1 >= (int)jokers.size()) throw std::runtime_error("swap_jokers: bad index");
@@ -2495,8 +3161,13 @@ struct Game {
     void apply_consumable(const Cons& c, int where, const std::vector<int>* targets) {
         int n = c.id;
         if (c.kind() == CK_PLANET) {
-            hand_levels[CONS_DEFS[n].planet_hand] += 1;
+            if ((planet_level_cap < 0 || planet_level_gains < planet_level_cap)
+                && (hand_level_cap <= 0 || hand_levels[CONS_DEFS[n].planet_hand] < hand_level_cap)) {
+                hand_levels[CONS_DEFS[n].planet_hand] += 1;
+                planet_level_gains += 1;
+            }
             planets_used |= 1u << n;
+            planet_uses += 1;
             for (Joker& j : jokers) if (j.key == J_CONSTELLATION) j.st.set(j.st.get(1.0) + 0.1);
             last_consumable = n;
             return;
@@ -2518,9 +3189,9 @@ struct Game {
         } else if (n == C_FOOL) {
             if (last_consumable != C_NONE) create_consumable(CONS_DEFS[last_consumable].kind, false, last_consumable);
         } else if (n == C_HIGH_PRIESTESS) {
-            for (int k = 0; k < 2; k++) create_consumable(CK_PLANET);
+            for (int k = 0; k < 2; k++) create_consumable(CK_PLANET, false, C_NONE, SRC_PRI);
         } else if (n == C_EMPEROR) {
-            for (int k = 0; k < 2; k++) create_consumable(CK_TAROT);
+            for (int k = 0; k < 2; k++) create_consumable(CK_TAROT, false, C_NONE, SRC_EMP);
         } else if (n == C_HERMIT) {
             money += std::min<long long>(20, std::max<long long>(0, money));
         } else if (n == C_TEMPERANCE) {
@@ -2530,15 +3201,15 @@ struct Game {
         } else if (n == C_JUDGEMENT) {
             if ((int)jokers.size() < joker_slots) {
                 Joker j;
-                random_joker(j, 0, false, nullptr, false);
+                random_joker(j, 0, false, nullptr, false, "jud");
                 add_joker(j);
             }
         } else if (n == C_WHEEL_OF_FORTUNE) {
             std::vector<int> cand;
             for (size_t i = 0; i < jokers.size(); i++) if (jokers[i].edition == ED_NONE) cand.push_back((int)i);
-            if (!cand.empty() && rng.random() < prob(1, 4)) {
-                int i = cand[rng.choice_index(cand.size())];
-                jokers[i].edition = trio[rng.choices_indices(trio_w, 1)[0]];
+            if (!cand.empty() && roll("wheel_of_fortune") < prob(1, 4)) {
+                int i = pick_joker("wheel_of_fortune", cand);
+                jokers[i].edition = exact ? edition_poll("wheel_of_fortune") : trio[rng.choices_indices(trio_w, 1)[0]];
             }
         } else if (n == C_STRENGTH) {
             for (int id : t) cards[id].rank = cards[id].rank == 14 ? 2 : cards[id].rank + 1;
@@ -2551,25 +3222,25 @@ struct Game {
                 a.rank = b.rank; a.suit = b.suit; a.enh = b.enh; a.ed = b.ed; a.seal = b.seal;
             }
         } else if (n == C_BLACK_HOLE) {
-            for (int h = 0; h < N_HANDS; h++) hand_levels[h] += 1;
+            for (int h = 0; h < N_HANDS; h++) if (hand_level_cap <= 0 || hand_levels[h] < hand_level_cap) hand_levels[h] += 1;
         } else if (n == C_TALISMAN || n == C_DEJA_VU || n == C_TRANCE || n == C_MEDIUM) {
             uint8_t seal = n == C_TALISMAN ? S_GOLD : n == C_DEJA_VU ? S_RED : n == C_TRANCE ? S_BLUE : S_PURPLE;
             for (int id : t) cards[id].seal = seal;
         } else if (n == C_AURA) {
             for (int id : t)
-                if (cards[id].ed == ED_NONE) cards[id].ed = trio[rng.choices_indices(trio_w, 1)[0]];
+                if (cards[id].ed == ED_NONE) cards[id].ed = exact ? edition_poll("aura") : trio[rng.choices_indices(trio_w, 1)[0]];
         } else if (n == C_CRYPTID) {
             for (int id : t)
                 for (int k = 0; k < 2; k++) add_card(copy_card(id), true);
         } else if (n == C_SOUL) {
             if ((int)jokers.size() < joker_slots) {
                 Joker j;
-                random_joker(j, 4, false, nullptr, false);
+                random_joker(j, 4, false, nullptr, false, "sou");
                 add_joker(j);
             }
         } else if (n == C_FAMILIAR || n == C_GRIM || n == C_INCANTATION) {
             if (!pile().empty()) {
-                std::vector<int> v{pile()[rng.choice_index(pile().size())]};
+                std::vector<int> v{pick_card("random_destroy", pile())};
                 destroy_cards(v);
             }
             std::vector<int> ranks;
@@ -2579,6 +3250,15 @@ struct Game {
             int k = n == C_FAMILIAR ? 3 : (n == C_GRIM ? 2 : 4);
             static const uint8_t enh7[7] = {E_BONUS, E_MULT, E_WILD, E_GLASS, E_STEEL, E_GOLD, E_LUCKY};
             for (int q = 0; q < k; q++) {
+                if (exact) {
+                    static const int SU[4] = {0, 1, 3, 2};       // the game's order S H D C as suit indices (S H C D)
+                    std::string key = std::string(n == C_FAMILIAR ? "familiar" : n == C_GRIM ? "grim" : "incantation") + "_create";
+                    int rank = n == C_GRIM ? 14 : ranks[sg.pseudorandom(key, 1, (int)ranks.size()) - 1];
+                    int suit = SU[sg.pseudorandom(key, 1, 4) - 1];
+                    uint8_t e = enh7[sg.pseudorandom("spe_card", 1, 7) - 1];
+                    add_card(new_card(rank, suit, e), true);
+                    continue;
+                }
                 int rank = ranks[rng.choice_index(ranks.size())];
                 int suit = (int)rng.randrange(4);
                 uint8_t e = enh7[rng.choice_index(7)];
@@ -2586,23 +3266,31 @@ struct Game {
             }
         } else if (n == C_IMMOLATE) {
             const std::vector<int>& cs = pile();
-            std::vector<size_t> pick = rng.sample_indices(cs.size(), std::min<size_t>(5, cs.size()));
             std::vector<int> v;
-            for (size_t k : pick) v.push_back(cs[k]);
+            if (exact) {
+                std::vector<int> lst = cs;
+                std::stable_sort(lst.begin(), lst.end());
+                sg.shuffle(lst, "immolate");
+                for (size_t k = 0; k < std::min<size_t>(5, lst.size()); k++) v.push_back(lst[k]);
+            } else {
+                std::vector<size_t> pick = rng.sample_indices(cs.size(), std::min<size_t>(5, cs.size()));
+                for (size_t k : pick) v.push_back(cs[k]);
+            }
             destroy_cards(v);
             money += 20;
         } else if (n == C_SIGIL) {
-            int s = (int)rng.randrange(4);
+            static const int SU[4] = {0, 1, 3, 2};
+            int s = exact ? SU[sg.pseudorandom("sigil", 1, 4) - 1] : (int)rng.randrange(4);
             for (int id : pile()) cards[id].suit = (int8_t)s;
         } else if (n == C_OUIJA) {
-            int r = (int)rng.randrange(2, 15);
+            int r = exact ? 1 + sg.pseudorandom("ouija", 1, 13) : (int)rng.randrange(2, 15);
             for (int id : pile()) cards[id].rank = (int8_t)r;
             hand_size -= 1;
         } else if (n == C_ECTOPLASM) {
             std::vector<int> cand;
             for (size_t i = 0; i < jokers.size(); i++) if (jokers[i].edition == ED_NONE) cand.push_back((int)i);
             if (!cand.empty()) {
-                int i = cand[rng.choice_index(cand.size())];
+                int i = pick_joker("ectoplasm", cand);
                 jokers[i].edition = ED_NEG;
                 joker_slots += 1;
             }
@@ -2611,7 +3299,7 @@ struct Game {
         } else if (n == C_WRAITH) {
             if ((int)jokers.size() < joker_slots) {
                 Joker j;
-                random_joker(j, 3, false, nullptr, false);
+                random_joker(j, 3, false, nullptr, false, "wra");
                 add_joker(j);
             }
             money = 0;
@@ -2620,7 +3308,7 @@ struct Game {
                 std::vector<int> cand;
                 for (size_t i = 0; i < jokers.size(); i++) if (jokers[i].edition == ED_NONE) cand.push_back((int)i);
                 if (cand.empty()) for (size_t i = 0; i < jokers.size(); i++) cand.push_back((int)i);
-                int keep = jokers[cand[rng.choice_index(cand.size())]].uid;
+                int keep = jokers[pick_joker("hex", cand)].uid;
                 std::vector<int> snap;
                 for (const Joker& j : jokers) snap.push_back(j.uid);
                 for (int uid : snap) {
@@ -2631,7 +3319,9 @@ struct Game {
             }
         } else if (n == C_ANKH) {
             if (!jokers.empty()) {
-                const Joker src = jokers[rng.choice_index(jokers.size())];
+                std::vector<int> all;
+                for (size_t q = 0; q < jokers.size(); q++) all.push_back((int)q);
+                const Joker src = jokers[pick_joker("ankh_choice", all)];
                 std::vector<int> snap;
                 for (const Joker& j : jokers) snap.push_back(j.uid);
                 for (int uid : snap) {
@@ -2663,6 +3353,19 @@ struct Game {
         pack_return = return_to;
         pack_cards.clear();
         pack_hand.clear();
+        if (exact) {
+            exact_open_pack(kind, shown);
+            int hall = count_with_copies(J_HALLUCINATION);
+            for (int k = 0; k < hall; k++)
+                if (sg.pseudorandom("halu" + std::to_string(ante)) < prob(1, 2)) create_consumable(CK_TAROT, false, C_NONE, SRC_HAL);
+            if (kind == PK_ARCANA || kind == PK_SPECTRAL) {        // the hand is drawn from the top of the deck
+                size_t take = (size_t)std::min<int>(std::min(MAX_HAND, effective_hand_size()), (int)deck.size());
+                for (size_t k = 0; k < take; k++) { pack_hand.push_back(deck.back()); deck.pop_back(); }
+                sort_hand(pack_hand);
+            }
+            state = ST_PACK;
+            return;
+        }
         if (kind == PK_BUFFOON) {
             for (int k = 0; k < shown; k++) {
                 bool exj[J_COUNT];
@@ -2775,10 +3478,26 @@ struct Game {
         close_pack();
     }
     void close_pack() {
+        if (exact && !pack_hand.empty()) {                // the hand goes back under the deck, in order
+            std::vector<int> back;
+            for (int id : pack_hand) if (in_pile(full_deck, id)) back.push_back(id);
+            deck.insert(deck.begin(), back.begin(), back.end());
+        }
         pack_cards.clear();
         pack_hand.clear();
         state = pack_return;
     }
 };
+
+inline double ScoreCtx::roll(const char* key) { return (g->exact && key) ? g->sg.pseudorandom(std::string(key)) : rng->random(); }
+inline int ScoreCtx::roll_int(const char* key, int lo, int hi) {
+    return g->exact ? g->sg.pseudorandom(std::string(key), lo, hi) : (int)rng->randint(lo, hi);
+}
+inline bool ScoreCtx::cons_room_for_more() const {
+    if (!g->exact) return true;
+    int pending = 0;
+    for (int i = 0; i < nev; i++) if (ev[i].type == EV_CREATE) pending++;
+    return g->cons_used() + pending < g->consumable_slots;
+}
 
 }  // namespace bal

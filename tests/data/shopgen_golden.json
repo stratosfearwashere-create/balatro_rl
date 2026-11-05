@@ -1,0 +1,3122 @@
+[
+{
+"seed": "LAR457P4",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_bootstraps||E",
+"j_smiley||E"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"c_pluto||",
+"j_abstract||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_wasteful"
+},
+{
+"ante": 3,
+"cards": [
+"j_fortune_teller||E",
+"j_smiley||"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 4,
+"cards": [
+"j_drunkard||",
+"j_red_card||E"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 5,
+"cards": [
+"c_tower||",
+"j_sixth_sense||"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_wasteful"
+},
+{
+"ante": 6,
+"cards": [
+"j_bull||E",
+"c_venus||"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 7,
+"cards": [
+"c_jupiter||",
+"j_banner||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 8,
+"cards": [
+"c_hermit||",
+"j_bull||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_tarot_merchant"
+}
+]
+},
+{
+"seed": "36TS5G6T",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_pareidolia|foil|",
+"j_hack||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 2,
+"cards": [
+"c_sun||",
+"j_vagabond||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 3,
+"cards": [
+"j_arrowhead||",
+"j_chaos||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 4,
+"cards": [
+"j_to_the_moon||",
+"j_ice_cream||"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 5,
+"cards": [
+"j_photograph||",
+"c_neptune||"
+],
+"pack": "p_celestial_mega_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 6,
+"cards": [
+"c_neptune||",
+"j_splash||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_hone"
+},
+{
+"ante": 7,
+"cards": [
+"c_earth||",
+"c_hanged_man||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_wasteful"
+},
+{
+"ante": 8,
+"cards": [
+"j_golden||",
+"c_earth||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_directors_cut"
+}
+]
+},
+{
+"seed": "8F4R4F39",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_business||E",
+"c_saturn||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 2,
+"cards": [
+"j_business||E",
+"j_crazy||"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_telescope"
+},
+{
+"ante": 3,
+"cards": [
+"c_wheel_of_fortune||",
+"j_astronomer||E"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 4,
+"cards": [
+"c_empress||",
+"j_clever||"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 5,
+"cards": [
+"j_walkie_talkie||P",
+"j_zany||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_telescope"
+},
+{
+"ante": 6,
+"cards": [
+"j_even_steven||E",
+"c_mercury||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 7,
+"cards": [
+"c_heirophant||",
+"j_green_joker||E"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_hone"
+},
+{
+"ante": 8,
+"cards": [
+"j_joker||P",
+"j_castle||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_magic_trick"
+}
+]
+},
+{
+"seed": "SA8KC7DP",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_turtle_bean||",
+"c_magician||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 2,
+"cards": [
+"j_merry_andy||",
+"j_jolly||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_blank"
+},
+{
+"ante": 3,
+"cards": [
+"c_mercury||",
+"j_raised_fist||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 4,
+"cards": [
+"j_8_ball||",
+"c_jupiter||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 5,
+"cards": [
+"j_mail||",
+"j_clever|foil|"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 6,
+"cards": [
+"c_jupiter||",
+"c_mercury||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 7,
+"cards": [
+"c_empress||",
+"j_reserved_parking||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 8,
+"cards": [
+"j_credit_card||",
+"c_mercury||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_planet_merchant"
+}
+]
+},
+{
+"seed": "54EXTLVV",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_ramen||E",
+"j_scholar||E"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_blank"
+},
+{
+"ante": 2,
+"cards": [
+"j_mail||",
+"j_shoot_the_moon||P"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 3,
+"cards": [
+"j_clever||P",
+"j_hallucination||E"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 4,
+"cards": [
+"j_walkie_talkie||",
+"j_golden||P"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 5,
+"cards": [
+"j_hack||P",
+"c_neptune||"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_blank"
+},
+{
+"ante": 6,
+"cards": [
+"j_shoot_the_moon|foil|E",
+"j_gros_michel||P"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_blank"
+},
+{
+"ante": 7,
+"cards": [
+"j_crafty||P",
+"c_world||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_telescope"
+},
+{
+"ante": 8,
+"cards": [
+"j_smeared||",
+"j_chaos||E"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_hieroglyph"
+}
+]
+},
+{
+"seed": "KGCG6KZX",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_throwback||E",
+"j_riff_raff||P"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 2,
+"cards": [
+"j_mail||E",
+"j_joker||P"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 3,
+"cards": [
+"j_midas_mask||",
+"j_pareidolia|neg|"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 4,
+"cards": [
+"j_even_steven||",
+"c_chariot||"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 5,
+"cards": [
+"c_emperor||",
+"c_chariot||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 6,
+"cards": [
+"j_banner||",
+"j_drivers_license||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_telescope"
+},
+{
+"ante": 7,
+"cards": [
+"j_walkie_talkie||P",
+"j_scholar||"
+],
+"pack": "p_celestial_mega_1",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 8,
+"cards": [
+"c_lovers||",
+"j_trio||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_hieroglyph"
+}
+]
+},
+{
+"seed": "UJ58YSBM",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_raised_fist||",
+"c_star||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 2,
+"cards": [
+"j_jolly||E",
+"c_heirophant||"
+],
+"pack": "p_spectral_normal_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 3,
+"cards": [
+"c_saturn||",
+"j_bootstraps||"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 4,
+"cards": [
+"j_joker||",
+"j_vampire||E"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_grabber"
+},
+{
+"ante": 5,
+"cards": [
+"c_jupiter||",
+"j_ride_the_bus||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_hone"
+},
+{
+"ante": 6,
+"cards": [
+"c_justice||",
+"j_madness||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 7,
+"cards": [
+"c_mars||",
+"c_moon||"
+],
+"pack": "p_buffoon_mega_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 8,
+"cards": [
+"j_scary_face||",
+"j_mail||E"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_reroll_surplus"
+}
+]
+},
+{
+"seed": "XS35LMNX",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_faceless||R",
+"c_strength||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_blank"
+},
+{
+"ante": 2,
+"cards": [
+"j_drunkard||P",
+"j_four_fingers||P"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 3,
+"cards": [
+"j_red_card||PR",
+"j_dusk||R"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_blank"
+},
+{
+"ante": 4,
+"cards": [
+"j_ancient||E",
+"j_shortcut||"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 5,
+"cards": [
+"j_droll||",
+"j_abstract||PR"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_hone"
+},
+{
+"ante": 6,
+"cards": [
+"c_star||",
+"c_earth||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"j_matador||",
+"c_moon||"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 8,
+"cards": [
+"j_mail||",
+"j_madness||E"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_directors_cut"
+}
+]
+},
+{
+"seed": "56IW54KU",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_lusty_joker||",
+"j_red_card||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 2,
+"cards": [
+"j_castle||P",
+"j_hiker||"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_hone"
+},
+{
+"ante": 3,
+"cards": [
+"c_earth||",
+"c_mars||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 4,
+"cards": [
+"j_shortcut||P",
+"j_tribe||E"
+],
+"pack": "p_spectral_mega_1",
+"voucher": "v_wasteful"
+},
+{
+"ante": 5,
+"cards": [
+"j_popcorn||E",
+"j_castle||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 6,
+"cards": [
+"j_riff_raff||",
+"j_wee||P"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 7,
+"cards": [
+"c_venus||",
+"j_ride_the_bus||"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 8,
+"cards": [
+"c_pluto||",
+"j_odd_todd||E"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_directors_cut"
+}
+]
+},
+{
+"seed": "QN2VNB8X",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_devious||",
+"j_crafty||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 2,
+"cards": [
+"j_drunkard||",
+"c_high_priestess||"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 3,
+"cards": [
+"j_throwback||",
+"j_jolly||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 4,
+"cards": [
+"j_greedy_joker||",
+"j_ice_cream||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 5,
+"cards": [
+"j_faceless||",
+"j_marble|holo|"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 6,
+"cards": [
+"c_mercury||",
+"j_faceless||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 7,
+"cards": [
+"j_reserved_parking|holo|",
+"j_madness||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 8,
+"cards": [
+"c_death||",
+"j_scary_face||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_grabber"
+}
+]
+},
+{
+"seed": "EJ9GRRX6",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_uranus||",
+"j_golden||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 2,
+"cards": [
+"j_crafty||",
+"c_magician||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 3,
+"cards": [
+"j_lusty_joker|foil|",
+"c_uranus||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 4,
+"cards": [
+"j_red_card||",
+"j_oops||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 5,
+"cards": [
+"j_half||",
+"j_walkie_talkie||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_telescope"
+},
+{
+"ante": 6,
+"cards": [
+"j_ancient||",
+"j_zany||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_hone"
+},
+{
+"ante": 7,
+"cards": [
+"j_satellite||E",
+"j_juggler||E"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 8,
+"cards": [
+"c_pluto||",
+"j_drunkard||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_telescope"
+}
+]
+},
+{
+"seed": "URI9TISN",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_mars||",
+"j_vampire||E"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"j_lusty_joker||R",
+"j_delayed_grat||P"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 3,
+"cards": [
+"j_mail||P",
+"j_shoot_the_moon||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_seed_money"
+},
+{
+"ante": 4,
+"cards": [
+"c_wheel_of_fortune||",
+"j_faceless||ER"
+],
+"pack": "p_standard_mega_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 5,
+"cards": [
+"j_stuntman|foil|R",
+"j_smiley||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 6,
+"cards": [
+"c_pluto||",
+"c_death||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_telescope"
+},
+{
+"ante": 7,
+"cards": [
+"j_hiker||",
+"j_wrathful_joker||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 8,
+"cards": [
+"j_abstract||E",
+"j_drunkard||P"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_reroll_surplus"
+}
+]
+},
+{
+"seed": "FA6CAFF1",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_emperor||",
+"j_reserved_parking||P"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 2,
+"cards": [
+"j_todo_list||E",
+"j_blue_joker||PR"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_wasteful"
+},
+{
+"ante": 3,
+"cards": [
+"j_droll||P",
+"j_seeing_double||ER"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_blank"
+},
+{
+"ante": 4,
+"cards": [
+"j_shoot_the_moon||ER",
+"j_troubadour||PR"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 5,
+"cards": [
+"c_empress||",
+"j_mad||P"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 6,
+"cards": [
+"j_faceless|foil|PR",
+"j_raised_fist||E"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"j_jolly||",
+"j_gluttenous_joker||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 8,
+"cards": [
+"j_reserved_parking||P",
+"j_runner||"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_directors_cut"
+}
+]
+},
+{
+"seed": "CHJ1ASPL",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_magician||",
+"j_photograph||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 2,
+"cards": [
+"j_mr_bones||E",
+"c_earth||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_blank"
+},
+{
+"ante": 3,
+"cards": [
+"j_runner||E",
+"j_loyalty_card||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_hone"
+},
+{
+"ante": 4,
+"cards": [
+"j_reserved_parking||",
+"c_saturn||"
+],
+"pack": "p_standard_mega_2",
+"voucher": "v_telescope"
+},
+{
+"ante": 5,
+"cards": [
+"j_odd_todd||E",
+"j_hanging_chad||E"
+],
+"pack": "p_arcana_mega_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 6,
+"cards": [
+"j_odd_todd||",
+"c_pluto||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_grabber"
+},
+{
+"ante": 7,
+"cards": [
+"j_reserved_parking||E",
+"j_abstract||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 8,
+"cards": [
+"j_riff_raff||",
+"c_strength||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_telescope"
+}
+]
+},
+{
+"seed": "Y4VRRRR7",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_saturn||",
+"j_red_card||P"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 2,
+"cards": [
+"c_pluto||",
+"j_juggler||PR"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 3,
+"cards": [
+"j_faceless|holo|E",
+"c_venus||"
+],
+"pack": "p_spectral_normal_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 4,
+"cards": [
+"j_bloodstone||",
+"c_magician||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_blank"
+},
+{
+"ante": 5,
+"cards": [
+"j_trio||ER",
+"c_death||"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 6,
+"cards": [
+"c_high_priestess||",
+"j_todo_list||PR"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_wasteful"
+},
+{
+"ante": 7,
+"cards": [
+"j_banner||",
+"j_shortcut||ER"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 8,
+"cards": [
+"j_walkie_talkie||E",
+"c_mars||"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_grabber"
+}
+]
+},
+{
+"seed": "R4D5EUB8",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_saturn||",
+"c_strength||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 2,
+"cards": [
+"j_riff_raff||E",
+"j_joker||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 3,
+"cards": [
+"j_mystic_summit||",
+"j_clever||P"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 4,
+"cards": [
+"j_mad||P",
+"j_banner||E"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_wasteful"
+},
+{
+"ante": 5,
+"cards": [
+"j_zany||",
+"j_lusty_joker||E"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_telescope"
+},
+{
+"ante": 6,
+"cards": [
+"j_devious||E",
+"j_seance||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 7,
+"cards": [
+"j_banner||E",
+"j_devious||E"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 8,
+"cards": [
+"j_fortune_teller||",
+"c_world||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_clearance_sale"
+}
+]
+},
+{
+"seed": "471A7P25",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_pluto||",
+"j_superposition||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 2,
+"cards": [
+"j_wrathful_joker||E",
+"j_drunkard||E"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 3,
+"cards": [
+"c_lovers||",
+"c_wheel_of_fortune||"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 4,
+"cards": [
+"j_sixth_sense||",
+"j_dna||E"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 5,
+"cards": [
+"j_popcorn||",
+"j_delayed_grat||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 6,
+"cards": [
+"j_superposition||E",
+"j_mad||E"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_hone"
+},
+{
+"ante": 7,
+"cards": [
+"c_saturn||",
+"c_lovers||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 8,
+"cards": [
+"j_hallucination||",
+"j_reserved_parking||E"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_paint_brush"
+}
+]
+},
+{
+"seed": "QAHNPW88",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_photograph|foil|",
+"j_splash||P"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_hone"
+},
+{
+"ante": 2,
+"cards": [
+"j_green_joker||PR",
+"j_stuntman||"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_seed_money"
+},
+{
+"ante": 3,
+"cards": [
+"c_hermit||",
+"j_business||P"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 4,
+"cards": [
+"j_blueprint||P",
+"j_credit_card||P"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 5,
+"cards": [
+"j_hologram||",
+"j_smiley||E"
+],
+"pack": "p_spectral_normal_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 6,
+"cards": [
+"j_popcorn||P",
+"j_banner||ER"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 7,
+"cards": [
+"j_constellation||P",
+"j_satellite||E"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 8,
+"cards": [
+"j_midas_mask||PR",
+"j_lusty_joker||E"
+],
+"pack": "p_spectral_normal_1",
+"voucher": "v_seed_money"
+}
+]
+},
+{
+"seed": "VWWK6A7M",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_fibonacci||E",
+"j_scary_face||P"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_telescope"
+},
+{
+"ante": 2,
+"cards": [
+"j_ride_the_bus||P",
+"j_astronomer||P"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 3,
+"cards": [
+"j_vampire||P",
+"c_death||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 4,
+"cards": [
+"c_uranus||",
+"j_hallucination||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_hone"
+},
+{
+"ante": 5,
+"cards": [
+"c_venus||",
+"j_ramen||P"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_grabber"
+},
+{
+"ante": 6,
+"cards": [
+"j_delayed_grat||",
+"j_half||E"
+],
+"pack": "p_standard_mega_2",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"j_mail||",
+"j_bloodstone||P"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_blank"
+},
+{
+"ante": 8,
+"cards": [
+"c_uranus||",
+"j_scholar||E"
+],
+"pack": "p_arcana_mega_2",
+"voucher": "v_seed_money"
+}
+]
+},
+{
+"seed": "WBZ2EZPA",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_oops||",
+"j_business||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"j_trousers||",
+"j_greedy_joker||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 3,
+"cards": [
+"j_walkie_talkie||",
+"j_arrowhead||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 4,
+"cards": [
+"j_troubadour||",
+"c_star||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_hone"
+},
+{
+"ante": 5,
+"cards": [
+"c_emperor||",
+"j_gift||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 6,
+"cards": [
+"j_fibonacci||",
+"c_hermit||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"j_crafty||",
+"j_ceremonial||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 8,
+"cards": [
+"c_mercury||",
+"j_abstract||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_overstock_norm"
+}
+]
+},
+{
+"seed": "ZK6HZPBN",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_golden||",
+"j_juggler||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 2,
+"cards": [
+"j_juggler||",
+"j_smiley||E"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 3,
+"cards": [
+"j_stencil||",
+"j_lusty_joker||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 4,
+"cards": [
+"j_square||E",
+"j_diet_cola||E"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 5,
+"cards": [
+"j_juggler||",
+"j_ramen||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_hone"
+},
+{
+"ante": 6,
+"cards": [
+"c_devil||",
+"j_gluttenous_joker||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 7,
+"cards": [
+"j_lusty_joker||",
+"j_gros_michel||E"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 8,
+"cards": [
+"j_juggler||E",
+"j_supernova||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_reroll_surplus"
+}
+]
+},
+{
+"seed": "YMFDGRFD",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_ride_the_bus||",
+"j_hanging_chad||E"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 2,
+"cards": [
+"j_raised_fist||R",
+"j_ring_master||"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_wasteful"
+},
+{
+"ante": 3,
+"cards": [
+"j_scholar||R",
+"j_burnt||P"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 4,
+"cards": [
+"j_credit_card||P",
+"j_riff_raff||R"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 5,
+"cards": [
+"c_neptune||",
+"j_sixth_sense||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 6,
+"cards": [
+"j_droll||",
+"j_banner||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_wasteful"
+},
+{
+"ante": 7,
+"cards": [
+"j_faceless||",
+"c_mercury||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 8,
+"cards": [
+"j_todo_list||E",
+"j_smeared||PR"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_hieroglyph"
+}
+]
+},
+{
+"seed": "N22IWHDN",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_death||",
+"j_card_sharp||E"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 2,
+"cards": [
+"j_crazy||P",
+"j_drunkard||E"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 3,
+"cards": [
+"c_sun||",
+"c_uranus||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 4,
+"cards": [
+"j_obelisk||PR",
+"j_mad||E"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 5,
+"cards": [
+"j_juggler|foil|P",
+"c_chariot||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 6,
+"cards": [
+"j_red_card||R",
+"c_saturn||"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 7,
+"cards": [
+"c_high_priestess||",
+"j_space||"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_grabber"
+},
+{
+"ante": 8,
+"cards": [
+"j_ramen||E",
+"j_ride_the_bus||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_paint_brush"
+}
+]
+},
+{
+"seed": "NP6F7FWD",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_mail||P",
+"j_oops||P"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 2,
+"cards": [
+"j_selzer|holo|P",
+"j_luchador||"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 3,
+"cards": [
+"j_vagabond||E",
+"j_duo||E"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 4,
+"cards": [
+"c_magician||",
+"j_runner||E"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 5,
+"cards": [
+"j_oops||",
+"c_justice||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 6,
+"cards": [
+"c_neptune||",
+"j_crafty||E"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_hone"
+},
+{
+"ante": 7,
+"cards": [
+"j_flower_pot||",
+"j_popcorn||P"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 8,
+"cards": [
+"j_mail||",
+"j_popcorn||E"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_planet_merchant"
+}
+]
+},
+{
+"seed": "EW1WN68Q",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_bull||",
+"j_superposition||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 2,
+"cards": [
+"j_red_card||E",
+"j_raised_fist||E"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 3,
+"cards": [
+"c_uranus||",
+"c_emperor||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 4,
+"cards": [
+"j_ride_the_bus||E",
+"c_earth||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 5,
+"cards": [
+"c_devil||",
+"c_pluto||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 6,
+"cards": [
+"j_photograph||",
+"j_greedy_joker||E"
+],
+"pack": "p_arcana_mega_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"j_scary_face||",
+"c_jupiter||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 8,
+"cards": [
+"c_star||",
+"j_supernova||"
+],
+"pack": "p_spectral_jumbo_1",
+"voucher": "v_blank"
+}
+]
+},
+{
+"seed": "WCTM6RVR",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_gros_michel||",
+"j_wily||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_telescope"
+},
+{
+"ante": 2,
+"cards": [
+"j_red_card||",
+"c_hanged_man||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_seed_money"
+},
+{
+"ante": 3,
+"cards": [
+"j_wrathful_joker||",
+"j_acrobat||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 4,
+"cards": [
+"c_world||",
+"j_golden||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_blank"
+},
+{
+"ante": 5,
+"cards": [
+"j_mad||",
+"c_uranus||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 6,
+"cards": [
+"c_mercury||",
+"c_mars||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 7,
+"cards": [
+"j_space||",
+"j_castle||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 8,
+"cards": [
+"j_lusty_joker||",
+"c_venus||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_telescope"
+}
+]
+},
+{
+"seed": "BB92AVAW",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_emperor||",
+"j_devious||E"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 2,
+"cards": [
+"c_lovers||",
+"c_judgement||"
+],
+"pack": "p_spectral_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 3,
+"cards": [
+"j_popcorn|holo|P",
+"j_merry_andy||P"
+],
+"pack": "p_arcana_mega_2",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 4,
+"cards": [
+"c_devil||",
+"c_judgement||"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_wasteful"
+},
+{
+"ante": 5,
+"cards": [
+"j_egg||P",
+"j_rocket||E"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_grabber"
+},
+{
+"ante": 6,
+"cards": [
+"j_drunkard||P",
+"j_throwback||P"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 7,
+"cards": [
+"j_banner||P",
+"c_moon||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 8,
+"cards": [
+"j_stencil||P",
+"c_emperor||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_grabber"
+}
+]
+},
+{
+"seed": "A9217Z9T",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_business||E",
+"j_arrowhead||E"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 2,
+"cards": [
+"j_joker||E",
+"j_ring_master||"
+],
+"pack": "p_arcana_mega_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 3,
+"cards": [
+"j_mail||",
+"j_troubadour|foil|"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 4,
+"cards": [
+"j_ice_cream||",
+"c_mars||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 5,
+"cards": [
+"j_drunkard||E",
+"c_hermit||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 6,
+"cards": [
+"j_egg||",
+"c_magician||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_wasteful"
+},
+{
+"ante": 7,
+"cards": [
+"c_mercury||",
+"j_smiley||"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 8,
+"cards": [
+"j_mail||E",
+"j_ice_cream||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_hone"
+}
+]
+},
+{
+"seed": "E2HEJYGL",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_zany||",
+"c_chariot||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 2,
+"cards": [
+"c_temperance||",
+"j_swashbuckler||E"
+],
+"pack": "p_celestial_mega_1",
+"voucher": "v_hone"
+},
+{
+"ante": 3,
+"cards": [
+"c_jupiter||",
+"j_scary_face||"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_wasteful"
+},
+{
+"ante": 4,
+"cards": [
+"c_judgement||",
+"c_strength||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 5,
+"cards": [
+"j_raised_fist||P",
+"j_hallucination||E"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 6,
+"cards": [
+"j_chaos||P",
+"c_justice||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 7,
+"cards": [
+"j_swashbuckler||P",
+"j_hiker||P"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 8,
+"cards": [
+"j_square||",
+"j_riff_raff||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_tarot_merchant"
+}
+]
+},
+{
+"seed": "S94NVZSY",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_magician||",
+"c_uranus||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"j_green_joker||E",
+"j_fortune_teller||E"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 3,
+"cards": [
+"j_shoot_the_moon||E",
+"c_hermit||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 4,
+"cards": [
+"j_wrathful_joker||",
+"j_egg||"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 5,
+"cards": [
+"c_earth||",
+"j_erosion||E"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_grabber"
+},
+{
+"ante": 6,
+"cards": [
+"c_wheel_of_fortune||",
+"j_chaos||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 7,
+"cards": [
+"c_venus||",
+"j_gros_michel||E"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 8,
+"cards": [
+"j_splash||",
+"j_arrowhead||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_telescope"
+}
+]
+},
+{
+"seed": "AZY2UC1A",
+"stake": 4,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_jupiter||",
+"c_venus||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"j_four_fingers||",
+"c_earth||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 3,
+"cards": [
+"c_neptune||",
+"j_wily||"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 4,
+"cards": [
+"j_idol||",
+"j_gift||"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 5,
+"cards": [
+"j_throwback|foil|",
+"j_dusk||E"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 6,
+"cards": [
+"c_pluto||",
+"c_death||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"c_jupiter||",
+"j_lusty_joker||E"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 8,
+"cards": [
+"c_pluto||",
+"j_crazy||E"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_planet_merchant"
+}
+]
+},
+{
+"seed": "AW84LZZW",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_splash||",
+"j_red_card||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 2,
+"cards": [
+"j_zany||",
+"j_blue_joker||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 3,
+"cards": [
+"c_jupiter||",
+"j_ramen||"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_hone"
+},
+{
+"ante": 4,
+"cards": [
+"j_wrathful_joker||",
+"c_devil||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_blank"
+},
+{
+"ante": 5,
+"cards": [
+"c_wheel_of_fortune||",
+"c_lovers||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_seed_money"
+},
+{
+"ante": 6,
+"cards": [
+"j_clever||",
+"j_madness||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"c_devil||",
+"j_onyx_agate||"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 8,
+"cards": [
+"c_emperor||",
+"c_sun||"
+],
+"pack": "p_spectral_mega_1",
+"voucher": "v_telescope"
+}
+]
+},
+{
+"seed": "4GDI37YU",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_fortune_teller||",
+"c_earth||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 2,
+"cards": [
+"c_uranus||",
+"j_lusty_joker||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_blank"
+},
+{
+"ante": 3,
+"cards": [
+"j_blue_joker||",
+"j_runner||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_grabber"
+},
+{
+"ante": 4,
+"cards": [
+"c_death||",
+"j_swashbuckler||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 5,
+"cards": [
+"c_venus||",
+"c_high_priestess||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_hone"
+},
+{
+"ante": 6,
+"cards": [
+"j_joker||",
+"j_crazy||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 7,
+"cards": [
+"c_magician||",
+"c_world||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 8,
+"cards": [
+"j_seeing_double||",
+"c_jupiter||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_wasteful"
+}
+]
+},
+{
+"seed": "5ULYYDIU",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_uranus||",
+"j_throwback||P"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 2,
+"cards": [
+"j_turtle_bean||P",
+"j_brainstorm|foil|P"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_seed_money"
+},
+{
+"ante": 3,
+"cards": [
+"j_matador||",
+"j_ride_the_bus|foil|"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_telescope"
+},
+{
+"ante": 4,
+"cards": [
+"j_supernova||E",
+"j_to_the_moon||P"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 5,
+"cards": [
+"j_ride_the_bus||",
+"c_uranus||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 6,
+"cards": [
+"j_sly||",
+"j_erosion||"
+],
+"pack": "p_standard_normal_3",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 7,
+"cards": [
+"j_runner||",
+"j_faceless||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 8,
+"cards": [
+"j_loyalty_card|foil|",
+"j_walkie_talkie||R"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_hone"
+}
+]
+},
+{
+"seed": "YGZHDU9S",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_wily||",
+"j_bloodstone||"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 2,
+"cards": [
+"j_egg||",
+"j_ice_cream||"
+],
+"pack": "p_arcana_jumbo_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 3,
+"cards": [
+"j_scary_face||",
+"c_death||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 4,
+"cards": [
+"c_lovers||",
+"j_golden||"
+],
+"pack": "p_arcana_normal_4",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 5,
+"cards": [
+"j_banner||",
+"j_business||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 6,
+"cards": [
+"j_baron||",
+"j_selzer||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 7,
+"cards": [
+"j_space||",
+"c_earth||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 8,
+"cards": [
+"c_neptune||",
+"j_drunkard||"
+],
+"pack": "p_standard_mega_1",
+"voucher": "v_crystal_ball"
+}
+]
+},
+{
+"seed": "RUL5GT5E",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_smiley||P",
+"c_lovers||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"j_mr_bones|neg|P",
+"j_raised_fist||"
+],
+"pack": "p_buffoon_jumbo_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 3,
+"cards": [
+"c_venus||",
+"c_star||"
+],
+"pack": "p_standard_normal_1",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 4,
+"cards": [
+"j_golden||E",
+"j_red_card||E"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 5,
+"cards": [
+"j_misprint||",
+"j_sock_and_buskin||P"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 6,
+"cards": [
+"j_sock_and_buskin||E",
+"j_satellite||P"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 7,
+"cards": [
+"j_faceless||P",
+"j_vampire||P"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 8,
+"cards": [
+"c_death||",
+"c_earth||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_paint_brush"
+}
+]
+},
+{
+"seed": "8APAH9VF",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"c_mars||",
+"c_high_priestess||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_planet_merchant"
+},
+{
+"ante": 2,
+"cards": [
+"j_square||",
+"j_reserved_parking||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_blank"
+},
+{
+"ante": 3,
+"cards": [
+"j_hanging_chad||",
+"j_credit_card||"
+],
+"pack": "p_celestial_normal_3",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 4,
+"cards": [
+"j_drunkard||",
+"c_mercury||"
+],
+"pack": "p_standard_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 5,
+"cards": [
+"j_half||",
+"j_shoot_the_moon||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 6,
+"cards": [
+"c_star||",
+"j_droll||"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_seed_money"
+},
+{
+"ante": 7,
+"cards": [
+"j_throwback||",
+"j_todo_list||"
+],
+"pack": "p_celestial_jumbo_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 8,
+"cards": [
+"j_turtle_bean|foil|",
+"j_shoot_the_moon||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_crystal_ball"
+}
+]
+},
+{
+"seed": "RXBFBTYR",
+"stake": 7,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_mad||P",
+"c_sun||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 2,
+"cards": [
+"c_sun||",
+"j_smeared||E"
+],
+"pack": "p_celestial_normal_4",
+"voucher": "v_directors_cut"
+},
+{
+"ante": 3,
+"cards": [
+"c_mercury||",
+"j_egg||P"
+],
+"pack": "p_spectral_normal_1",
+"voucher": "v_clearance_sale"
+},
+{
+"ante": 4,
+"cards": [
+"c_temperance||",
+"c_wheel_of_fortune||"
+],
+"pack": "p_buffoon_mega_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 5,
+"cards": [
+"c_uranus||",
+"j_drunkard||"
+],
+"pack": "p_arcana_normal_2",
+"voucher": "v_reroll_surplus"
+},
+{
+"ante": 6,
+"cards": [
+"j_card_sharp||P",
+"j_vampire||P"
+],
+"pack": "p_arcana_normal_3",
+"voucher": "v_seed_money"
+},
+{
+"ante": 7,
+"cards": [
+"j_egg||P",
+"j_scholar||P"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_grabber"
+},
+{
+"ante": 8,
+"cards": [
+"j_acrobat||",
+"j_blue_joker||E"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_directors_cut"
+}
+]
+},
+{
+"seed": "SDNL6P2M",
+"stake": 8,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_ice_cream||",
+"j_superposition||P"
+],
+"pack": "p_buffoon_normal_2",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 2,
+"cards": [
+"j_ring_master||R",
+"c_high_priestess||"
+],
+"pack": "p_spectral_jumbo_1",
+"voucher": "v_magic_trick"
+},
+{
+"ante": 3,
+"cards": [
+"c_venus||",
+"c_magician||"
+],
+"pack": "p_buffoon_mega_1",
+"voucher": "v_hieroglyph"
+},
+{
+"ante": 4,
+"cards": [
+"j_clever||",
+"j_sock_and_buskin||"
+],
+"pack": "p_celestial_normal_1",
+"voucher": "v_seed_money"
+},
+{
+"ante": 5,
+"cards": [
+"j_mail||",
+"c_temperance||"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 6,
+"cards": [
+"j_clever||E",
+"j_reserved_parking||E"
+],
+"pack": "p_standard_jumbo_2",
+"voucher": "v_blank"
+},
+{
+"ante": 7,
+"cards": [
+"j_fortune_teller||R",
+"c_temperance||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 8,
+"cards": [
+"j_swashbuckler||",
+"j_troubadour||"
+],
+"pack": "p_arcana_jumbo_1",
+"voucher": "v_directors_cut"
+}
+]
+},
+{
+"seed": "U2QMZJY5",
+"stake": 1,
+"shops": [
+{
+"ante": 1,
+"cards": [
+"j_delayed_grat||",
+"c_saturn||"
+],
+"pack": "p_buffoon_normal_1",
+"voucher": "v_paint_brush"
+},
+{
+"ante": 2,
+"cards": [
+"j_egg||",
+"j_splash||"
+],
+"pack": "p_standard_mega_2",
+"voucher": "v_telescope"
+},
+{
+"ante": 3,
+"cards": [
+"j_onyx_agate||",
+"j_erosion||"
+],
+"pack": "p_standard_jumbo_1",
+"voucher": "v_crystal_ball"
+},
+{
+"ante": 4,
+"cards": [
+"j_blue_joker||",
+"j_superposition||"
+],
+"pack": "p_celestial_normal_2",
+"voucher": "v_wasteful"
+},
+{
+"ante": 5,
+"cards": [
+"j_trading||",
+"j_shoot_the_moon||"
+],
+"pack": "p_spectral_jumbo_1",
+"voucher": "v_tarot_merchant"
+},
+{
+"ante": 6,
+"cards": [
+"j_baron||",
+"c_earth||"
+],
+"pack": "p_celestial_jumbo_2",
+"voucher": "v_seed_money"
+},
+{
+"ante": 7,
+"cards": [
+"c_justice||",
+"j_egg||"
+],
+"pack": "p_arcana_normal_1",
+"voucher": "v_overstock_norm"
+},
+{
+"ante": 8,
+"cards": [
+"j_juggler||",
+"j_gluttenous_joker||"
+],
+"pack": "p_standard_normal_4",
+"voucher": "v_tarot_merchant"
+}
+]
+}
+]
